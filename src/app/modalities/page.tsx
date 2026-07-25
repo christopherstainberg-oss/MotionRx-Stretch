@@ -47,8 +47,14 @@ const SETTINGS: Array<{ id: ModalitySetting | "all"; label: string }> = [
 function ModalitiesInner() {
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get("tab") as "suggest" | "browse" | "program") || "suggest";
+  const categoryParam = searchParams.get("category");
+  const timingParam = searchParams.get("timing");
+  const deepLinkBrowse =
+    Boolean(categoryParam || timingParam) ||
+    initialTab === "program" ||
+    initialTab === "browse";
   const [tab, setTab] = useState<"suggest" | "browse" | "program">(
-    initialTab === "program" || initialTab === "browse" ? initialTab : "suggest"
+    initialTab === "program" ? "program" : deepLinkBrowse ? "browse" : "suggest"
   );
   const [pain, setPain] = useState(4);
   const [experience, setExperience] = useState("");
@@ -58,8 +64,18 @@ function ModalitiesInner() {
   const [error, setError] = useState<string | null>(null);
 
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<ModalityCategory | "all">("all");
-  const [timing, setTiming] = useState<ModalityTiming | "all">("all");
+  const [category, setCategory] = useState<ModalityCategory | "all">(() => {
+    if (categoryParam && categoryParam in MODALITY_CATEGORY_LABELS) {
+      return categoryParam as ModalityCategory;
+    }
+    return "all";
+  });
+  const [timing, setTiming] = useState<ModalityTiming | "all">(() => {
+    const valid = TIMINGS.some((t) => t.id === timingParam);
+    return valid && timingParam && timingParam !== "all"
+      ? (timingParam as ModalityTiming)
+      : "all";
+  });
   const [setting, setSetting] = useState<ModalitySetting | "all">("all");
   const [catalog, setCatalog] = useState<Modality[]>([]);
 
