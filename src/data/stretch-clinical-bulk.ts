@@ -5,7 +5,7 @@
  */
 
 import type { BodyPart, Difficulty, Stretch, StretchStep, StretchVariation } from "@/lib/types";
-import { videoForRegion, type VideoRegion } from "@/data/video-catalog";
+import { videoForMovement, type TechniqueKey, type VideoRegion } from "@/data/video-catalog";
 import { functionalOutcomeNarrative } from "@/data/stretch-outcomes";
 
 type CompactSeed = {
@@ -106,10 +106,38 @@ function regionFor(parts: BodyPart[]): VideoRegion {
   return "general";
 }
 
+/** Infer technique key from stretch name for more specific institutional demos */
+function techniqueForName(name: string, parts: BodyPart[]): TechniqueKey | undefined {
+  const n = name.toLowerCase();
+  if (/chin tuck|retraction|deep neck/.test(n)) return "chin-tuck";
+  if (/scalene|upper trap|side-bend|side bend|levator/.test(n)) return "neck-side";
+  if (/jaw|tmj|masseter/.test(n)) return "cervical";
+  if (/chest|pec|doorway/.test(n)) return "chest-open";
+  if (/cat.?cow|cat curl/.test(n)) return "cat-cow";
+  if (/thread|open.?book|rotation|side reach|side bend/.test(n) && parts.includes("thoracic"))
+    return "thoracic-rotation";
+  if (/piriformis|figure.?four|glute|pigeon|90\/90|obers|tfl|itb/.test(n)) return "hip-glute";
+  if (/hip flexor|couch|iliopsoas/.test(n)) return "hip-flexor";
+  if (/hamstring/.test(n)) return "hamstring";
+  if (/quad|rectus|heel.to.glute/.test(n)) return "quad";
+  if (/adductor|butterfly|groin|side.lunge/.test(n)) return "adductor";
+  if (/calf|gastroc|soleus|plantar/.test(n)) return "calf";
+  if (/ankle|alphabet|inversion|eversion|dorsiflexion|shin|tibialis/.test(n)) return "ankle";
+  if (/wrist|prayer|hand|finger|median|elbow|supination/.test(n)) return "wrist-hand";
+  if (/scapular|wall angel|shoulder blade/.test(n)) return "scapular";
+  if (/sleeper|posterior shoulder|cross.body|cuff/.test(n)) return "rotator-cuff";
+  if (/pelvic clock|knee rock|press.up|child/.test(n)) return "spinal-safe";
+  if (/ql |lateral trunk/.test(n)) return "thoracic-rotation";
+  if (/sciatic|neural|slider|nerve/.test(n)) return "hamstring";
+  if (/world.?greatest|reach.and.roll|full.body/.test(n)) return "full-body";
+  return undefined;
+}
+
 function expandCompact(c: CompactSeed): Omit<Stretch, "durationBucket" | "slug" | "kind"> {
   const bodyParts = c.bodyParts;
   const narrative = functionalOutcomeNarrative(bodyParts, c.evidence);
   const vRegion = c.videoRegion ?? regionFor(bodyParts);
+  const technique = techniqueForName(c.name, bodyParts);
   const defaultVars = c.variationNames ?? [
     {
       name: "Supported / reduced range",
@@ -141,7 +169,11 @@ function expandCompact(c: CompactSeed): Omit<Stretch, "durationBucket" | "slug" 
     warmUpNotes: "2–3 minutes of easy marching or joint circles first if you feel cold or stiff.",
     steps: stepsFrom(c.how, c.kid, c.hold ?? 30),
     variations: vars(c.id, defaultVars),
-    video: videoForRegion(vRegion, `${c.name} education`),
+    video: videoForMovement({
+      technique,
+      region: vRegion,
+      title: `${c.name} — institutional technique demonstration`,
+    }),
     evidenceNotes: c.evidence,
     clinical: {
       whatItDoes: `Gently mobilizes ${c.primaryMuscles.join(", ")} through a controlled range while teaching safe stretch dosing.`,

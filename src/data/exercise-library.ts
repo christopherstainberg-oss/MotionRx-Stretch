@@ -9,7 +9,7 @@ import type {
 } from "@/lib/types";
 import { ADDITIONAL_EXERCISE_SEEDS } from "@/data/exercise-clinical-expansion";
 import { ensureHomeProgramVariations } from "@/data/home-variations";
-import { videoForRegion } from "@/data/video-catalog";
+import { videoForTechnique } from "@/data/video-catalog";
 
 /** Catalog target capacity per Build.MD (virtual + clinical bases) */
 export const EXERCISE_CATALOG_CAPACITY = 1_000_000;
@@ -95,7 +95,7 @@ const SEEDS: Seed[] = [
       { name: "Single-leg bridge", difficulty: "advanced", description: "One foot lifted—only if pain ≤3.", painMax: 3 },
       { name: "Supported mini-bridge", difficulty: "beginner", description: "Smaller range for irritable days.", painMax: 5 },
     ]),
-    video: videoForRegion("hip", "Hip and glute activation education"),
+    video: videoForTechnique("glute-bridge", "Glute bridge / hip activation — proper form"),
     evidenceNotes:
       "Glute activation is a staple in outpatient lumbar and hip programs before loading and gait work.",
     clinical: {
@@ -140,7 +140,7 @@ const SEEDS: Seed[] = [
       { name: "Arm-only or leg-only", difficulty: "beginner", description: "Isolate one limb if balance is hard.", painMax: 5 },
       { name: "Bird dog with hold", difficulty: "intermediate", description: "3–5 second end-range holds." },
     ]),
-    video: videoForRegion("core", "Core motor control education"),
+    video: videoForTechnique("bird-dog", "Bird-dog / core motor control — proper form"),
     evidenceNotes:
       "Bird-dog is a classic lumbar stabilization progression used widely in outpatient rehab.",
     clinical: {
@@ -185,7 +185,7 @@ const SEEDS: Seed[] = [
       { name: "Clamshell", difficulty: "beginner", description: "Knees bent, open top knee like a clam.", painMax: 5 },
       { name: "Band side-step", difficulty: "intermediate", description: "Standing lateral band walks." },
     ]),
-    video: videoForRegion("hip", "Hip strengthening education"),
+    video: videoForTechnique("hip-strength", "Hip strengthening technique"),
     evidenceNotes:
       "Gluteus medius strengthening is common for lateral hip pain, gait deviations, and knee tracking issues.",
     clinical: {
@@ -227,7 +227,7 @@ const SEEDS: Seed[] = [
       { name: "Slow eccentric sit", difficulty: "intermediate", description: "3–4 second lower." },
       { name: "Lower chair / goblet load", difficulty: "advanced", description: "Only if form is solid.", painMax: 3 },
     ]),
-    video: videoForRegion("leg", "Functional lower extremity strength"),
+    video: videoForTechnique("sit-to-stand", "Sit-to-stand technique (functional LE strength)"),
     evidenceNotes:
       "Sit-to-stand is a gold-standard functional exercise and outcome task in rehab and geriatrics.",
     clinical: {
@@ -268,7 +268,7 @@ const SEEDS: Seed[] = [
       { name: "Countertop push-up", difficulty: "intermediate", description: "Hands on counter for more load." },
       { name: "Knee or full floor push-up", difficulty: "advanced", description: "Progress when wall is easy.", painMax: 3 },
     ]),
-    video: videoForRegion("shoulder", "Upper extremity strengthening"),
+    video: videoForTechnique("wall-push", "Wall push-up / UE strengthening technique"),
     evidenceNotes:
       "Inclined/wall push-ups allow graded loading of the shoulder complex in early-mid rehab phases.",
     clinical: {
@@ -309,7 +309,7 @@ const SEEDS: Seed[] = [
       { name: "Heel taps only", difficulty: "beginner", description: "Easier regression.", painMax: 5 },
       { name: "Long lever dead bug", difficulty: "advanced", description: "Straighter legs—pain ≤3 only.", painMax: 3 },
     ]),
-    video: videoForRegion("core", "Core control education"),
+    video: videoForTechnique("dead-bug", "Dead-bug / core control technique"),
     evidenceNotes:
       "Dead bug variants train anterior core control with low spinal compression relative to many sit-up styles.",
     clinical: {
@@ -350,7 +350,7 @@ const SEEDS: Seed[] = [
       { name: "Low curb step", difficulty: "beginner", description: "Very small height.", painMax: 5 },
       { name: "Lateral step-up", difficulty: "intermediate", description: "Sideways stepping pattern." },
     ]),
-    video: videoForRegion("leg", "Lower extremity functional training"),
+    video: videoForTechnique("step", "Step-up / LE functional strength technique"),
     evidenceNotes:
       "Step-ups bridge strength training and real-world stair negotiation in progressive rehab.",
     clinical: {
@@ -391,7 +391,7 @@ const SEEDS: Seed[] = [
       { name: "Towel isometric row", difficulty: "beginner", description: "No band: pull towel isometrically.", painMax: 5 },
       { name: "Single-arm row", difficulty: "intermediate", description: "One side at a time for control." },
     ]),
-    video: videoForRegion("shoulder", "Scapular strengthening education"),
+    video: videoForTechnique("row-pull", "Scapular row / pull technique"),
     evidenceNotes:
       "Horizontal pulling is a common counterbalance to prolonged sitting and anterior shoulder dominance.",
     clinical: {
@@ -432,7 +432,7 @@ const SEEDS: Seed[] = [
       { name: "Feet together stance", difficulty: "beginner", description: "Easier regression.", painMax: 6 },
       { name: "Tandem with head turns", difficulty: "advanced", description: "Add gentle head motion if safe.", painMax: 3 },
     ]),
-    video: videoForRegion("balance", "Balance training education"),
+    video: videoForTechnique("balance", "Single-leg balance technique"),
     evidenceNotes:
       "Progressive balance challenges are standard in fall-prevention and vestibular-adjacent outpatient care.",
     clinical: {
@@ -472,7 +472,7 @@ const SEEDS: Seed[] = [
       { name: "Seated heel press", difficulty: "beginner", description: "Seated for lower load.", painMax: 5 },
       { name: "Single-leg heel raise", difficulty: "advanced", description: "Higher demand.", painMax: 3 },
     ]),
-    video: videoForRegion("leg", "Calf strengthening education"),
+    video: videoForTechnique("calf-raise", "Calf raise technique"),
     evidenceNotes:
       "Calf loading is used for Achilles capacity, gait push-off, and ankle power in progressive rehab.",
     clinical: {
@@ -513,7 +513,7 @@ const SEEDS: Seed[] = [
       { name: "Suitcase carry (one side)", difficulty: "intermediate", description: "Anti-sidebend challenge." },
       { name: "Bodyweight tall walk", difficulty: "beginner", description: "No load—posture focus.", painMax: 5 },
     ]),
-    video: videoForRegion("balance", "Functional loaded walking education"),
+    video: videoForTechnique("carry-walk", "Loaded walking / carry technique"),
     evidenceNotes:
       "Carries develop real-world trunk and grip endurance used in work and home tasks.",
     clinical: {
@@ -554,7 +554,7 @@ const SEEDS: Seed[] = [
       { name: "Foam roller thoracic openers", difficulty: "intermediate", description: "If equipment available." },
       { name: "Wall angels", difficulty: "beginner", description: "Back to wall, slide arms.", painMax: 4 },
     ]),
-    video: videoForRegion("back", "Thoracic mobility education"),
+    video: videoForTechnique("thoracic-rotation", "Thoracic mobility technique"),
     evidenceNotes:
       "Thoracic extension/mobility drills are common for desk-related stiffness and shoulder prep.",
     clinical: {

@@ -10,7 +10,7 @@ import type {
   StretchStep,
   StretchVariation,
 } from "@/lib/types";
-import { videoForRegion } from "@/data/video-catalog";
+import { videoForTechnique } from "@/data/video-catalog";
 
 type Seed = Omit<Exercise, "durationBucket" | "slug" | "kind"> & { slug?: string };
 
@@ -78,7 +78,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
       { name: "Towel under knee", difficulty: "beginner", description: "Press into rolled towel.", painMax: 5 },
       { name: "Short-arc quad", difficulty: "intermediate", description: "Small extension arc over bolster." },
     ]),
-    video: videoForRegion("leg", "Quad activation education"),
+    video: videoForTechnique("leg-strength", "Quad activation / isometric technique"),
     evidenceNotes:
       "Isometric quad activation is foundational after knee irritation or surgery pathways; function goals include better extension control and lower pain with weight-bearing progression.",
     clinical: {
@@ -121,7 +121,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
       { name: "Towel-assisted", difficulty: "beginner", description: "Towel under heel for easier slide.", painMax: 5 },
       { name: "Seated heel slide", difficulty: "beginner", description: "Chair version." },
     ]),
-    video: videoForRegion("leg", "Knee flexion mobility control"),
+    video: videoForTechnique("knee-rom", "Knee flexion mobility technique"),
     evidenceNotes:
       "Active assisted knee flexion is standard for restoring ROM; outcomes include flexion range and improved KOOS/ADL-type function when swelling and pain allow.",
     clinical: {
@@ -163,7 +163,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
       { name: "Short arc only", difficulty: "beginner", description: "Smaller lift range.", painMax: 5 },
       { name: "Ankle weight progress", difficulty: "advanced", description: "Light load when form is solid.", painMax: 3 },
     ]),
-    video: videoForRegion("leg", "Straight leg raise education"),
+    video: videoForTechnique("slr", "Straight leg raise technique"),
     evidenceNotes:
       "SLR strength is widely used in knee and hip programs targeting walking and stair function; pain and strength measures guide load.",
     clinical: {
@@ -205,7 +205,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
       { name: "Band around knees", difficulty: "intermediate", description: "Light band for more challenge." },
       { name: "Isometric open hold", difficulty: "beginner", description: "Hold mid-range 5 seconds.", painMax: 4 },
     ]),
-    video: videoForRegion("hip", "Glute med activation"),
+    video: videoForTechnique("hip-strength", "Glute med activation technique"),
     evidenceNotes:
       "Glute med activation is linked with improved frontal-plane control; often included when stair and walking pain/function are goals (LEFS-oriented).",
     clinical: {
@@ -248,7 +248,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
       { name: "Short holds only", difficulty: "beginner", description: "5-second holds.", painMax: 5 },
       { name: "Full side plank", difficulty: "advanced", description: "Legs straight—only if pain ≤3.", painMax: 3 },
     ]),
-    video: videoForRegion("core", "Lateral core endurance"),
+    video: videoForTechnique("core-lateral", "Lateral core endurance technique"),
     evidenceNotes:
       "Lateral core endurance supports trunk control for ADLs; programs track endurance time and pain with functional tasks.",
     clinical: {
@@ -289,7 +289,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
     variations: vars("ex-terminal-knee-extension", [
       { name: "No band long-arc", difficulty: "beginner", description: "Seated long-arc quads.", painMax: 5 },
     ]),
-    video: videoForRegion("leg", "Terminal knee extension"),
+    video: videoForTechnique("tke", "Terminal knee extension technique"),
     evidenceNotes:
       "TKE is widely used to restore extension strength for walking; outcomes include gait quality and pain with stance phase tasks.",
     clinical: {
@@ -331,7 +331,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
       { name: "Isometric ER at wall", difficulty: "beginner", description: "Press outward into wall, no motion.", painMax: 5 },
       { name: "Side-lying dumbbell ER", difficulty: "intermediate", description: "Light weight when ready." },
     ]),
-    video: videoForRegion("shoulder", "Rotator cuff external rotation"),
+    video: videoForTechnique("rotator-cuff", "Rotator cuff ER stretch/strength technique (PT demo)"),
     evidenceNotes:
       "Cuff endurance work is standard in shoulder rehab aiming to improve QuickDASH/function and reduce pain with reaching.",
     clinical: {
@@ -373,7 +373,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
       { name: "Wall serratus punch", difficulty: "beginner", description: "Standing at wall.", painMax: 5 },
       { name: "Plus push-up", difficulty: "advanced", description: "On knees or toes when ready.", painMax: 3 },
     ]),
-    video: videoForRegion("shoulder", "Serratus anterior activation"),
+    video: videoForTechnique("serratus", "Serratus / scapular activation technique"),
     evidenceNotes:
       "Serratus training is common when scapular dyskinesis or overhead pain limits function; outcomes include reach endurance and pain scores.",
     clinical: {
@@ -415,7 +415,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
     variations: vars("ex-cervical-isometrics", [
       { name: "Only flexion/extension", difficulty: "beginner", description: "Fewer directions if irritable.", painMax: 5 },
     ]),
-    video: videoForRegion("back", "Cervical isometric control"),
+    video: videoForTechnique("cervical-iso", "Cervical isometric control technique"),
     evidenceNotes:
       "Low-load cervical isometrics appear in early neck pain care aiming to reduce fear and improve NDI-related function with low symptom provocation.",
     clinical: {
@@ -457,7 +457,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
       { name: "Hands on hips only", difficulty: "beginner", description: "No dowel—feel hips go back.", painMax: 5 },
       { name: "Light kettlebell deadlift", difficulty: "advanced", description: "Only with excellent form.", painMax: 3 },
     ]),
-    video: videoForRegion("back", "Hip hinge motor control"),
+    video: videoForTechnique("hip-hinge", "Hip hinge motor control — low-back safe form"),
     evidenceNotes:
       "Hip-hinge training is central to lifting education and low-back rehab aiming to improve activity tolerance and reduce pain with bending tasks.",
     clinical: {
@@ -499,7 +499,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
       { name: "Tap only, high surface", difficulty: "beginner", description: "Higher support, smaller motion.", painMax: 5 },
       { name: "Deeper step-down", difficulty: "advanced", description: "Lower step when control is excellent.", painMax: 3 },
     ]),
-    video: videoForRegion("leg", "Step-down control"),
+    video: videoForTechnique("step", "Step-down control technique"),
     evidenceNotes:
       "Step-downs train eccentric single-leg strength relevant to stairs; LEFS/stair items and pain ratings guide progression.",
     clinical: {
@@ -540,7 +540,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
     variations: vars("ex-ankle-alphabet-strength", [
       { name: "No band AROM only", difficulty: "beginner", description: "Active range without resistance.", painMax: 6 },
     ]),
-    video: videoForRegion("balance", "Ankle strengthening education"),
+    video: videoForTechnique("ankle", "Ankle strengthening technique"),
     evidenceNotes:
       "Multi-plane ankle strengthening is common for stability and return-to-walk goals; outcomes include balance and walking tolerance.",
     clinical: {
@@ -582,7 +582,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
     variations: vars("ex-short-foot", [
       { name: "Standing short foot", difficulty: "intermediate", description: "Same drill in standing.", painMax: 4 },
     ]),
-    video: videoForRegion("balance", "Foot intrinsic control"),
+    video: videoForTechnique("foot-intrinsic", "Foot intrinsic control technique"),
     evidenceNotes:
       "Foot intrinsic training is used for arch control and balance; may support better pain and function in some foot conditions when combined with load management.",
     clinical: {
@@ -624,7 +624,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
       { name: "Isometric hold only", difficulty: "beginner", description: "Hold mid-range without motion.", painMax: 5 },
       { name: "Flexor eccentrics", difficulty: "intermediate", description: "Palm-up version for medial elbow region." },
     ]),
-    video: videoForRegion("shoulder", "Wrist tendon loading education"),
+    video: videoForTechnique("wrist-load", "Wrist tendon loading technique"),
     evidenceNotes:
       "Progressive tendon loading (including eccentrics/isometrics) is central in many lateral elbow protocols aiming to improve pain-free grip and PRTEE-type scores.",
     clinical: {
@@ -667,7 +667,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
       { name: "High wall sit", difficulty: "beginner", description: "Very shallow bend.", painMax: 5 },
       { name: "Single-leg wall sit", difficulty: "advanced", description: "Only if pain ≤3.", painMax: 3 },
     ]),
-    video: videoForRegion("leg", "Wall sit endurance"),
+    video: videoForTechnique("wall-sit", "Wall sit endurance technique"),
     evidenceNotes:
       "Isometric lower-extremity holds build endurance relevant to standing tolerance; pain and hold-time progressions are monitored.",
     clinical: {
@@ -710,7 +710,7 @@ export const ADDITIONAL_EXERCISE_SEEDS: Seed[] = [
       { name: "Seated squeeze", difficulty: "beginner", description: "Chair version.", painMax: 5 },
       { name: "Copenhagen prep (short)", difficulty: "advanced", description: "Only under guidance.", painMax: 3 },
     ]),
-    video: videoForRegion("hip", "Adductor activation"),
+    video: videoForTechnique("adductor", "Adductor activation technique"),
     evidenceNotes:
       "Adductor activation/strength is used in groin and pelvic control programs; progressive loading relates to return-to-activity and pain ratings.",
     clinical: {

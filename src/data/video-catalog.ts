@@ -7,6 +7,7 @@
  *   (NIA/NIH, Mayo Clinic, Cleveland Clinic, Johns Hopkins Medicine, VHA, Dartmouth Health, etc.)
  * - Fitness-creator / influencer content is excluded
  * - Every ID is verified active via YouTube oEmbed before catalog entry
+ * - Prefer technique-specific demos (form/safety) over generic region videos
  *
  * Last verified: 2026-07-25 (oEmbed batch check)
  */
@@ -18,6 +19,8 @@ export type InstitutionalVideo = {
   source: string;
   /** High-level region tags for assignment to stretch/exercise slots */
   regions: string[];
+  /** Movement techniques this demo best illustrates */
+  techniques?: string[];
 };
 
 /** All vetted, active institutional education videos */
@@ -270,6 +273,65 @@ export const INSTITUTIONAL_VIDEOS: Record<string, InstitutionalVideo> = {
     institution: "Dartmouth Health",
     source: "Dartmouth Health patient education",
     regions: ["leg", "hip", "balance", "core"],
+    techniques: ["sit-to-stand", "balance", "leg-strength", "step"],
+  },
+
+  // —— Additional technique-specific institutional demos (oEmbed verified) ——
+  nia_lower_strength: {
+    youtubeId: "TOKxtgKrGCQ",
+    title: "4 Lower Body Strength Exercises for Older Adults",
+    institution: "NIH / National Institute on Aging",
+    source: "NIA strength education",
+    regions: ["leg", "hip", "balance"],
+    techniques: ["sit-to-stand", "leg-strength", "hip-strength", "step", "wall-sit", "tke"],
+  },
+  mayo_band_strength: {
+    youtubeId: "P-DbBfHZHC8",
+    title: "Strengthening Exercise Bands and Weights (PT demonstration)",
+    institution: "Mayo Clinic",
+    source: "Mayo Clinic Patient Education — shoulder rehab",
+    regions: ["shoulder", "chest"],
+    techniques: ["rotator-cuff", "band-row", "shoulder-strength", "serratus"],
+  },
+  mayo_desk_five: {
+    youtubeId: "3QfMXwHGsKc",
+    title: "Mayo Clinic Minute: 5 exercises you can do without leaving your desk",
+    institution: "Mayo Clinic",
+    source: "Mayo Clinic Healthy Living Program",
+    regions: ["full", "leg", "shoulder", "balance"],
+    techniques: ["sit-to-stand", "wall-push", "calf-raise", "desk-mobility", "carry-walk"],
+  },
+  mayo_fab5: {
+    youtubeId: "T0_QWyAelWI",
+    title: "Mayo Clinic Minute: Fab 5 exercises to get you moving",
+    institution: "Mayo Clinic",
+    source: "Mayo Clinic Minute",
+    regions: ["full", "leg", "shoulder"],
+    techniques: ["sit-to-stand", "wall-push", "calf-raise", "leg-strength"],
+  },
+  mayo_low_back: {
+    youtubeId: "Ddgmo7NFu1o",
+    title: "The do's and don'ts of exercise with low back pain",
+    institution: "Mayo Clinic",
+    source: "Mayo Clinic sports medicine education",
+    regions: ["lowerBack", "back", "core"],
+    techniques: ["hip-hinge", "spinal-safe", "core-control", "bird-dog"],
+  },
+  mayo_move_work: {
+    youtubeId: "OW-NbZtBka0",
+    title: "Mayo Clinic Minute: Move more at work",
+    institution: "Mayo Clinic",
+    source: "Mayo Clinic Healthy Living Program",
+    regions: ["full", "neck", "thoracic"],
+    techniques: ["desk-mobility", "posture", "cervical"],
+  },
+  cleveland_superman: {
+    youtubeId: "uexOGyxLr7E",
+    title: "How to do the Superman exercise",
+    institution: "Cleveland Clinic",
+    source: "Cleveland Clinic Patient Education",
+    regions: ["back", "lowerBack", "core"],
+    techniques: ["back-extensor", "prone-strength", "posture"],
   },
 } as const;
 
@@ -325,6 +387,145 @@ export function videoForRegion(region: VideoRegion, titleOverride?: string) {
     source: v.source,
     institution: v.institution,
   };
+}
+
+/**
+ * Technique-specific institutional demos for proper form.
+ * Prefer these over broad region videos when a movement has a clear technique family.
+ */
+export type TechniqueKey =
+  | "chin-tuck"
+  | "neck-side"
+  | "cervical"
+  | "chest-open"
+  | "cat-cow"
+  | "spinal-flex"
+  | "spinal-safe"
+  | "hip-glute"
+  | "hip-flexor"
+  | "hamstring"
+  | "quad"
+  | "calf"
+  | "ankle"
+  | "wrist-hand"
+  | "thoracic-rotation"
+  | "scapular"
+  | "glute-bridge"
+  | "bird-dog"
+  | "sit-to-stand"
+  | "wall-push"
+  | "dead-bug"
+  | "step"
+  | "row-pull"
+  | "balance"
+  | "calf-raise"
+  | "carry-walk"
+  | "rotator-cuff"
+  | "serratus"
+  | "core-lateral"
+  | "hip-hinge"
+  | "knee-rom"
+  | "slr"
+  | "tke"
+  | "foot-intrinsic"
+  | "wrist-load"
+  | "wall-sit"
+  | "adductor"
+  | "cervical-iso"
+  | "desk-mobility"
+  | "full-body"
+  | "general"
+  | "leg-strength"
+  | "hip-strength"
+  | "posture";
+
+type VideoCatalogKey = keyof typeof INSTITUTIONAL_VIDEOS;
+
+/** Best institutional demo per technique (form + safety focused) */
+export const VIDEO_BY_TECHNIQUE: Record<TechniqueKey, VideoCatalogKey> = {
+  "chin-tuck": "mayo_workday",
+  "neck-side": "mayo_shoulders",
+  cervical: "mayo_workday",
+  "chest-open": "cleveland_chest",
+  "cat-cow": "cleveland_cat_cow",
+  "spinal-flex": "nia_back",
+  "spinal-safe": "mayo_low_back",
+  "hip-glute": "vha_lower_yoga",
+  "hip-flexor": "vha_lower_yoga",
+  hamstring: "nia_hamstring",
+  quad: "nia_flexibility_6",
+  calf: "nia_ankle",
+  ankle: "nia_ankle",
+  "wrist-hand": "mayo_or_stretch",
+  "thoracic-rotation": "cleveland_side_bend",
+  scapular: "mayo_shoulders",
+  "glute-bridge": "nia_lower_strength",
+  "bird-dog": "mayo_low_back",
+  "sit-to-stand": "dartmouth_standing",
+  "wall-push": "nia_wall_pushups",
+  "dead-bug": "vha_seated_core",
+  step: "nia_lower_strength",
+  "row-pull": "nia_upper_strength",
+  balance: "nia_balance_one_foot",
+  "calf-raise": "mayo_desk_five",
+  "carry-walk": "hopkins_move_more",
+  "rotator-cuff": "mayo_stretching_pt",
+  serratus: "mayo_band_strength",
+  "core-lateral": "vha_seated_core",
+  "hip-hinge": "mayo_low_back",
+  "knee-rom": "hopkins_movement",
+  slr: "nia_lower_strength",
+  tke: "nia_lower_strength",
+  "foot-intrinsic": "nia_ankle",
+  "wrist-load": "mayo_band_strength",
+  "wall-sit": "nia_lower_strength",
+  adductor: "vha_lower_yoga",
+  "cervical-iso": "mayo_shoulders",
+  "desk-mobility": "mayo_desk_five",
+  "full-body": "nia_full_workout",
+  general: "nia_flexibility_6",
+  "leg-strength": "nia_lower_strength",
+  "hip-strength": "nia_lower_strength",
+  posture: "mayo_workday",
+};
+
+/**
+ * Technique-specific video for proper demonstration.
+ * Falls back to region mapping if technique key is unknown.
+ */
+export function videoForTechnique(
+  technique: TechniqueKey | string,
+  titleOverride?: string
+) {
+  const key =
+    technique in VIDEO_BY_TECHNIQUE
+      ? VIDEO_BY_TECHNIQUE[technique as TechniqueKey]
+      : "nia_flexibility_6";
+  const v = INSTITUTIONAL_VIDEOS[key];
+  return {
+    youtubeId: v.youtubeId,
+    title: titleOverride ?? v.title,
+    source: v.source,
+    institution: v.institution,
+  };
+}
+
+/**
+ * Resolve the most specific institutional video for a library item.
+ * Order: explicit technique → region → general flexibility.
+ */
+export function videoForMovement(opts: {
+  technique?: TechniqueKey | string;
+  region?: VideoRegion | string;
+  title?: string;
+}) {
+  if (opts.technique && opts.technique in VIDEO_BY_TECHNIQUE) {
+    return videoForTechnique(opts.technique, opts.title);
+  }
+  if (opts.region && opts.region in VIDEO_BY_REGION) {
+    return videoForRegion(opts.region as VideoRegion, opts.title);
+  }
+  return videoForTechnique("general", opts.title);
 }
 
 /** Flat list of every catalog youtubeId (for audits / oEmbed re-checks) */

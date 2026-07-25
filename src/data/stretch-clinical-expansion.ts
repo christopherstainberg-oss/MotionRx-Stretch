@@ -4,7 +4,7 @@
  * Educational synthesis of widely used PT protocols—not a trial database.
  */
 import type { BodyPart, Difficulty, Stretch, StretchStep, StretchVariation } from "@/lib/types";
-import { videoForRegion } from "@/data/video-catalog";
+import { videoForTechnique } from "@/data/video-catalog";
 
 type Seed = Omit<Stretch, "durationBucket" | "slug" | "kind" | "clinical"> & {
   slug?: string;
@@ -81,7 +81,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
       { name: "Seated figure-four", difficulty: "beginner", description: "Chair version for desk breaks." },
       { name: "Wall-supported", difficulty: "beginner", description: "Feet on wall to reduce arm effort.", painMax: 5 },
     ]),
-    video: videoForRegion("hip", "Piriformis / glute stretch education"),
+    video: videoForTechnique("hip-glute", "Piriformis / glute stretch technique"),
     evidenceNotes:
       "Posterior hip mobility is commonly paired with activity modification in buttock-dominant presentations; programs often track pain ratings and walking/sitting tolerance.",
     clinical: clinical(
@@ -118,7 +118,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
     variations: vars("tfl-itb-standing", [
       { name: "Side-lying ITB stretch", difficulty: "intermediate", description: "More load through lateral tissues.", painMax: 3 },
     ]),
-    video: videoForRegion("hip", "Lateral hip mobility"),
+    video: videoForTechnique("hip-glute", "Lateral hip mobility technique"),
     evidenceNotes:
       "Lateral hip mobility plus glute med strengthening is common when lateral knee/hip symptoms limit walking or stairs; function often tracked with LEFS-style activity items.",
     clinical: clinical(
@@ -156,7 +156,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
       { name: "Seated towel stretch", difficulty: "beginner", description: "Loop towel around toes, pull gently.", painMax: 5 },
       { name: "Big-toe extension stretch", difficulty: "beginner", description: "Pull big toe toward shin gently." },
     ]),
-    video: videoForRegion("ankle", "Foot and calf mobility"),
+    video: videoForTechnique("calf", "Foot and calf mobility technique"),
     evidenceNotes:
       "Calf–plantar mobility and load management are foundational in plantar heel pain care pathways; outcomes often include first-step pain ratings and walking tolerance.",
     clinical: clinical(
@@ -194,7 +194,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
       { name: "Standing side lunge stretch", difficulty: "intermediate", description: "Side lunge with pelvis square.", painMax: 3 },
       { name: "Supine strap-assisted", difficulty: "beginner", description: "Strap on foot, open hip gently.", painMax: 5 },
     ]),
-    video: videoForRegion("hip", "Adductor mobility education"),
+    video: videoForTechnique("adductor", "Adductor / groin mobility technique"),
     evidenceNotes:
       "Groin/adductor mobility is used when hip abduction or change-of-direction tasks are limited; functional goals often include lateral movement comfort.",
     clinical: clinical(
@@ -232,7 +232,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
       { name: "Cross-body horizontal adduction", difficulty: "beginner", description: "Easier alternative for many people.", painMax: 5 },
       { name: "Doorway posterior capsule", difficulty: "intermediate", description: "Standing variation with support." },
     ]),
-    video: videoForRegion("shoulder", "Posterior shoulder mobility"),
+    video: videoForTechnique("rotator-cuff", "Posterior shoulder mobility technique (PT demo)"),
     evidenceNotes:
       "Posterior capsule mobility is frequently prescribed in overhead-athlete and shoulder hypomobility programs; function tracked with reach/overhead tasks and pain ratings.",
     clinical: clinical(
@@ -269,7 +269,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
     variations: vars("lat-childs-side", [
       { name: "Child’s pose side walk", difficulty: "beginner", description: "Hands walk to one side in child’s pose.", painMax: 5 },
     ]),
-    video: videoForRegion("back", "Lat and trunk mobility"),
+    video: videoForTechnique("thoracic-rotation", "Lat and trunk mobility technique"),
     evidenceNotes:
       "Lat length and thoracic mobility support overhead function; programs often track reach height and pain with overhead ADLs.",
     clinical: clinical(
@@ -306,7 +306,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
     variations: vars("scalene-stretch", [
       { name: "With rotation bias", difficulty: "intermediate", description: "Slight turn of nose for scalene bias—gentle only.", painMax: 3 },
     ]),
-    video: videoForRegion("neck", "Cervical side-bend mobility"),
+    video: videoForTechnique("neck-side", "Cervical side-bend technique"),
     evidenceNotes:
       "Gentle cervical mobility is common in NDI-oriented neck pain programs emphasizing pain reduction and function (looking, driving, desk work).",
     clinical: clinical(
@@ -343,7 +343,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
     variations: vars("suboccipital-nod", [
       { name: "Supine towel support", difficulty: "beginner", description: "Lie down with small towel under skull.", painMax: 5 },
     ]),
-    video: videoForRegion("neck", "Deep neck flexor education"),
+    video: videoForTechnique("chin-tuck", "Deep neck flexor / chin-tuck technique"),
     evidenceNotes:
       "Deep neck flexor training and upper cervical mobility appear in many neck pain pathways aiming to improve NDI and pain intensity scores.",
     clinical: clinical(
@@ -380,7 +380,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
     variations: vars("prayer-wrist", [
       { name: "Table edge stretch", difficulty: "intermediate", description: "Fingers on table, gentle lean.", painMax: 3 },
     ]),
-    video: videoForRegion("general", "Wrist mobility education"),
+    video: videoForTechnique("wrist-hand", "Wrist mobility technique"),
     evidenceNotes:
       "Wrist/forearm mobility plus load management is common for activity-related wrist pain; function tracked with grip/ADLs and pain scales.",
     clinical: clinical(
@@ -417,7 +417,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
     variations: vars("elbow-extensor-stretch", [
       { name: "Flexor (golfer’s elbow region) stretch", difficulty: "beginner", description: "Palm up, extend wrist gently." },
     ]),
-    video: videoForRegion("general", "Elbow tendon region mobility"),
+    video: videoForTechnique("wrist-load", "Elbow / forearm tendon region mobility"),
     evidenceNotes:
       "Stretching plus progressive loading is common in lateral elbow tendinopathy care; outcomes include pain-free grip and patient-rated tennis elbow scores.",
     clinical: clinical(
@@ -455,7 +455,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
       { name: "Side-lying quad stretch", difficulty: "beginner", description: "Easier balance and back control.", painMax: 5 },
       { name: "Standing quad", difficulty: "beginner", description: "Classic wall-supported version." },
     ]),
-    video: videoForRegion("hip", "Quadriceps flexibility"),
+    video: videoForTechnique("quad", "Quadriceps flexibility technique"),
     evidenceNotes:
       "Quad flexibility and hip extension mobility are common when kneeling, running, or stairs are limited; function tracked with LEFS-type tasks.",
     clinical: clinical(
@@ -493,7 +493,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
       { name: "Strap stretch", difficulty: "beginner", description: "No doorway needed.", painMax: 5 },
       { name: "Seated long-sit hinge", difficulty: "intermediate", description: "Tall spine then hinge.", painMax: 3 },
     ]),
-    video: videoForRegion("hip", "Hamstring mobility education"),
+    video: videoForTechnique("hamstring", "Hamstring mobility technique"),
     evidenceNotes:
       "Hamstring mobility is common when forward bend or sit-to-stand mechanics are limited; outcomes include reach tasks and activity pain scores.",
     clinical: clinical(
@@ -530,7 +530,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
     variations: vars("si-figure-glute-med", [
       { name: "Hands-behind-thigh only", difficulty: "beginner", description: "Minimal load version.", painMax: 5 },
     ]),
-    video: videoForRegion("back", "Pelvic-hip mobility basics"),
+    video: videoForTechnique("hip-glute", "Pelvic-hip mobility technique"),
     evidenceNotes:
       "Pelvic-hip mobility is dosed carefully in SI-region irritability; function goals often include rolling, walking, and sit tolerance with pain monitoring.",
     clinical: clinical(
@@ -567,7 +567,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
     variations: vars("jaw-masseter-release", [
       { name: "Side-glide gentle", difficulty: "intermediate", description: "Tiny side shifts if pain-free.", painMax: 3 },
     ]),
-    video: videoForRegion("neck", "Jaw mobility education"),
+    video: videoForTechnique("cervical", "Jaw / cervical region mobility education"),
     evidenceNotes:
       "TMJ-region mobility is typically gentle and combined with habit change; outcomes include pain ratings with chewing and opening range.",
     clinical: clinical(
@@ -604,7 +604,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
     variations: vars("knee-heel-to-glute-side", [
       { name: "Strap-assisted", difficulty: "beginner", description: "Use strap if you cannot reach the ankle.", painMax: 5 },
     ]),
-    video: videoForRegion("hip", "Quad stretch alternatives"),
+    video: videoForTechnique("quad", "Quad stretch alternative technique"),
     evidenceNotes:
       "Knee flexion and quad mobility support kneeling and cycling-type tasks; pain and KOOS-style function often guide progression.",
     clinical: clinical(
@@ -641,7 +641,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
     variations: vars("shin-tibialis-stretch", [
       { name: "Standing toe-point stretch", difficulty: "beginner", description: "Top of toes on floor behind you, gentle press.", painMax: 4 },
     ]),
-    video: videoForRegion("ankle", "Shin and ankle mobility"),
+    video: videoForTechnique("ankle", "Shin and ankle mobility technique"),
     evidenceNotes:
       "Anterior compartment mobility is used when shin tightness limits walking; outcomes include walking tolerance and pain ratings.",
     clinical: clinical(
@@ -678,7 +678,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
     variations: vars("hand-intrinsic-stretch", [
       { name: "Prayer stretch focus", difficulty: "beginner", description: "Palms together variation.", painMax: 5 },
     ]),
-    video: videoForRegion("general", "Hand mobility basics"),
+    video: videoForTechnique("wrist-hand", "Hand mobility technique"),
     evidenceNotes:
       "Hand mobility supports ADLs measured on QuickDASH-type scales; often combined with tendon glides and graded grip.",
     clinical: clinical(
@@ -715,7 +715,7 @@ export const ADDITIONAL_STRETCH_SEEDS: Seed[] = [
     variations: vars("scapular-corner-pec", [
       { name: "Single-arm doorway", difficulty: "beginner", description: "One side at a time.", painMax: 5 },
     ]),
-    video: videoForRegion("shoulder", "Chest opening education"),
+    video: videoForTechnique("chest-open", "Chest opening stretch technique"),
     evidenceNotes:
       "Pec stretching with scapular strengthening is common in postural and shoulder programs aiming to improve reach and pain ratings.",
     clinical: clinical(

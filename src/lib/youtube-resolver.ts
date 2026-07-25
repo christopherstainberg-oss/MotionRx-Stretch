@@ -108,6 +108,12 @@ export async function resolveLiveVideo(opts: {
   }
 
   for (const v of candidatesForRegion(region)) push(v);
+  // Prefer technique-tagged catalog peers when preferred meta has techniques
+  if (preferredMeta?.techniques?.length) {
+    for (const v of allCatalogVideos()) {
+      if (v.techniques?.some((t) => preferredMeta.techniques!.includes(t))) push(v);
+    }
+  }
   for (const v of allCatalogVideos()) push(v);
 
   // Pass 1: prefer confirmed-live
