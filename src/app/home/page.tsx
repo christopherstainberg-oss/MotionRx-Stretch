@@ -68,7 +68,10 @@ export default function HomePage() {
             {[
               {
                 label: "Stretch catalog",
-                value: String(LIBRARY_STATS.totalEntries),
+                value:
+                  LIBRARY_STATS.capacity >= 1000
+                    ? `${Math.round(LIBRARY_STATS.capacity / 1000)}k`
+                    : String(LIBRARY_STATS.capacity),
                 hint: `${LIBRARY_STATS.baseCount} clinical bases`,
               },
               {

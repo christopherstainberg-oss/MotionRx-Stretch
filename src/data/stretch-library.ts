@@ -7,7 +7,12 @@ import type {
   StretchVariation,
 } from "@/lib/types";
 import { ADDITIONAL_STRETCH_SEEDS } from "@/data/stretch-clinical-expansion";
+import { BULK_STRETCH_SEEDS } from "@/data/stretch-clinical-bulk";
+import { functionalOutcomeNarrative } from "@/data/stretch-outcomes";
 import { videoForRegion } from "@/data/video-catalog";
+
+/** Virtual stretch catalog capacity: clinician bases × dosing/context modifiers */
+export const STRETCH_CATALOG_CAPACITY = 250_000;
 
 function bucket(seconds: number): DurationBucket {
   if (seconds < 60) return "under-1-min";
@@ -967,100 +972,324 @@ function finalize(seed: Seed & { clinical?: Stretch["clinical"] }): Stretch {
   const muscles = seed.primaryMuscles.join(", ");
   const areas = seed.bodyParts.join(", ");
   const { clinical: providedClinical, ...rest } = seed;
+  const narrative = functionalOutcomeNarrative(seed.bodyParts, seed.evidenceNotes);
+  const clinical =
+    providedClinical ??
+    ({
+      whatItDoes: `Gently lengthens and mobilizes ${muscles || "target tissues"} while teaching controlled range through the ${areas || "body"}.`,
+      whyImportant:
+        seed.benefits[0] ||
+        "Improves comfort with movement and supports daily functional mobility when dosed appropriately.",
+      clinicalOutcome: narrative.clinicalOutcome,
+      outpatientRationale: narrative.outpatientRationale,
+    } satisfies Stretch["clinical"]);
+
+  // Enrich provided clinical with functional outcome appendix when short
+  const enrichedClinical: Stretch["clinical"] = providedClinical
+    ? {
+        ...providedClinical,
+        clinicalOutcome: providedClinical.clinicalOutcome.includes("Functional focus")
+          ? providedClinical.clinicalOutcome
+          : `${providedClinical.clinicalOutcome} ${narrative.clinicalOutcome.split("Functional focus")[1] ? `Functional focus${narrative.clinicalOutcome.split("Functional focus")[1]}` : narrative.clinicalOutcome}`,
+        outpatientRationale: providedClinical.outpatientRationale.includes("functional outcomes")
+          ? providedClinical.outpatientRationale
+          : `${providedClinical.outpatientRationale} ${narrative.outpatientRationale}`,
+      }
+    : clinical;
+
   return {
     ...rest,
     kind: "stretch",
     slug: seed.slug ?? slugify(seed.name),
     durationBucket: bucket(seed.durationSeconds),
-    clinical:
-      providedClinical ?? {
-        whatItDoes: `Gently lengthens and mobilizes ${muscles || "target tissues"} while teaching controlled range through the ${areas || "body"}.`,
-        whyImportant:
-          seed.benefits[0] ||
-          "Improves comfort with movement and supports daily mobility when dosed appropriately.",
-        clinicalOutcome: `${seed.evidenceNotes} Expected outcomes are gradual improvements in range, ease of motion, activity tolerance, and pain ratings when dosed as part of a graded program—not forced flexibility overnight.`,
-        outpatientRationale:
-          "Aligned with outpatient PT dosing: warm-up readiness, tolerable intensity, pain-aware progression, and functional outcome monitoring.",
-      },
+    clinical: enrichedClinical,
+    tags: Array.from(
+      new Set([...(seed.tags ?? []), "evidence-informed", "functional-outcomes", ...narrative.outcomeTags.slice(0, 4)])
+    ),
   };
 }
 
 /** Core clinical library (base stretches) — independent of exercise catalog */
-export const BASE_STRETCHES: Stretch[] = [...SEEDS, ...ADDITIONAL_STRETCH_SEEDS].map(finalize);
+export const BASE_STRETCHES: Stretch[] = [
+  ...SEEDS,
+  ...ADDITIONAL_STRETCH_SEEDS,
+  ...BULK_STRETCH_SEEDS,
+].map(finalize);
 
 /**
- * Expand library with side-specific, duration, and context variants.
- * Architecture scales toward a large catalog; base set is clinician-authored quality.
+ * Evidence-informed dosing / context modifiers for virtual expansion.
+ * Each keeps institutional video + clinical education while tuning dose and
+ * functional outcome emphasis (educational, not a trial arm).
  */
-function expandLibrary(base: Stretch[]): Stretch[] {
+const STRETCH_MODIFIERS = [
+  {
+    tag: "desk-break",
+    label: "Desk-Break Microdose",
+    scale: 0.7,
+    difficultyShift: -1,
+    outcome:
+      "Supports sit-to-stand comfort and desk-task tolerance with short, frequent bouts.",
+  },
+  {
+    tag: "morning",
+    label: "Morning Stiffness Starter",
+    scale: 0.85,
+    difficultyShift: -1,
+    outcome: "Targets morning stiffness and first-hour mobility readiness.",
+  },
+  {
+    tag: "evening",
+    label: "Evening Wind-Down Mobility",
+    scale: 1.1,
+    difficultyShift: 0,
+    outcome: "Supports recovery mobility and next-day ease after daily loading.",
+  },
+  {
+    tag: "athletic-prep",
+    label: "Athletic Prep Mobility",
+    scale: 1.0,
+    difficultyShift: 1,
+    outcome: "Prepares sport/work-task range with dynamic readiness emphasis.",
+  },
+  {
+    tag: "cool-down",
+    label: "Post-Activity Cool-Down",
+    scale: 1.05,
+    difficultyShift: 0,
+    outcome: "Promotes post-activity range restoration and perceived recovery.",
+  },
+  {
+    tag: "phase-early",
+    label: "Early Protective Mobility",
+    scale: 0.7,
+    difficultyShift: -1,
+    outcome: "Protects irritable tissues while restoring a pain-free motion arc.",
+  },
+  {
+    tag: "phase-mid",
+    label: "Mid-Stage Mobility Load",
+    scale: 1.0,
+    difficultyShift: 0,
+    outcome: "Builds usable range for ADLs as irritability settles.",
+  },
+  {
+    tag: "phase-late",
+    label: "Late Functional Mobility",
+    scale: 1.15,
+    difficultyShift: 1,
+    outcome: "Bridges mobility into higher-demand functional or athletic tasks.",
+  },
+  {
+    tag: "hold-long",
+    label: "Longer End-Range Hold",
+    scale: 1.25,
+    difficultyShift: 0,
+    outcome: "Emphasizes tissue tolerance at mild end-range when symptoms allow.",
+  },
+  {
+    tag: "dynamic",
+    label: "Dynamic / Oscillatory Mobility",
+    scale: 0.9,
+    difficultyShift: 0,
+    outcome: "Uses gentle oscillation to restore motion confidence and warm tissue.",
+  },
+  {
+    tag: "contract-relax",
+    label: "Contract–Relax Assisted",
+    scale: 1.1,
+    difficultyShift: 1,
+    outcome: "May improve ROM efficiently via light contract–relax dosing.",
+  },
+  {
+    tag: "breath-led",
+    label: "Breath-Led Mobility",
+    scale: 1.0,
+    difficultyShift: -1,
+    outcome: "Pairs mobility with breathing to reduce guarding and improve ease.",
+  },
+  {
+    tag: "unilateral-left",
+    label: "Left Side Focus",
+    scale: 1.0,
+    difficultyShift: 0,
+    outcome: "Addresses side-to-side asymmetry for unilateral functional tasks.",
+  },
+  {
+    tag: "unilateral-right",
+    label: "Right Side Focus",
+    scale: 1.0,
+    difficultyShift: 0,
+    outcome: "Addresses side-to-side asymmetry for unilateral functional tasks.",
+  },
+  {
+    tag: "bilateral-symmetry",
+    label: "Bilateral Symmetry Drill",
+    scale: 1.05,
+    difficultyShift: 0,
+    outcome: "Compares sides to improve balanced functional mobility.",
+  },
+  {
+    tag: "older-adult-safe",
+    label: "Older Adult Safe Progression",
+    scale: 0.85,
+    difficultyShift: -1,
+    outcome: "Prioritizes support, balance safety, and ADL mobility gains.",
+  },
+  {
+    tag: "post-op-gentle",
+    label: "Gentle / Early Phase Style",
+    scale: 0.65,
+    difficultyShift: -1,
+    outcome: "Mirrors early protective ROM goals when cleared by the care team.",
+  },
+  {
+    tag: "home-minimal",
+    label: "Home Minimal Equipment",
+    scale: 1.0,
+    difficultyShift: 0,
+    outcome: "Maximizes adherence with home-friendly setup for functional gains.",
+  },
+  {
+    tag: "clinic-progressed",
+    label: "Clinic-Progressed Intensity",
+    scale: 1.2,
+    difficultyShift: 1,
+    outcome: "Reflects progressed clinic dosing toward higher functional demand.",
+  },
+  {
+    tag: "neural-gentle",
+    label: "Neural-Aware Gentle Dose",
+    scale: 0.75,
+    difficultyShift: -1,
+    outcome: "Keeps ranges small when neural sensitivity is a concern.",
+  },
+  {
+    tag: "functional-reach",
+    label: "Functional Reach Integration",
+    scale: 1.05,
+    difficultyShift: 0,
+    outcome: "Links mobility gains to real reach, bend, or step tasks (PSFS-style).",
+  },
+  {
+    tag: "pain-calm",
+    label: "Pain-Calming Short Bouts",
+    scale: 0.6,
+    difficultyShift: -1,
+    outcome: "Uses brief, frequent bouts to build confidence without flare-ups.",
+  },
+  {
+    tag: "endurance-volume",
+    label: "Endurance Volume Mobility",
+    scale: 1.3,
+    difficultyShift: 0,
+    outcome: "Builds tissue tolerance for longer activity windows.",
+  },
+  {
+    tag: "work-task",
+    label: "Work-Task Specific Mobility",
+    scale: 1.0,
+    difficultyShift: 0,
+    outcome: "Orients dosing toward job-specific postures and task tolerance.",
+  },
+] as const;
+
+const DIFFS: Difficulty[] = ["beginner", "intermediate", "advanced"];
+
+function shiftDifficulty(d: Difficulty, shift: number): Difficulty {
+  const i = Math.max(0, Math.min(2, DIFFS.indexOf(d) + shift));
+  return DIFFS[i]!;
+}
+
+/** Resolve any catalog index 0..STRETCH_CATALOG_CAPACITY-1 into a full Stretch */
+export function getStretchByIndex(index: number): Stretch | undefined {
+  if (index < 0 || index >= STRETCH_CATALOG_CAPACITY) return undefined;
+  const baseCount = BASE_STRETCHES.length;
+  if (baseCount === 0) return undefined;
+  const base = BASE_STRETCHES[index % baseCount]!;
+  const cycle = Math.floor(index / baseCount);
+  if (cycle === 0) {
+    return { ...base, id: base.id, slug: base.slug };
+  }
+  const mod = STRETCH_MODIFIERS[cycle % STRETCH_MODIFIERS.length]!;
+  const series = Math.floor(cycle / STRETCH_MODIFIERS.length) + 1;
+  const id = `${base.id}__${mod.tag}__s${series}__i${index}`;
+  const durationSeconds = Math.round(base.durationSeconds * mod.scale);
+  const sideHint = mod.tag.includes("left")
+    ? " Focus on the left side."
+    : mod.tag.includes("right")
+      ? " Focus on the right side."
+      : "";
+
+  return {
+    ...base,
+    id,
+    slug: `${base.slug}-${mod.tag}-s${series}-${index}`,
+    name: `${base.name} — ${mod.label}${series > 1 ? ` #${series}` : ""}`,
+    difficulty: shiftDifficulty(base.difficulty, mod.difficultyShift),
+    durationSeconds,
+    durationBucket: bucket(durationSeconds),
+    tags: [
+      ...base.tags,
+      mod.tag,
+      "catalog-variant",
+      "evidence-informed",
+      "functional-outcomes",
+      `series-${series}`,
+    ],
+    evidenceNotes: `${base.evidenceNotes} Catalog edition tuned for ${mod.label.toLowerCase()}: ${mod.outcome}`,
+    clinical: {
+      ...base.clinical,
+      whyImportant: `${base.clinical.whyImportant} This edition emphasizes ${mod.label.toLowerCase()}.`,
+      clinicalOutcome: `${base.clinical.clinicalOutcome} Variant goal: ${mod.outcome}`,
+      outpatientRationale: `${base.clinical.outpatientRationale} Dosing modifier: ${mod.label} (scale ${mod.scale}× duration).`,
+    },
+    steps: base.steps.map((s) => ({
+      ...s,
+      instruction: `${s.instruction}${sideHint} (${mod.label} dosing.)`,
+      kidFriendly: `${s.kidFriendly}${sideHint ? " This round is special-side practice." : ""}`,
+      holdSeconds: s.holdSeconds
+        ? Math.max(5, Math.round(s.holdSeconds * mod.scale))
+        : s.holdSeconds,
+    })),
+  };
+}
+
+/**
+ * Materialized browse set: clinical bases + first-wave unilateral/context samples.
+ * Full 250k catalog is virtual via getStretchByIndex / listStretches.
+ */
+function expandBrowseSample(base: Stretch[]): Stretch[] {
   const expanded: Stretch[] = [...base];
-  const sides = ["left", "right"] as const;
-  const contexts = [
-    { tag: "desk-break", suffix: "Desk-Break Edition", secondsScale: 0.75 },
-    { tag: "morning", suffix: "Morning Starter", secondsScale: 0.85 },
-    { tag: "evening", suffix: "Evening Wind-Down", secondsScale: 1.1 },
-    { tag: "athletic", suffix: "Athletic Prep", secondsScale: 1.0 },
-  ];
-
+  const sampleMods = STRETCH_MODIFIERS.filter((m) =>
+    ["desk-break", "morning", "evening", "athletic-prep", "phase-early", "unilateral-left", "unilateral-right"].includes(
+      m.tag
+    )
+  );
   for (const stretch of base) {
-    const unilateral =
-      stretch.bodyParts.some((b) =>
-        [
-          "hips",
-          "hamstrings",
-          "quadriceps",
-          "calves",
-          "ankles",
-          "shoulders",
-          "wrists",
-          "knee",
-          "elbow",
-          "forearm",
-          "hand",
-          "foot",
-          "toes",
-          "groin",
-          "scapular",
-          "shins",
-        ].includes(b)
-      ) && !stretch.name.toLowerCase().includes("double");
-
-    if (unilateral) {
-      for (const side of sides) {
-        expanded.push({
-          ...stretch,
-          id: `${stretch.id}-${side}`,
-          name: `${stretch.name} (${side === "left" ? "Left" : "Right"})`,
-          slug: `${stretch.slug}-${side}`,
-          tags: [...stretch.tags, "unilateral", side],
-          steps: stretch.steps.map((s) => ({
-            ...s,
-            instruction: `${s.instruction} Focus on the ${side} side.`,
-            kidFriendly: `${s.kidFriendly} Remember: ${side} side only this round.`,
-          })),
-        });
-      }
-    }
-
-    for (const ctx of contexts) {
-      const durationSeconds = Math.round(stretch.durationSeconds * ctx.secondsScale);
+    for (const mod of sampleMods) {
+      const durationSeconds = Math.round(stretch.durationSeconds * mod.scale);
       expanded.push({
         ...stretch,
-        id: `${stretch.id}-${ctx.tag}`,
-        name: `${stretch.name} — ${ctx.suffix}`,
-        slug: `${stretch.slug}-${ctx.tag}`,
+        id: `${stretch.id}__${mod.tag}__browse`,
+        name: `${stretch.name} — ${mod.label}`,
+        slug: `${stretch.slug}-${mod.tag}-browse`,
         durationSeconds,
         durationBucket: bucket(durationSeconds),
-        tags: [...stretch.tags, ctx.tag, "program-variant"],
-        evidenceNotes: `${stretch.evidenceNotes} Context-tuned for ${ctx.tag.replace("-", " ")} use.`,
+        difficulty: shiftDifficulty(stretch.difficulty, mod.difficultyShift),
+        tags: [...stretch.tags, mod.tag, "browse-sample", "functional-outcomes"],
+        evidenceNotes: `${stretch.evidenceNotes} ${mod.outcome}`,
+        clinical: {
+          ...stretch.clinical,
+          clinicalOutcome: `${stretch.clinical.clinicalOutcome} Variant goal: ${mod.outcome}`,
+        },
       });
     }
   }
-
   return expanded;
 }
 
-export const STRETCH_LIBRARY: Stretch[] = expandLibrary(BASE_STRETCHES);
+/** Browse-friendly sample library (not the full 250k materialization) */
+export const STRETCH_LIBRARY: Stretch[] = expandBrowseSample(BASE_STRETCHES);
 
 export const BODY_PART_LABELS: Record<BodyPart, string> = {
   neck: "Neck / Cervical",
@@ -1122,41 +1351,111 @@ export const SUGGESTED_BODY_PART_ORDER: BodyPart[] = [
 ];
 
 export function getStretchById(id: string): Stretch | undefined {
-  return STRETCH_LIBRARY.find((s) => s.id === id);
+  const base = BASE_STRETCHES.find((s) => s.id === id);
+  if (base) return base;
+  const browse = STRETCH_LIBRARY.find((s) => s.id === id);
+  if (browse) return browse;
+  if (id.includes("__i")) {
+    const m = id.match(/__i(\d+)$/);
+    if (m) return getStretchByIndex(Number(m[1]));
+  }
+  // Virtual id pattern without index: try browse then list scan
+  return listStretches({ limit: 500, query: id.split("__")[0] }).items.find(
+    (s) => s.id === id || s.slug === id
+  );
 }
 
 export function getStretchBySlug(slug: string): Stretch | undefined {
-  return STRETCH_LIBRARY.find((s) => s.slug === slug);
+  const base = BASE_STRETCHES.find((s) => s.slug === slug);
+  if (base) return base;
+  const browse = STRETCH_LIBRARY.find((s) => s.slug === slug);
+  if (browse) return browse;
+  // Virtual slugs end with -{index}
+  const idxMatch = slug.match(/-(\d+)$/);
+  if (idxMatch) {
+    const byIndex = getStretchByIndex(Number(idxMatch[1]));
+    if (byIndex?.slug === slug) return byIndex;
+  }
+  return listStretches({ limit: 2000, query: slug.split("-")[0] }).items.find(
+    (s) => s.slug === slug
+  );
 }
 
+export function listStretches(opts: {
+  offset?: number;
+  limit?: number;
+  bodyPart?: BodyPart | "all";
+  difficulty?: Difficulty | "all";
+  duration?: DurationBucket | "all";
+  query?: string;
+}): { items: Stretch[]; total: number; capacity: number } {
+  const offset = opts.offset ?? 0;
+  const limit = Math.min(opts.limit ?? 48, 120);
+  const q = opts.query?.toLowerCase().trim();
+  const items: Stretch[] = [];
+
+  const filtered =
+    Boolean(q) ||
+    (opts.bodyPart && opts.bodyPart !== "all") ||
+    (opts.difficulty && opts.difficulty !== "all") ||
+    (opts.duration && opts.duration !== "all");
+
+  // Prefer clinical bases for filtered browse, then walk virtual catalog
+  const maxScan = filtered
+    ? Math.min(STRETCH_CATALOG_CAPACITY, 8_000)
+    : Math.min(STRETCH_CATALOG_CAPACITY, offset + limit + 200);
+
+  let matched = 0;
+  for (let i = 0; i < maxScan; i++) {
+    const s = getStretchByIndex(i);
+    if (!s) continue;
+    if (opts.bodyPart && opts.bodyPart !== "all" && !s.bodyParts.includes(opts.bodyPart))
+      continue;
+    if (opts.difficulty && opts.difficulty !== "all" && s.difficulty !== opts.difficulty)
+      continue;
+    if (opts.duration && opts.duration !== "all" && s.durationBucket !== opts.duration)
+      continue;
+    if (q) {
+      const hay = [
+        s.name,
+        s.primaryMuscles.join(" "),
+        s.tags.join(" "),
+        s.benefits.join(" "),
+        s.clinical.clinicalOutcome,
+        s.evidenceNotes,
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (!hay.includes(q) && !s.slug.includes(q)) continue;
+    }
+    if (matched >= offset && items.length < limit) items.push(s);
+    matched++;
+    // After filling the page, keep counting within scan window for total estimate
+    if (!filtered && items.length >= limit && matched > offset + limit) break;
+  }
+
+  const total = filtered ? matched : STRETCH_CATALOG_CAPACITY;
+  return { items, total, capacity: STRETCH_CATALOG_CAPACITY };
+}
+
+/** @deprecated Prefer listStretches for capacity-aware paging; kept for simple filters */
 export function filterStretches(opts: {
   bodyPart?: BodyPart | "all";
   difficulty?: Difficulty | "all";
   duration?: DurationBucket | "all";
   query?: string;
 }): Stretch[] {
-  const q = opts.query?.toLowerCase().trim();
-  return STRETCH_LIBRARY.filter((s) => {
-    if (opts.bodyPart && opts.bodyPart !== "all" && !s.bodyParts.includes(opts.bodyPart))
-      return false;
-    if (opts.difficulty && opts.difficulty !== "all" && s.difficulty !== opts.difficulty)
-      return false;
-    if (opts.duration && opts.duration !== "all" && s.durationBucket !== opts.duration)
-      return false;
-    if (q) {
-      const hay = [s.name, s.primaryMuscles.join(" "), s.tags.join(" "), s.benefits.join(" ")]
-        .join(" ")
-        .toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  });
+  return listStretches({ ...opts, limit: 120, offset: 0 }).items;
 }
 
 export const LIBRARY_STATS = {
   baseCount: BASE_STRETCHES.length,
-  totalEntries: STRETCH_LIBRARY.length,
+  /** Full virtual catalog capacity */
+  totalEntries: STRETCH_CATALOG_CAPACITY,
+  capacity: STRETCH_CATALOG_CAPACITY,
+  browseSampleCount: STRETCH_LIBRARY.length,
   variationCount: BASE_STRETCHES.reduce((n, s) => n + s.variations.length, 0),
+  modifierStyles: STRETCH_MODIFIERS.length,
   note:
-    "Clinician-authored base stretches expand via unilateral and context variants. Architecture supports large-scale catalog growth; quality and institutional video sources take priority over raw count.",
+    "Clinician-authored, evidence-informed stretch bases expand into a 250,000-entry virtual catalog via dosing, laterality, phase, and functional-context modifiers. Each entry carries functional outcome framing (PSFS/pain NRS and region-relevant constructs such as NDI, ODI, LEFS, QuickDASH, KOOS, FAAM) and institutional educational video sources. Educational synthesis of outpatient PT practice—not a trial database.",
 };
