@@ -15,6 +15,11 @@ import { pickHomeVariationId } from "@/data/home-variations";
 import { summarizeUserMedications } from "@/data/medications";
 import { summarizeAdlEntries } from "@/data/adls";
 import { summarizeClinicalSymptoms } from "@/data/clinical-symptoms";
+import {
+  buildClinicalRehabPlan,
+  clinicalMovementBoost,
+  type ClinicalRehabPlan,
+} from "@/lib/clinical-rehab-intel";
 import type {
   BodyPart,
   Difficulty,
@@ -31,6 +36,7 @@ export { matchDescriptorsFromText, analyzeParagraphDescriptors } from "@/data/pa
 export { matchConditionsFromText, summarizeConditions } from "@/data/clinical-conditions";
 export { buildClinicalSafetyPlan } from "@/data/clinical-safety";
 export { analyzeAssessmentAdjectives } from "@/data/assessment-adjectives";
+export { buildClinicalRehabPlan } from "@/lib/clinical-rehab-intel";
 
 const DIFFICULTY_RANK: Record<Difficulty, number> = {
   beginner: 1,
@@ -226,11 +232,19 @@ function scoreMovement(
   input: SymptomInput,
   areaPain: number,
   kind: MovementKind,
-  descHints?: ReturnType<typeof summarizeDescriptors>
+  descHints?: ReturnType<typeof summarizeDescriptors>,
+  rehab?: ClinicalRehabPlan,
+  movementId?: string
 ): number {
   let score = 0;
+  // Priority-weighted area match (primary complaint regions first)
+  const priority = rehab?.priorityAreas?.length ? rehab.priorityAreas : input.areas;
+  for (let i = 0; i < priority.length; i++) {
+    const area = priority[i]!;
+    if (bodyParts.includes(area)) score += Math.max(3, 10 - i * 1.5);
+  }
   for (const area of input.areas) {
-    if (bodyParts.includes(area)) score += 5;
+    if (bodyParts.includes(area)) score += 3;
   }
   const blob = [name, tags.join(" "), benefits.join(" ")].join(" ").toLowerCase();
   for (const symptom of input.symptoms) {
@@ -241,11 +255,18 @@ function scoreMovement(
   }
   if (input.concernParagraph) {
     const p = input.concernParagraph.toLowerCase();
-    for (const t of tags) if (p.includes(t)) score += 1;
+    // Token overlap with free-text story for injury-specificity
+    const tokens = name
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length >= 4);
+    for (const t of tokens) if (p.includes(t)) score += 2.5;
+    for (const t of tags) if (p.includes(t)) score += 1.5;
     for (const bp of bodyParts) if (p.includes(bp.replace("-", " "))) score += 2;
   }
   if (areaPain >= 5 && kind === "stretch") score += 1;
   if (areaPain >= 5 && tags.includes("neural")) score -= 4;
+  if (areaPain >= 6 && (blob.includes("end-range") || blob.includes("aggressive"))) score -= 4;
   if (tags.includes("warmup") || tags.includes("activation")) score += 1;
 
   // Clinical pain descriptor influence
@@ -269,6 +290,27 @@ function scoreMovement(
     if (descHints.biases.includes("prefer-extension") && blob.includes("extension")) score += 2;
     if (descHints.biases.includes("prefer-flexion") && blob.includes("flexion")) score += 2;
     if (descHints.biases.includes("defer-to-provider")) score -= 2;
+  }
+
+  // Evidence-informed rehab phase / injury pattern boosts
+  if (rehab && movementId) {
+    score += clinicalMovementBoost(rehab, {
+      id: movementId,
+      kind,
+      name,
+      tags,
+      bodyParts,
+      benefits,
+    });
+  }
+
+  // Medical history soft penalties (educational)
+  const hist = `${input.pastMedicalHistory || ""} ${input.currentMedicalHistory || ""}`.toLowerCase();
+  if (/osteopor|fracture risk/i.test(hist) && (blob.includes("jump") || blob.includes("twist"))) {
+    score -= 8;
+  }
+  if (/cardiac|heart failure|angina/i.test(hist) && (blob.includes("heavy") || blob.includes("isometric max"))) {
+    score -= 6;
   }
 
   return score;
@@ -381,6 +423,23 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   );
   const condHints = summarizeConditions(conditionIds);
 
+  // Injury-specific, phase-based outpatient HEP intelligence
+  const rehab = buildClinicalRehabPlan({
+    ...input,
+    areas: input.areas.length ? input.areas : parsed?.areas || [],
+    painDescriptorIds,
+    conditionIds,
+    painLevels: {
+      ...Object.fromEntries(
+        (input.areas.length ? input.areas : parsed?.areas || ["full-body"]).map((a) => [
+          a,
+          input.painLevels[a] ?? parsed?.estimatedPain ?? 3,
+        ])
+      ),
+      ...input.painLevels,
+    },
+  });
+
   // Merge program biases: descriptors + conditions + adjectives + safety + ADLs + symptoms
   const mergedBiases = Array.from(
     new Set([
@@ -402,6 +461,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ...condHints.avoidTags,
       ...adj.avoidTags,
       ...safety.avoidTags,
+      ...rehab.avoidTags,
     ])
   );
   const mergedPrefer = Array.from(
@@ -410,6 +470,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ...condHints.preferTags,
       ...adj.preferTags,
       ...safety.preferTags,
+      ...rehab.preferTags,
       ...(homeBased ? ["home", "minimal-equipment", "chair", "wall"] : []),
     ])
   );
@@ -458,7 +519,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       adj.maxDifficulty,
       safety.maxDifficulty,
       adlSummary?.maxDifficulty,
-      sxSummary?.maxDifficulty
+      sxSummary?.maxDifficulty,
+      rehab.maxDifficulty
     ),
     preferKinds: descHints.preferKinds,
   };
@@ -470,7 +532,11 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   for (const p of safety.precautions) {
     p.bodyPartsHint?.forEach((bp) => areaSet.add(bp));
   }
-  const areas = Array.from(areaSet);
+  rehab.priorityAreas.forEach((bp) => areaSet.add(bp));
+  // Injury-priority order first (clinical specificity)
+  const areas = Array.from(
+    new Set([...rehab.priorityAreas, ...Array.from(areaSet)])
+  ) as BodyPart[];
   const symptoms = input.symptoms.length ? input.symptoms : parsed?.symptoms ?? [];
   const goals = input.goals.length ? input.goals : parsed?.goals ?? [];
   const rawAvg =
@@ -483,6 +549,9 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     if (rank[combinedHints.maxDifficulty] < rank[difficulty]) {
       difficulty = combinedHints.maxDifficulty;
     }
+  }
+  if (rank[rehab.maxDifficulty] < rank[difficulty]) {
+    difficulty = rehab.maxDifficulty;
   }
   if (avgPain >= 6 || condHints.clearanceRequired) difficulty = "beginner";
   if (safety.programBiases.includes("sternal-precautions")) difficulty = "beginner";
@@ -524,19 +593,27 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   const prefer: MovementKind[] =
     input.preferKinds && input.preferKinds !== "auto"
       ? input.preferKinds
-      : combinedHints.preferKinds !== "auto" && Array.isArray(combinedHints.preferKinds)
-        ? combinedHints.preferKinds
-        : condHints.preferKinds !== "auto"
-          ? condHints.preferKinds
-          : descHints.preferKinds !== "auto"
-            ? descHints.preferKinds
-            : parsed?.preferKinds && parsed.preferKinds !== "auto"
-              ? parsed.preferKinds
-              : (["stretch", "exercise"] as MovementKind[]);
+      : rehab.preferKinds?.length
+        ? rehab.preferKinds
+        : combinedHints.preferKinds !== "auto" && Array.isArray(combinedHints.preferKinds)
+          ? combinedHints.preferKinds
+          : condHints.preferKinds !== "auto"
+            ? condHints.preferKinds
+            : descHints.preferKinds !== "auto"
+              ? descHints.preferKinds
+              : parsed?.preferKinds && parsed.preferKinds !== "auto"
+                ? parsed.preferKinds
+                : (["stretch", "exercise"] as MovementKind[]);
 
-  const stretchCandidates = BASE_STRETCHES.filter((s) =>
-    rankOk(s.difficulty, difficulty, avgPain)
-  )
+  const stretchCandidates = BASE_STRETCHES.filter((s) => {
+    if (!rankOk(s.difficulty, difficulty, avgPain)) return false;
+    const blob = `${s.name} ${s.tags.join(" ")}`.toLowerCase();
+    for (const t of mergedAvoid) {
+      if (t === "all") return false;
+      if (blob.includes(t) || s.tags.includes(t)) return false;
+    }
+    return true;
+  })
     .map((s) => ({
       s,
       score: scoreMovement(
@@ -547,7 +624,9 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         merged,
         Math.max(...s.bodyParts.map((bp) => merged.painLevels[bp] ?? avgPain), 0),
         "stretch",
-        combinedHints
+        combinedHints,
+        rehab,
+        s.id
       ),
     }))
     .sort((a, b) => b.score - a.score);
@@ -618,7 +697,9 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         merged,
         Math.max(...e.bodyParts.map((bp) => merged.painLevels[bp] ?? avgPain), 0),
         "exercise",
-        combinedHints
+        combinedHints,
+        rehab,
+        e.id
       ),
     }))
     .sort((a, b) => b.score - a.score);
@@ -632,6 +713,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     target *
       safety.minutesScale *
       adj.minutesScale *
+      rehab.minutesScale *
       (adlSummary?.minutesScale ?? 1) *
       (sxSummary?.minutesScale ?? 1)
   );
@@ -660,7 +742,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   }
 
   // Extra gentle mobility when warm-up-heavy descriptors present
-  if (combinedHints.biases.includes("warm-up-heavy")) {
+  if (combinedHints.biases.includes("warm-up-heavy") || rehab.phase === "protect-calm") {
     const extraWarm = BASE_STRETCHES.find((s) => s.id === "pelvic-tilt");
     if (extraWarm && !stretchIds.includes(extraWarm.id)) {
       items.push(
@@ -678,9 +760,9 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     !condHints.clearanceRequired &&
     !safety.programBiases.includes("lvad");
 
-  // Interleave based on preference order
-  let maxStretches = wantStretch ? (wantExercise ? 4 : 6) : 1;
-  let maxExercises = wantExercise ? (wantStretch ? 4 : 6) : 0;
+  // Injury-phase quotas (evidence-informed HEP size) then bias adjustments
+  let maxStretches = wantStretch ? rehab.stretchQuota : 1;
+  let maxExercises = wantExercise ? rehab.exerciseQuota : 0;
   if (combinedHints.stretchBias > 0.4) maxStretches += 1;
   if (combinedHints.exerciseBias > 0.4) maxExercises += 1;
   if (combinedHints.biases.includes("short-volume")) {
@@ -689,6 +771,30 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   }
   if (safety.programBiases.includes("sternal-precautions")) {
     maxExercises = Math.min(maxExercises, 2);
+  }
+
+  // Seed high-priority pattern-preferred movements first (injury specificity)
+  for (const id of rehab.preferredStretchIds) {
+    if (stretchIds.length >= maxStretches || minutes >= target) break;
+    if (stretchIds.includes(id)) continue;
+    const s = BASE_STRETCHES.find((x) => x.id === id);
+    if (!s || !rankOk(s.difficulty, difficulty, avgPain)) continue;
+    items.push(toItem(s.id, "stretch", homeVarFor("stretch", s.id, homeBased)));
+    stretchIds.push(s.id);
+    minutes += s.durationSeconds / 60;
+  }
+  if (wantExercise) {
+    for (const id of rehab.preferredExerciseIds) {
+      if (exerciseIds.length >= maxExercises || minutes >= target) break;
+      if (exerciseIds.includes(id)) continue;
+      const e = BASE_EXERCISES.find((x) => x.id === id);
+      if (!e || !rankOk(e.difficulty, difficulty, avgPain)) continue;
+      const blob = `${e.name} ${e.tags.join(" ")}`.toLowerCase();
+      if (mergedAvoid.some((t) => t !== "all" && (blob.includes(t) || e.tags.includes(t)))) continue;
+      items.push(toItem(e.id, "exercise", homeVarFor("exercise", e.id, homeBased)));
+      exerciseIds.push(e.id);
+      minutes += e.durationSeconds / 60;
+    }
   }
 
   let si = 0;
@@ -756,11 +862,19 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ? ` Sub-categories: ${condHints.subcategories.slice(0, 5).join(", ")}.`
       : "";
   const outcomeDetail =
-    condHints.clinicalOutcomes.length > 0
-      ? ` Target outcomes: ${condHints.clinicalOutcomes
-          .slice(0, 4)
-          .map((o) => o.label)
+    (rehab.outcomeFocus.length || condHints.clinicalOutcomes.length) > 0
+      ? ` Target outcomes: ${[
+          ...rehab.outcomeFocus.slice(0, 3),
+          ...condHints.clinicalOutcomes.slice(0, 3).map((o) => o.label),
+        ]
+          .filter((v, i, a) => a.indexOf(v) === i)
+          .slice(0, 5)
           .join("; ")}.`
+      : "";
+  const rehabDetail = ` Rehab phase: ${rehab.summaryLines.join(" · ")}. Blueprint: ${rehab.sessionBlueprint.join(" → ")}.`;
+  const evidenceIntel =
+    rehab.evidenceNotes.length > 0
+      ? ` Evidence-informed dosing: ${rehab.evidenceNotes.slice(0, 3).join(" ")}`
       : "";
   const biasDetail = combinedHints.biases.length
     ? ` Program biases: ${combinedHints.biases.slice(0, 8).join(", ")}.`
@@ -781,28 +895,18 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   const evidenceDetail =
     condHints.clinicalOutcomes[0] != null
       ? ` Evidence framing: ${condHints.clinicalOutcomes[0].evidenceNote}`
-      : "";
+      : evidenceIntel;
 
   const adjustment: RoutineAdjustment = {
     at: new Date().toISOString(),
-    reason:
-      safety.precautionIds.length || safety.implantIds.length
-        ? "Generated from detailed Assessment (safety + adjectives + conditions + descriptors)"
-        : adj.hits.length
-          ? "Generated from Assessment adjectives + clinical intake"
-          : conditionIds.length
-            ? "Generated from clinical condition variations + descriptors + intake"
-            : painDescriptorIds.length
-              ? "Generated from clinical pain descriptors + intake"
-              : input.concernParagraph
-                ? "Generated from written concerns + clinical intake"
-                : "Generated from symptoms, goals, and pain scale",
+    reason: `Injury-specific ${rehab.phase} plan from Assessment clinical data (patterns: ${rehab.patterns.join(", ")})`,
     painFactor: avgPain,
     action:
       combinedHints.biases.includes("defer-to-provider") ||
       condHints.clearanceRequired ||
       avgPain >= 6 ||
-      safety.programBiases.includes("nwb")
+      safety.programBiases.includes("nwb") ||
+      rehab.phase === "protect-calm"
         ? "regress"
         : avgPain >= 4
           ? "modify"
@@ -815,6 +919,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         : avgPain >= 4
           ? "Moderate pain: balanced mobility + activation with mid volume per outpatient load management."
           : "Pain tolerable: include mobility and progressive exercise dosing with warm-up/cool-down.") +
+      rehabDetail +
       hrDetail +
       descDetail +
       condDetail +
@@ -826,7 +931,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       rfDetail +
       clearanceDetail +
       homeDetail +
-      evidenceDetail,
+      evidenceDetail +
+      evidenceIntel,
     source: "safety",
   };
 
@@ -837,22 +943,34 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     .filter(Boolean)
     .join(" + ");
 
+  const primaryRegion =
+    rehab.priorityAreas[0] || areas[0] || "full-body";
+  const patternLabel = rehab.patterns
+    .slice(0, 2)
+    .map((p) => p.replace(/-/g, " "))
+    .join(" · ");
+
   return {
     id: uuid(),
     userId,
     name:
-      areas[0] === "full-body"
-        ? `Personalized ${kindsLabel} plan`
-        : `Plan: ${areas.map((a) => a.replace("-", " ")).join(", ")}`,
-    description: medSummary
-      ? `Clinically styled plan from detailed Assessment including ${userMeds.length} current medication(s)${
-          medSummary.bleedingRisk
-            ? "; bleeding-risk meds noted—fall prevention prioritized"
-            : ""
-        }${
-          medSummary.hrBlunting ? "; beta-blocker: prefer RPE/Borg over HR targets" : ""
-        }. Warm-up → targeted mobility/strength → cool-down.`
-      : "Clinically styled plan from detailed Assessment: adjectives, descriptors, conditions, precautions/devices, age/Borg dosing, medications when listed, and home-based variations when selected. Warm-up → targeted mobility/strength → cool-down.",
+      primaryRegion === "full-body"
+        ? `Evidence-based ${kindsLabel} plan (${rehab.phase.replace(/-/g, " ")})`
+        : `${primaryRegion.replace(/-/g, " ")}: ${patternLabel || kindsLabel}`,
+    description: [
+      `Injury-specific outpatient-style HEP in the “${rehab.phase.replace(/-/g, " ")}” phase.`,
+      `Priority regions: ${rehab.priorityAreas.slice(0, 4).map((a) => a.replace(/-/g, " ")).join(", ")}.`,
+      `Structure: ${rehab.sessionBlueprint.join(" → ")}.`,
+      medSummary
+        ? `Includes ${userMeds.length} medication(s)${
+            medSummary.bleedingRisk ? "; bleeding-risk → fall prevention bias" : ""
+          }${medSummary.hrBlunting ? "; beta-blocker → prefer Borg/RPE over HR" : ""}.`
+        : null,
+      homeBased ? "Home-friendly variations preferred." : null,
+      "Selections ranked by clinical descriptors, conditions, story text, medical history, and irritability-based dosing for positive functional outcomes.",
+    ]
+      .filter(Boolean)
+      .join(" "),
     focusAreas: areas,
     stretchIds,
     exerciseIds,
@@ -874,7 +992,6 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       conditionSummary: condHints.summaryLines,
       conditionCategories: condHints.categories,
       conditionSubcategories: condHints.subcategories,
-      clinicalOutcomes: condHints.clinicalOutcomes.slice(0, 10),
       ageYears: safety.ageYears,
       maxHr: safety.maxHr,
       targetHrCap: safety.targetHrCap,
@@ -886,11 +1003,31 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       prostheticIds: safety.prostheticIds,
       assistiveDeviceIds: safety.assistiveDeviceIds,
       suggestedAssistiveDeviceIds: safety.suggestedAssistiveDeviceIds,
-      safetySummary: safety.summaryLines,
-      safetyEducation: safety.educationBlocks.slice(0, 20),
+      safetySummary: [...rehab.summaryLines, ...safety.summaryLines].slice(0, 16),
+      safetyEducation: [
+        {
+          title: "Evidence-informed session blueprint",
+          body: rehab.sessionBlueprint.join(" → "),
+          bullets: rehab.evidenceNotes.slice(0, 6),
+        },
+        ...safety.educationBlocks.slice(0, 16),
+      ],
       protocolNotes: input.protocolNotes,
       adjectiveHits: adj.wordsFound,
-      adjectiveSummary: adj.summaryLines,
+      adjectiveSummary: [...adj.summaryLines, ...rehab.evidenceNotes].slice(0, 12),
+      // Clinical outcome targets: conditions + injury-pattern outcomes
+      // (prefer condition-specific evidence when present)
+      clinicalOutcomes: (
+        condHints.clinicalOutcomes.length
+          ? condHints.clinicalOutcomes
+          : rehab.outcomeFocus.map((label) => ({
+              label,
+              evidenceNote:
+                "Educational functional outcome framing used in outpatient HEP progress tracking.",
+              timeframe: "Often 2–6 weeks of consistent, tolerable practice",
+              measureHint: "Track a patient-specific daily task (0–10 ease).",
+            }))
+      ).slice(0, 10),
       homeBasedProgram: homeBased,
       medications: userMeds.slice(0, 20),
       medicationSummary: medSummary?.summaryLines,

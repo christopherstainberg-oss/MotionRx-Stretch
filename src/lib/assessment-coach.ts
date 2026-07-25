@@ -333,8 +333,15 @@ export function buildWrittenPlanApproach(
     }. Your written story, sex context, and medical history are correlated so dosing stays realistic across Assessment, Plan, Journal, and Jeffery.`
   );
 
+  const blueprint =
+    routine.generatedFrom?.safetyEducation?.find((b) =>
+      /blueprint|evidence-informed session/i.test(b.title)
+    )?.body ||
+    routine.generatedFrom?.safetySummary?.find((s) => /phase|pattern/i.test(s));
   paragraphs.push(
-    `Approach to attack the issue: (1) calm irritable tissues and restore comfortable range in ${regions}; (2) rebuild control and capacity so daily tasks feel safer; (3) progress only when symptoms settle within ~24 hours; (4) respect systemic history (heart, lungs, clotting, bone, pregnancy, devices) with conservative progressions; (5) pair movement with simple pre/post strategies (pacing, optional heat/ice) rather than pushing through red-flag pain.`
+    blueprint
+      ? `Approach to attack the issue (evidence-informed session blueprint): ${blueprint}. Progress only when symptoms settle within ~24 hours; respect systemic history with conservative dosing; use pain traffic lights (green proceed / yellow modify / red stop).`
+      : `Approach to attack the issue: (1) calm irritable tissues and restore comfortable range in ${regions}; (2) rebuild motor control so daily tasks feel safer; (3) progress load only when symptoms settle within ~24 hours; (4) respect systemic history with conservative progressions; (5) pair movement with pacing and optional heat/ice rather than pushing through red-flag pain.`
   );
 
   if (sampleMoves.length) {
