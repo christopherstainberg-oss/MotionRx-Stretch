@@ -7,6 +7,7 @@ import { getStretchById } from "@/data/stretch-library";
 import { getExerciseById } from "@/data/exercise-library";
 import {
   adjustRoutineFromFeedback,
+  applyHomeBasedProgram,
   ensureRoutineItems,
   modalitiesForPhase,
   STARTER_ROUTINES,
@@ -20,7 +21,7 @@ import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
 import { ModalityMiniList } from "@/components/ModalitySuggestions";
 import { InstitutionalVideoEmbed } from "@/components/InstitutionalVideoEmbed";
 import { loadLocalPainProfile, saveLocalPainProfile } from "@/lib/pain-profile";
-import { CheckCircle2, ChevronRight, Sparkles } from "lucide-react";
+import { CheckCircle2, ChevronRight, Home, Sparkles } from "lucide-react";
 import { v4 as uuid } from "uuid";
 
 function ProgramModalityBlock({
@@ -448,6 +449,22 @@ function SessionInner() {
     );
   }
 
+  function toggleHomeBased(checked: boolean) {
+    if (!routine) return;
+    const next = applyHomeBasedProgram(ensureRoutineItems(routine), checked);
+    setRoutine(next);
+    try {
+      localStorage.setItem(`routine:${next.id}`, JSON.stringify(next));
+      localStorage.setItem("active-routine", JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const activeVariation = item.variationId
+    ? m.variations.find((v) => v.id === item.variationId)
+    : undefined;
+
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex items-center justify-between text-sm text-brand-600">
@@ -458,6 +475,26 @@ function SessionInner() {
           {item.kind} · {routine.name}
         </span>
       </div>
+
+      <label className="card flex cursor-pointer items-start gap-3 p-4">
+        <input
+          type="checkbox"
+          className="mt-1 h-5 w-5 accent-brand-600"
+          checked={Boolean(routine.homeBasedProgram)}
+          onChange={(e) => toggleHomeBased(e.target.checked)}
+        />
+        <span>
+          <span className="flex items-center gap-2 text-sm font-semibold text-brand-950">
+            <Home className="h-4 w-4 text-brand-600" />
+            Home-based program
+          </span>
+          <span className="mt-0.5 block text-xs text-brand-600">
+            Use chair/wall/floor/minimal-equipment variations for all stretches and exercises in
+            this routine. Correlates with Assessment and stays saved on the plan.
+          </span>
+        </span>
+      </label>
+
       <div className="h-2 overflow-hidden rounded-full bg-brand-100">
         <div
           className="h-full bg-brand-600 transition-all"
@@ -468,6 +505,11 @@ function SessionInner() {
       <article className="card p-6">
         <p className="text-xs font-bold uppercase tracking-wide text-brand-500">{item.kind}</p>
         <h1 className="text-2xl font-bold text-brand-950">{m.name}</h1>
+        {activeVariation && (
+          <p className="mt-1 text-sm font-medium text-brand-700">
+            Variation: {activeVariation.name} — {activeVariation.description}
+          </p>
+        )}
         <p className="mt-2 rounded-lg bg-brand-50 p-3 text-sm text-brand-800">
           <strong>Why this matters:</strong> {m.clinical.whyImportant}
         </p>

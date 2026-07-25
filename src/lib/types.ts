@@ -269,6 +269,20 @@ export interface PainProfile {
   overallPain: number;
   areas: BodyPart[];
   source: "assess" | "journal" | "session" | "jeffery" | "manual";
+  /** Age for HRmax / Borg dosing */
+  ageYears?: number;
+  borgTargetId?: string;
+  restingHr?: number;
+  precautionIds?: string[];
+  implantIds?: string[];
+  orthoticIds?: string[];
+  prostheticIds?: string[];
+  assistiveDeviceIds?: string[];
+  protocolNotes?: string;
+  /** Prefer home-equipment HEP */
+  homeBasedProgram?: boolean;
+  /** Adjective analysis words from last assessment */
+  adjectiveSummary?: string[];
 }
 
 export interface Routine {
@@ -286,6 +300,11 @@ export interface Routine {
   estimatedMinutes: number;
   difficulty: Difficulty;
   isPersonalized: boolean;
+  /**
+   * When true, prefer home-based variations (chair/wall/floor/minimal equipment)
+   * for every stretch and exercise item.
+   */
+  homeBasedProgram?: boolean;
   generatedFrom?: {
     symptoms: string[];
     areas: BodyPart[];
@@ -309,6 +328,26 @@ export interface Routine {
     }>;
     modalityPlanId?: string;
     suggestedModalityIds?: string[];
+    /** Age / Max HR / Borg */
+    ageYears?: number;
+    maxHr?: number;
+    targetHrCap?: number;
+    borgTargetId?: string;
+    borgLabel?: string;
+    /** Surgical / device safety */
+    precautionIds?: string[];
+    implantIds?: string[];
+    orthoticIds?: string[];
+    prostheticIds?: string[];
+    assistiveDeviceIds?: string[];
+    suggestedAssistiveDeviceIds?: string[];
+    safetySummary?: string[];
+    safetyEducation?: Array<{ title: string; body: string; bullets: string[] }>;
+    protocolNotes?: string;
+    /** Adjective / qualifier analysis from paragraph */
+    adjectiveHits?: string[];
+    adjectiveSummary?: string[];
+    homeBasedProgram?: boolean;
   };
   selfAdjustHistory: RoutineAdjustment[];
   createdAt: string;
@@ -322,7 +361,7 @@ export interface RoutineAdjustment {
   painFactor: number;
   action: "progress" | "regress" | "modify" | "hold" | "rotate" | "jeffery";
   details: string;
-  source?: "session" | "pain" | "jeffery" | "user" | "builder";
+  source?: "session" | "pain" | "jeffery" | "user" | "builder" | "safety" | "home";
 }
 
 export interface AppNameOption {
@@ -354,6 +393,20 @@ export interface SymptomInput {
   painDescriptorIds?: string[];
   /** Musculoskeletal injuries, surgeries, and complex medical conditions */
   conditionIds?: string[];
+  /** Chronological age for HRmax / Borg dosing */
+  ageYears?: number;
+  /** Borg target id from clinical-safety catalog */
+  borgTargetId?: string;
+  restingHr?: number;
+  precautionIds?: string[];
+  implantIds?: string[];
+  orthoticIds?: string[];
+  prostheticIds?: string[];
+  assistiveDeviceIds?: string[];
+  /** User-entered surgeon/protocol notes */
+  protocolNotes?: string;
+  /** Prefer home-based variations for all catalog items */
+  homeBasedProgram?: boolean;
 }
 
 export interface JefferyMessage {

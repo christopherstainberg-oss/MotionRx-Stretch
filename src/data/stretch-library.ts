@@ -9,6 +9,7 @@ import type {
 import { ADDITIONAL_STRETCH_SEEDS } from "@/data/stretch-clinical-expansion";
 import { BULK_STRETCH_SEEDS } from "@/data/stretch-clinical-bulk";
 import { functionalOutcomeNarrative } from "@/data/stretch-outcomes";
+import { ensureHomeProgramVariations } from "@/data/home-variations";
 import { videoForRegion } from "@/data/video-catalog";
 
 /** Virtual stretch catalog capacity: clinician bases × dosing/context modifiers */
@@ -997,14 +998,22 @@ function finalize(seed: Seed & { clinical?: Stretch["clinical"] }): Stretch {
       }
     : clinical;
 
+  const id = rest.id;
   return {
     ...rest,
     kind: "stretch",
     slug: seed.slug ?? slugify(seed.name),
     durationBucket: bucket(seed.durationSeconds),
     clinical: enrichedClinical,
+    variations: ensureHomeProgramVariations(id, seed.variations),
     tags: Array.from(
-      new Set([...(seed.tags ?? []), "evidence-informed", "functional-outcomes", ...narrative.outcomeTags.slice(0, 4)])
+      new Set([
+        ...(seed.tags ?? []),
+        "evidence-informed",
+        "functional-outcomes",
+        "home-capable",
+        ...narrative.outcomeTags.slice(0, 4),
+      ])
     ),
   };
 }
@@ -1234,8 +1243,10 @@ export function getStretchByIndex(index: number): Stretch | undefined {
       "catalog-variant",
       "evidence-informed",
       "functional-outcomes",
+      "home-capable",
       `series-${series}`,
     ],
+    variations: ensureHomeProgramVariations(id, base.variations),
     evidenceNotes: `${base.evidenceNotes} Catalog edition tuned for ${mod.label.toLowerCase()}: ${mod.outcome}`,
     clinical: {
       ...base.clinical,

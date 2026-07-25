@@ -21,6 +21,22 @@ import {
   matchConditionsFromText,
   summarizeConditions,
 } from "@/data/clinical-conditions";
+import {
+  ASSISTIVE_DEVICES,
+  BORG_TARGETS,
+  CLINICAL_PRECAUTIONS,
+  CLINICAL_SAFETY_STATS,
+  IMPLANTED_DEVICES,
+  ORTHOTIC_DEVICES,
+  PRECAUTION_CATEGORY_LABELS,
+  PROSTHETIC_DEVICES,
+  estimateMaxHr,
+  getBorgTarget,
+  ageBasedDefaultBorg,
+  hrZonesFromMax,
+  buildClinicalSafetyPlan,
+} from "@/data/clinical-safety";
+import { analyzeAssessmentAdjectives } from "@/data/assessment-adjectives";
 import { generateHybridPlan, parseConcernParagraph } from "@/lib/routine-engine";
 import { planFromSymptomInput } from "@/lib/modality-engine";
 import type {
@@ -38,7 +54,7 @@ import {
   loadLocalPainProfile,
   saveLocalPainProfile,
 } from "@/lib/pain-profile";
-import { Sparkles, Stethoscope, X } from "lucide-react";
+import { Home, Sparkles, Stethoscope, X } from "lucide-react";
 
 const AREAS: BodyPart[] = [
   ...SUGGESTED_BODY_PART_ORDER,
@@ -86,15 +102,45 @@ export default function AssessmentPage() {
   const [modalityPlan, setModalityPlan] = useState<ModalityPlan | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Detailed clinical Assessment fields
+  const [ageYears, setAgeYears] = useState<number | "">("");
+  const [borgTargetId, setBorgTargetId] = useState("borg-light");
+  const [restingHr, setRestingHr] = useState<number | "">("");
+  const [precautionIds, setPrecautionIds] = useState<string[]>([]);
+  const [implantIds, setImplantIds] = useState<string[]>([]);
+  const [orthoticIds, setOrthoticIds] = useState<string[]>([]);
+  const [prostheticIds, setProstheticIds] = useState<string[]>([]);
+  const [assistiveDeviceIds, setAssistiveDeviceIds] = useState<string[]>([]);
+  const [protocolNotes, setProtocolNotes] = useState("");
+  const [homeBasedProgram, setHomeBasedProgram] = useState(true);
+
   useEffect(() => {
     const local = loadLocalPainProfile();
     if (local?.descriptorIds?.length) setDescriptorIds(local.descriptorIds);
     if (local?.freeText) setParagraph(local.freeText);
+    if (local?.ageYears != null) setAgeYears(local.ageYears);
+    if (local?.borgTargetId) setBorgTargetId(local.borgTargetId);
+    if (local?.precautionIds) setPrecautionIds(local.precautionIds);
+    if (local?.implantIds) setImplantIds(local.implantIds);
+    if (local?.orthoticIds) setOrthoticIds(local.orthoticIds);
+    if (local?.prostheticIds) setProstheticIds(local.prostheticIds);
+    if (local?.assistiveDeviceIds) setAssistiveDeviceIds(local.assistiveDeviceIds);
+    if (local?.protocolNotes) setProtocolNotes(local.protocolNotes);
+    if (local?.homeBasedProgram != null) setHomeBasedProgram(local.homeBasedProgram);
     fetch("/api/pain-profile")
       .then((r) => r.json())
       .then((d) => {
         if (d.profile?.descriptorIds?.length) setDescriptorIds(d.profile.descriptorIds);
         if (d.profile?.freeText && !local?.freeText) setParagraph(d.profile.freeText);
+        if (d.profile?.ageYears != null) setAgeYears(d.profile.ageYears);
+        if (d.profile?.borgTargetId) setBorgTargetId(d.profile.borgTargetId);
+        if (d.profile?.precautionIds) setPrecautionIds(d.profile.precautionIds);
+        if (d.profile?.implantIds) setImplantIds(d.profile.implantIds);
+        if (d.profile?.orthoticIds) setOrthoticIds(d.profile.orthoticIds);
+        if (d.profile?.prostheticIds) setProstheticIds(d.profile.prostheticIds);
+        if (d.profile?.assistiveDeviceIds) setAssistiveDeviceIds(d.profile.assistiveDeviceIds);
+        if (d.profile?.protocolNotes) setProtocolNotes(d.profile.protocolNotes);
+        if (d.profile?.homeBasedProgram != null) setHomeBasedProgram(d.profile.homeBasedProgram);
       })
       .catch(() => {});
   }, []);
@@ -149,6 +195,55 @@ export default function AssessmentPage() {
     [paragraphConditions]
   );
 
+  const adjectivePreview = useMemo(
+    () => (paragraph.trim().length > 8 ? analyzeAssessmentAdjectives(paragraph) : null),
+    [paragraph]
+  );
+
+  const safetyPreview = useMemo(
+    () =>
+      buildClinicalSafetyPlan({
+        ageYears: ageYears === "" ? undefined : Number(ageYears),
+        borgTargetId,
+        restingHr: restingHr === "" ? undefined : Number(restingHr),
+        precautionIds,
+        implantIds,
+        orthoticIds,
+        prostheticIds,
+        assistiveDeviceIds,
+        protocolNotes,
+        concernParagraph: paragraph,
+      }),
+    [
+      ageYears,
+      borgTargetId,
+      restingHr,
+      precautionIds,
+      implantIds,
+      orthoticIds,
+      prostheticIds,
+      assistiveDeviceIds,
+      protocolNotes,
+      paragraph,
+    ]
+  );
+
+  // Auto-merge paragraph-detected implants/precautions when auto-apply is on
+  useEffect(() => {
+    if (!autoApplyDesc || paragraph.trim().length < 12) return;
+    setPrecautionIds((prev) => Array.from(new Set([...prev, ...safetyPreview.precautionIds])));
+    setImplantIds((prev) => Array.from(new Set([...prev, ...safetyPreview.implantIds])));
+    setOrthoticIds((prev) => Array.from(new Set([...prev, ...safetyPreview.orthoticIds])));
+    setProstheticIds((prev) => Array.from(new Set([...prev, ...safetyPreview.prostheticIds])));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on paragraph / auto flag
+  }, [paragraph, autoApplyDesc]);
+
+  useEffect(() => {
+    if (ageYears !== "" && Number(ageYears) > 0) {
+      setBorgTargetId(ageBasedDefaultBorg(Number(ageYears)));
+    }
+  }, [ageYears]);
+
   function applyParagraphParse() {
     if (!parsedPreview) return;
     setAreas(parsedPreview.areas);
@@ -182,6 +277,16 @@ export default function AssessmentPage() {
       preferKinds,
       painDescriptorIds: mergedDesc,
       conditionIds: fromConditions,
+      ageYears: ageYears === "" ? undefined : Number(ageYears),
+      borgTargetId,
+      restingHr: restingHr === "" ? undefined : Number(restingHr),
+      precautionIds,
+      implantIds,
+      orthoticIds,
+      prostheticIds,
+      assistiveDeviceIds,
+      protocolNotes: protocolNotes.trim() || undefined,
+      homeBasedProgram,
     };
   }, [
     areas,
@@ -193,6 +298,16 @@ export default function AssessmentPage() {
     paragraph,
     preferKinds,
     descriptorIds,
+    ageYears,
+    borgTargetId,
+    restingHr,
+    precautionIds,
+    implantIds,
+    orthoticIds,
+    prostheticIds,
+    assistiveDeviceIds,
+    protocolNotes,
+    homeBasedProgram,
   ]);
 
   async function createPlan() {
@@ -232,10 +347,22 @@ export default function AssessmentPage() {
     const profile = saveLocalPainProfile({
       userId: "local",
       descriptorIds: finalDesc,
+      conditionIds: finalConditions,
       freeText: paragraph,
       overallPain: overall || parsedPreview?.estimatedPain || 0,
       areas,
       source: "assess",
+      ageYears: ageYears === "" ? undefined : Number(ageYears),
+      borgTargetId,
+      restingHr: restingHr === "" ? undefined : Number(restingHr),
+      precautionIds,
+      implantIds,
+      orthoticIds,
+      prostheticIds,
+      assistiveDeviceIds,
+      protocolNotes: protocolNotes.trim() || undefined,
+      homeBasedProgram,
+      adjectiveSummary: routine.generatedFrom?.adjectiveSummary,
     });
     try {
       localStorage.setItem(`routine:${routine.id}`, JSON.stringify(routine));
@@ -244,6 +371,20 @@ export default function AssessmentPage() {
       localStorage.setItem(
         "clinical-conditions",
         JSON.stringify({ ids: finalConditions, at: new Date().toISOString() })
+      );
+      localStorage.setItem(
+        "clinical-safety-profile",
+        JSON.stringify({
+          ageYears: profile.ageYears,
+          borgTargetId: profile.borgTargetId,
+          precautionIds: profile.precautionIds,
+          implantIds: profile.implantIds,
+          orthoticIds: profile.orthoticIds,
+          prostheticIds: profile.prostheticIds,
+          assistiveDeviceIds: profile.assistiveDeviceIds,
+          homeBasedProgram: profile.homeBasedProgram,
+          at: new Date().toISOString(),
+        })
       );
       await fetch("/api/pain-profile", {
         method: "POST",
@@ -693,6 +834,327 @@ export default function AssessmentPage() {
         </div>
       </section>
 
+      {/* Age / Borg / Max HR */}
+      <section className="card space-y-4 p-5">
+        <h2 className="font-semibold text-brand-900">Age, effort (Borg), and heart-rate guidance</h2>
+        <p className="text-sm text-brand-700/85">
+          Age estimates max HR (Tanaka: 208 − 0.7×age). Borg sets effort caps so the routine stays
+          realistic for cardiac risk and deconditioning. Educational only—beta-blockers and devices
+          change targets; follow your clinician.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="block text-sm">
+            <span className="label">Age (years)</span>
+            <input
+              type="number"
+              min={5}
+              max={110}
+              className="input"
+              value={ageYears}
+              onChange={(e) =>
+                setAgeYears(e.target.value === "" ? "" : Math.min(110, Math.max(5, Number(e.target.value))))
+              }
+              placeholder="e.g. 62"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="label">Resting HR (optional)</span>
+            <input
+              type="number"
+              min={30}
+              max={200}
+              className="input"
+              value={restingHr}
+              onChange={(e) =>
+                setRestingHr(e.target.value === "" ? "" : Number(e.target.value))
+              }
+              placeholder="e.g. 72"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="label">Borg effort target</span>
+            <select
+              className="input"
+              value={borgTargetId}
+              onChange={(e) => setBorgTargetId(e.target.value)}
+            >
+              {BORG_TARGETS.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {ageYears !== "" && (
+          <div className="rounded-xl bg-brand-50 p-3 text-sm text-brand-800">
+            {(() => {
+              const max = estimateMaxHr(Number(ageYears));
+              const zones = hrZonesFromMax(max);
+              const borg = getBorgTarget(borgTargetId);
+              const cap = Math.round(max * borg.hrMaxFractionCap);
+              return (
+                <>
+                  <p>
+                    <strong>Est. HRmax ≈ {max} bpm</strong> · suggested ceiling for this Borg band ~{" "}
+                    <strong>{cap} bpm</strong> ({Math.round(borg.hrMaxFractionCap * 100)}% HRmax)
+                  </p>
+                  <p className="mt-1 text-xs text-brand-600">
+                    Light zone {zones.light.min}–{zones.light.max} · Moderate {zones.moderate.min}–
+                    {zones.moderate.max} bpm. {borg.education}
+                  </p>
+                </>
+              );
+            })()}
+          </div>
+        )}
+      </section>
+
+      {/* Precautions */}
+      <section className="card space-y-4 p-5">
+        <div>
+          <h2 className="font-semibold text-brand-900">Surgical & activity precautions (editable)</h2>
+          <p className="text-sm text-brand-700/85">
+            Select all that apply. Plans auto-detect common terms from your paragraph (
+            {CLINICAL_SAFETY_STATS.precautions} protocols). You can uncheck anything.
+          </p>
+        </div>
+        {(Object.keys(PRECAUTION_CATEGORY_LABELS) as Array<keyof typeof PRECAUTION_CATEGORY_LABELS>).map(
+          (cat) => {
+            const items = CLINICAL_PRECAUTIONS.filter((p) => p.category === cat);
+            if (!items.length) return null;
+            return (
+              <div key={cat}>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-brand-500">
+                  {PRECAUTION_CATEGORY_LABELS[cat]}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {items.map((p) => {
+                    const on = precautionIds.includes(p.id);
+                    return (
+                      <label
+                        key={p.id}
+                        className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
+                          on
+                            ? "border-brand-500 bg-brand-100 text-brand-950"
+                            : "border-brand-200 bg-white text-brand-800"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="accent-brand-600"
+                          checked={on}
+                          onChange={() => setPrecautionIds((prev) => toggle(prev, p.id))}
+                        />
+                        <span>
+                          <span className="font-semibold">{p.shortLabel}</span>
+                          <span className="mt-0.5 block max-w-[14rem] text-[11px] text-brand-600">
+                            {p.label}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+        )}
+        {precautionIds.length > 0 && (
+          <div className="space-y-3 border-t border-brand-100 pt-3">
+            <p className="text-xs font-semibold uppercase text-brand-500">
+              How to adhere (evidence-informed protocol education)
+            </p>
+            {precautionIds.map((id) => {
+              const p = CLINICAL_PRECAUTIONS.find((x) => x.id === id);
+              if (!p) return null;
+              return (
+                <div key={id} className="rounded-xl border border-brand-100 p-3 text-sm">
+                  <p className="font-semibold text-brand-950">{p.label}</p>
+                  <p className="mt-1 text-brand-700">{p.definition}</p>
+                  <p className="mt-1 text-xs text-brand-500">{p.typicalDuration}</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-brand-800">
+                    {p.adherence.map((a) => (
+                      <li key={a}>{a}</li>
+                    ))}
+                  </ul>
+                  {p.redFlagEducation && (
+                    <p className="mt-2 text-xs font-medium text-amber-800">{p.redFlagEducation}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Implants */}
+      <section className="card space-y-3 p-5">
+        <h2 className="font-semibold text-brand-900">
+          Implanted devices ({CLINICAL_SAFETY_STATS.implants})
+        </h2>
+        <p className="text-sm text-brand-700/85">
+          Cardiac electronics, structural devices, neurostim, and orthopedic implants adjust dosing
+          and default precautions.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {IMPLANTED_DEVICES.map((d) => {
+            const on = implantIds.includes(d.id);
+            return (
+              <label
+                key={d.id}
+                className={`inline-flex max-w-xs cursor-pointer items-start gap-2 rounded-xl border px-3 py-2 text-xs ${
+                  on ? "border-brand-500 bg-brand-100" : "border-brand-200 bg-white"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="mt-0.5 accent-brand-600"
+                  checked={on}
+                  onChange={() => setImplantIds((prev) => toggle(prev, d.id))}
+                />
+                <span>
+                  <span className="font-semibold">{d.label}</span>
+                  <span className="mt-0.5 block text-[11px] text-brand-600">{d.plainLanguage}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Orthotics / Prosthetics / AD */}
+      <section className="card space-y-4 p-5">
+        <h2 className="font-semibold text-brand-900">Orthotics, prosthetics & assistive devices</h2>
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase text-brand-500">
+            Orthotics ({ORTHOTIC_DEVICES.length})
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {ORTHOTIC_DEVICES.map((o) => (
+              <label
+                key={o.id}
+                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
+                  orthoticIds.includes(o.id)
+                    ? "border-brand-500 bg-brand-100"
+                    : "border-brand-200 bg-white"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-brand-600"
+                  checked={orthoticIds.includes(o.id)}
+                  onChange={() => setOrthoticIds((prev) => toggle(prev, o.id))}
+                />
+                {o.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase text-brand-500">
+            Prosthetics ({PROSTHETIC_DEVICES.length})
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {PROSTHETIC_DEVICES.map((p) => (
+              <label
+                key={p.id}
+                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
+                  prostheticIds.includes(p.id)
+                    ? "border-brand-500 bg-brand-100"
+                    : "border-brand-200 bg-white"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-brand-600"
+                  checked={prostheticIds.includes(p.id)}
+                  onChange={() => setProstheticIds((prev) => toggle(prev, p.id))}
+                />
+                {p.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase text-brand-500">
+            Assistive devices ({ASSISTIVE_DEVICES.length}) — suggested from precautions:{" "}
+            {safetyPreview.suggestedAssistiveDeviceIds
+              .map((id) => ASSISTIVE_DEVICES.find((a) => a.id === id)?.label)
+              .filter(Boolean)
+              .slice(0, 4)
+              .join(", ") || "none yet"}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {ASSISTIVE_DEVICES.map((a) => (
+              <label
+                key={a.id}
+                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
+                  assistiveDeviceIds.includes(a.id)
+                    ? "border-brand-500 bg-brand-100"
+                    : "border-brand-200 bg-white"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-brand-600"
+                  checked={assistiveDeviceIds.includes(a.id)}
+                  onChange={() => setAssistiveDeviceIds((prev) => toggle(prev, a.id))}
+                />
+                {a.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <label className="block text-sm">
+          <span className="label">Surgeon / protocol notes (optional)</span>
+          <textarea
+            className="input min-h-[72px]"
+            value={protocolNotes}
+            onChange={(e) => setProtocolNotes(e.target.value)}
+            placeholder="e.g. NWB right LE × 4 weeks per Dr. Lee; sternal lift limit 10 lb; collar when upright…"
+          />
+        </label>
+      </section>
+
+      {/* Home-based program */}
+      <section className="card space-y-3 border-brand-300 bg-brand-50/40 p-5">
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            className="mt-1 h-5 w-5 accent-brand-600"
+            checked={homeBasedProgram}
+            onChange={(e) => setHomeBasedProgram(e.target.checked)}
+          />
+          <span>
+            <span className="flex items-center gap-2 font-semibold text-brand-950">
+              <Home className="h-4 w-4 text-brand-600" />
+              Home-based program
+            </span>
+            <span className="mt-1 block text-sm text-brand-700">
+              Prefer chair/wall/floor/minimal-equipment variations for every stretch and exercise.
+              You can toggle this again anytime on your routine session screen.
+            </span>
+          </span>
+        </label>
+      </section>
+
+      {adjectivePreview && adjectivePreview.hits.length > 0 && (
+        <section className="card space-y-2 p-5">
+          <h2 className="font-semibold text-brand-900">Words shaping your plan</h2>
+          <p className="text-sm text-brand-700">
+            Each adjective/qualifier from your paragraph maps to clinical dosing biases:
+          </p>
+          <ul className="space-y-1 text-sm text-brand-800">
+            {adjectivePreview.summaryLines.map((line) => (
+              <li key={line} className="rounded-lg bg-brand-50 px-3 py-1.5">
+                {line}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <button
         type="button"
         className="btn-primary w-full py-3.5 text-base"
@@ -710,11 +1172,65 @@ export default function AssessmentPage() {
             ~{generated.estimatedMinutes} min · {generated.difficulty} ·{" "}
             {generated.items.length} movements (
             {generated.stretchIds.length} stretches · {generated.exerciseIds?.length || 0} exercises)
+            {generated.homeBasedProgram ? " · Home-based variations ON" : ""}
           </p>
+          {(generated.generatedFrom?.borgLabel || generated.generatedFrom?.maxHr) && (
+            <p className="text-sm text-brand-700">
+              <strong>Effort:</strong> {generated.generatedFrom?.borgLabel}
+              {generated.generatedFrom?.maxHr
+                ? ` · Est. HRmax ${generated.generatedFrom.maxHr} (cap ~${generated.generatedFrom.targetHrCap} bpm)`
+                : ""}
+            </p>
+          )}
           {generated.selfAdjustHistory[0] && (
             <p className="rounded-xl bg-brand-50 p-3 text-sm text-brand-800">
               <strong>Dosing note:</strong> {generated.selfAdjustHistory[0].details}
             </p>
+          )}
+          {(generated.generatedFrom?.adjectiveSummary || []).length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">
+                Adjective-driven clinical adjustments
+              </p>
+              <ul className="mt-2 space-y-1 text-xs text-brand-800">
+                {generated.generatedFrom!.adjectiveSummary!.slice(0, 8).map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(generated.generatedFrom?.safetySummary || []).length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">
+                Safety / device / precaution summary
+              </p>
+              <ul className="mt-2 space-y-1 text-xs text-brand-800">
+                {generated.generatedFrom!.safetySummary!.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(generated.generatedFrom?.safetyEducation || []).length > 0 && (
+            <details className="rounded-xl border border-brand-100 p-3">
+              <summary className="cursor-pointer text-sm font-semibold text-brand-900">
+                Precaution & device adherence instructions (
+                {generated.generatedFrom!.safetyEducation!.length})
+              </summary>
+              <div className="mt-3 space-y-3">
+                {generated.generatedFrom!.safetyEducation!.slice(0, 12).map((block) => (
+                  <div key={block.title} className="text-sm">
+                    <p className="font-semibold text-brand-950">{block.title}</p>
+                    <p className="mt-1 text-brand-700">{block.body}</p>
+                    <ul className="mt-1 list-disc pl-5 text-xs text-brand-800">
+                      {block.bullets.slice(0, 6).map((b) => (
+                        <li key={b}>{b}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
           {(generated.generatedFrom?.conditionSummary || []).length > 0 && (
             <div>
@@ -796,6 +1312,13 @@ export default function AssessmentPage() {
                       </Link>
                     )}
                   </div>
+                  {item.variationId && (
+                    <p className="mt-1 text-xs font-medium text-brand-700">
+                      Variation:{" "}
+                      {m?.variations.find((v) => v.id === item.variationId)?.name ??
+                        item.variationId}
+                    </p>
+                  )}
                   {m && (
                     <p className="mt-1 text-xs text-brand-600">{m.clinical.whyImportant}</p>
                   )}

@@ -8,6 +8,7 @@ import type {
   StretchVariation,
 } from "@/lib/types";
 import { ADDITIONAL_EXERCISE_SEEDS } from "@/data/exercise-clinical-expansion";
+import { ensureHomeProgramVariations } from "@/data/home-variations";
 import { videoForRegion } from "@/data/video-catalog";
 
 /** Catalog target capacity per Build.MD (virtual + clinical bases) */
@@ -588,6 +589,8 @@ function finalize(seed: Seed): Exercise {
     kind: "exercise",
     slug: seed.slug ?? slugify(seed.name),
     durationBucket: bucket(seed.durationSeconds),
+    variations: ensureHomeProgramVariations(seed.id, seed.variations),
+    tags: Array.from(new Set([...(seed.tags ?? []), "home-capable", "evidence-informed"])),
   };
 }
 
@@ -640,7 +643,8 @@ export function getExerciseByIndex(index: number): Exercise | undefined {
     difficulty: shiftDifficulty(base.difficulty, mod.difficultyShift),
     durationSeconds,
     durationBucket: bucket(durationSeconds),
-    tags: [...base.tags, mod.tag, "catalog-variant", `series-${series}`],
+    tags: [...base.tags, mod.tag, "catalog-variant", "home-capable", `series-${series}`],
+    variations: ensureHomeProgramVariations(id, base.variations),
     evidenceNotes: `${base.evidenceNotes} Catalog variant tuned for ${mod.label.toLowerCase()}.`,
     clinical: {
       ...base.clinical,

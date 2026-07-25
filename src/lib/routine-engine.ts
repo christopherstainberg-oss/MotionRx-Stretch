@@ -18,6 +18,9 @@ export {
   parseConcernParagraph,
   matchDescriptorsFromText,
   analyzeParagraphDescriptors,
+  applyHomeBasedProgram,
+  buildClinicalSafetyPlan,
+  analyzeAssessmentAdjectives,
 } from "@/lib/plan-engine";
 
 function itemsFrom(

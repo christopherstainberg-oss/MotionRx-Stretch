@@ -3,11 +3,15 @@ import { BASE_STRETCHES, getStretchById } from "@/data/stretch-library";
 import {
   matchDescriptorsFromText,
   summarizeDescriptors,
+  type ProgramBias,
 } from "@/data/pain-descriptors";
 import {
   matchConditionsFromText,
   summarizeConditions,
 } from "@/data/clinical-conditions";
+import { buildClinicalSafetyPlan } from "@/data/clinical-safety";
+import { analyzeAssessmentAdjectives } from "@/data/assessment-adjectives";
+import { pickHomeVariationId } from "@/data/home-variations";
 import type {
   BodyPart,
   Difficulty,
@@ -22,6 +26,8 @@ import { v4 as uuid } from "uuid";
 
 export { matchDescriptorsFromText, analyzeParagraphDescriptors } from "@/data/pain-descriptors";
 export { matchConditionsFromText, summarizeConditions } from "@/data/clinical-conditions";
+export { buildClinicalSafetyPlan } from "@/data/clinical-safety";
+export { analyzeAssessmentAdjectives } from "@/data/assessment-adjectives";
 
 const DIFFICULTY_RANK: Record<Difficulty, number> = {
   beginner: 1,
@@ -265,20 +271,85 @@ function scoreMovement(
   return score;
 }
 
-function toItem(movementId: string, kind: MovementKind): RoutineItem {
+function toItem(
+  movementId: string,
+  kind: MovementKind,
+  variationId?: string
+): RoutineItem {
   return {
     id: uuid(),
     movementId,
     kind,
+    variationId,
     rotationSeed: Math.floor(Math.random() * 1000),
   };
 }
 
-/** Clinically styled hybrid plan from chips + free-text + pain descriptors + conditions */
+function homeVarFor(kind: MovementKind, movementId: string, homeBased: boolean): string | undefined {
+  if (!homeBased) return undefined;
+  const m =
+    kind === "stretch" ? getStretchById(movementId) : getExerciseById(movementId);
+  return pickHomeVariationId(m?.variations);
+}
+
+/** Apply or clear home-based variation IDs on every routine item */
+export function applyHomeBasedProgram(routine: Routine, homeBased: boolean): Routine {
+  const items = routine.items.map((item) => {
+    if (!homeBased) {
+      const { variationId, ...rest } = item;
+      // Keep non-home variations; clear home ones
+      if (variationId && /home-/i.test(variationId)) {
+        return { ...rest, id: item.id, movementId: item.movementId, kind: item.kind };
+      }
+      return item;
+    }
+    const vid = homeVarFor(item.kind, item.movementId, true);
+    return vid ? { ...item, variationId: vid } : item;
+  });
+  const adjustment: RoutineAdjustment = {
+    at: new Date().toISOString(),
+    reason: homeBased
+      ? "Switched to home-based program variations"
+      : "Home-based program variations turned off",
+    painFactor: 0,
+    action: "modify",
+    details: homeBased
+      ? "Each stretch/exercise prefers chair/wall/floor/minimal-equipment home variations when available."
+      : "Items use default catalog variations.",
+    source: "home",
+  };
+  return {
+    ...routine,
+    homeBasedProgram: homeBased,
+    items,
+    generatedFrom: routine.generatedFrom
+      ? { ...routine.generatedFrom, homeBasedProgram: homeBased }
+      : routine.generatedFrom,
+    selfAdjustHistory: [...(routine.selfAdjustHistory || []), adjustment],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/** Clinically styled hybrid plan from chips + free-text + descriptors + conditions + safety + adjectives */
 export function generateHybridPlan(input: SymptomInput, userId?: string): Routine {
   const parsed = input.concernParagraph
     ? parseConcernParagraph(input.concernParagraph)
     : null;
+
+  const adj = analyzeAssessmentAdjectives(input.concernParagraph || "");
+  const safety = buildClinicalSafetyPlan({
+    ageYears: input.ageYears,
+    borgTargetId: input.borgTargetId,
+    restingHr: input.restingHr,
+    precautionIds: input.precautionIds,
+    implantIds: input.implantIds,
+    orthoticIds: input.orthoticIds,
+    prostheticIds: input.prostheticIds,
+    assistiveDeviceIds: input.assistiveDeviceIds,
+    protocolNotes: input.protocolNotes,
+    concernParagraph: input.concernParagraph,
+  });
+  const homeBased = Boolean(input.homeBasedProgram);
 
   const textMatched = input.concernParagraph
     ? matchDescriptorsFromText(input.concernParagraph, 8)
@@ -296,39 +367,77 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   );
   const condHints = summarizeConditions(conditionIds);
 
-  // Merge program biases from descriptors + clinical conditions
+  // Merge program biases: descriptors + conditions + adjectives + safety
   const mergedBiases = Array.from(
-    new Set([...descHints.biases, ...condHints.biases])
-  );
+    new Set([
+      ...descHints.biases,
+      ...condHints.biases,
+      ...adj.programBiases,
+      ...(safety.programBiases as ProgramBias[]),
+    ])
+  ) as ProgramBias[];
   const mergedAvoid = Array.from(
-    new Set([...descHints.avoidTags, ...condHints.avoidTags])
+    new Set([
+      ...descHints.avoidTags,
+      ...condHints.avoidTags,
+      ...adj.avoidTags,
+      ...safety.avoidTags,
+    ])
   );
   const mergedPrefer = Array.from(
-    new Set([...descHints.preferTags, ...condHints.preferTags])
+    new Set([
+      ...descHints.preferTags,
+      ...condHints.preferTags,
+      ...adj.preferTags,
+      ...safety.preferTags,
+      ...(homeBased ? ["home", "minimal-equipment", "chair", "wall"] : []),
+    ])
   );
+
+  const rank = { beginner: 1, intermediate: 2, advanced: 3 };
+  const pickMaxDiff = (...opts: (Difficulty | undefined)[]): Difficulty | undefined => {
+    let best: Difficulty | undefined;
+    for (const d of opts) {
+      if (!d) continue;
+      if (!best || rank[d] < rank[best]) best = d;
+    }
+    return best;
+  };
+
   const combinedHints = {
     ...descHints,
-    effectivePainBoost: descHints.effectivePainBoost + condHints.effectivePainBoost,
+    effectivePainBoost:
+      descHints.effectivePainBoost +
+      condHints.effectivePainBoost +
+      adj.irritabilityBoost,
     biases: mergedBiases,
     avoidTags: mergedAvoid,
     preferTags: mergedPrefer,
-    stretchBias: (descHints.stretchBias + condHints.stretchBias) / 2,
-    exerciseBias: (descHints.exerciseBias + condHints.exerciseBias) / 2,
-    redFlags: [...descHints.redFlags, ...condHints.redFlags],
-    maxDifficulty: (() => {
-      const rank = { beginner: 1, intermediate: 2, advanced: 3 };
-      const a = descHints.maxDifficulty;
-      const b = condHints.maxDifficulty;
-      if (!a) return b;
-      if (!b) return a;
-      return rank[a] <= rank[b] ? a : b;
-    })(),
+    stretchBias:
+      (descHints.stretchBias + condHints.stretchBias + adj.stretchBias) / 3,
+    exerciseBias:
+      (descHints.exerciseBias + condHints.exerciseBias + adj.exerciseBias) / 3,
+    redFlags: [
+      ...descHints.redFlags,
+      ...condHints.redFlags,
+      ...safety.redFlags,
+    ],
+    maxDifficulty: pickMaxDiff(
+      descHints.maxDifficulty,
+      condHints.maxDifficulty,
+      adj.maxDifficulty,
+      safety.maxDifficulty
+    ),
+    preferKinds: descHints.preferKinds,
   };
 
   const areaSet = new Set<BodyPart>(
     input.areas.length ? input.areas : parsed?.areas ?? ["full-body"]
   );
   condHints.bodyParts.forEach((bp) => areaSet.add(bp));
+  for (const p of safety.precautions) {
+    p.bodyPartsHint?.forEach((bp) => areaSet.add(bp));
+  }
   const areas = Array.from(areaSet);
   const symptoms = input.symptoms.length ? input.symptoms : parsed?.symptoms ?? [];
   const goals = input.goals.length ? input.goals : parsed?.goals ?? [];
@@ -339,12 +448,14 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
 
   let difficulty = input.difficulty;
   if (combinedHints.maxDifficulty) {
-    const rank = { beginner: 1, intermediate: 2, advanced: 3 };
     if (rank[combinedHints.maxDifficulty] < rank[difficulty]) {
       difficulty = combinedHints.maxDifficulty;
     }
   }
   if (avgPain >= 6 || condHints.clearanceRequired) difficulty = "beginner";
+  if (safety.programBiases.includes("sternal-precautions")) difficulty = "beginner";
+  if (safety.programBiases.includes("nwb") || safety.programBiases.includes("ttwb"))
+    difficulty = "beginner";
 
   const merged: SymptomInput = {
     ...input,
@@ -391,9 +502,45 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     }))
     .sort((a, b) => b.score - a.score);
 
-  const exerciseCandidates = BASE_EXERCISES.filter((e) =>
-    rankOk(e.difficulty, difficulty, avgPain)
-  )
+  const exerciseCandidates = BASE_EXERCISES.filter((e) => {
+    if (!rankOk(e.difficulty, difficulty, avgPain)) return false;
+    // Safety: drop high-load / impact when precautions demand
+    const blob = `${e.name} ${e.tags.join(" ")}`.toLowerCase();
+    for (const t of mergedAvoid) {
+      if (t === "all") return false;
+      if (blob.includes(t) || e.tags.includes(t)) return false;
+    }
+    if (
+      (safety.programBiases.includes("no-ue-load") ||
+        safety.programBiases.includes("sternal-precautions")) &&
+      (e.tags.includes("push") ||
+        e.tags.includes("pull") ||
+        blob.includes("push") ||
+        blob.includes("plank") ||
+        blob.includes("row"))
+    ) {
+      return false;
+    }
+    if (
+      (safety.programBiases.includes("nwb") ||
+        safety.programBiases.includes("ttwb") ||
+        safety.programBiases.includes("tdwb")) &&
+      (e.tags.includes("single-leg") ||
+        blob.includes("lunge") ||
+        blob.includes("squat") ||
+        blob.includes("jump") ||
+        blob.includes("step"))
+    ) {
+      return false;
+    }
+    if (
+      safety.programBiases.includes("no-core-strain") &&
+      (blob.includes("crunch") || blob.includes("sit-up") || blob.includes("plank"))
+    ) {
+      return false;
+    }
+    return true;
+  })
     .map((e) => ({
       e,
       score: scoreMovement(
@@ -414,17 +561,19 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   const exerciseIds: string[] = [];
   let minutes = 0;
   let target = Math.max(8, Math.min(45, input.availableMinutes));
+  target = Math.round(target * safety.minutesScale * adj.minutesScale);
   if (combinedHints.biases.includes("short-volume")) {
     target = Math.min(target, Math.max(8, Math.round(target * 0.7)));
   }
   if (combinedHints.biases.includes("defer-to-provider") || condHints.clearanceRequired) {
     target = Math.min(target, 10);
   }
+  target = Math.max(6, Math.min(45, target));
 
   // Always start with mobility warm-up when possible
   const warm = BASE_STRETCHES.find((s) => s.id === "cat-cow");
   if (warm) {
-    items.push(toItem(warm.id, "stretch"));
+    items.push(toItem(warm.id, "stretch", homeVarFor("stretch", warm.id, homeBased)));
     stretchIds.push(warm.id);
     minutes += warm.durationSeconds / 60;
   }
@@ -433,7 +582,9 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   if (combinedHints.biases.includes("warm-up-heavy")) {
     const extraWarm = BASE_STRETCHES.find((s) => s.id === "pelvic-tilt");
     if (extraWarm && !stretchIds.includes(extraWarm.id)) {
-      items.push(toItem(extraWarm.id, "stretch"));
+      items.push(
+        toItem(extraWarm.id, "stretch", homeVarFor("stretch", extraWarm.id, homeBased))
+      );
       stretchIds.push(extraWarm.id);
       minutes += extraWarm.durationSeconds / 60;
     }
@@ -443,7 +594,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   const wantExercise =
     prefer.includes("exercise") &&
     !combinedHints.biases.includes("defer-to-provider") &&
-    !condHints.clearanceRequired;
+    !condHints.clearanceRequired &&
+    !safety.programBiases.includes("lvad");
 
   // Interleave based on preference order
   let maxStretches = wantStretch ? (wantExercise ? 4 : 6) : 1;
@@ -453,6 +605,9 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   if (combinedHints.biases.includes("short-volume")) {
     maxStretches = Math.min(maxStretches, 4);
     maxExercises = Math.min(maxExercises, 3);
+  }
+  if (safety.programBiases.includes("sternal-precautions")) {
+    maxExercises = Math.min(maxExercises, 2);
   }
 
   let si = 0;
@@ -468,32 +623,35 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       wantExercise && ei < exerciseCandidates.length && exerciseIds.length < maxExercises;
 
     const nextStretch = prefer[0] === "exercise" ? false : canStretch;
-    const pickExercise = canEx && (!nextStretch || prefer[0] === "exercise" || stretchIds.length > exerciseIds.length);
+    const pickExercise =
+      canEx &&
+      (!nextStretch || prefer[0] === "exercise" || stretchIds.length > exerciseIds.length);
 
     if (pickExercise && canEx) {
       const { e } = exerciseCandidates[ei++]!;
       if (exerciseIds.includes(e.id)) continue;
-      items.push(toItem(e.id, "exercise"));
+      items.push(toItem(e.id, "exercise", homeVarFor("exercise", e.id, homeBased)));
       exerciseIds.push(e.id);
       minutes += e.durationSeconds / 60;
     } else if (canStretch) {
       const { s } = stretchCandidates[si++]!;
       if (stretchIds.includes(s.id)) continue;
-      items.push(toItem(s.id, "stretch"));
+      items.push(toItem(s.id, "stretch", homeVarFor("stretch", s.id, homeBased)));
       stretchIds.push(s.id);
       minutes += s.durationSeconds / 60;
     } else if (canEx) {
       const { e } = exerciseCandidates[ei++]!;
       if (exerciseIds.includes(e.id)) continue;
-      items.push(toItem(e.id, "exercise"));
+      items.push(toItem(e.id, "exercise", homeVarFor("exercise", e.id, homeBased)));
       exerciseIds.push(e.id);
       minutes += e.durationSeconds / 60;
     } else break;
   }
 
   const cool = BASE_STRETCHES.find((s) => s.id === "childs-pose");
-  if (cool && !stretchIds.includes(cool.id)) {
-    items.push(toItem(cool.id, "stretch"));
+  // Spinal BLT may still allow child's pose gentle — keep if not avoided
+  if (cool && !stretchIds.includes(cool.id) && !mergedAvoid.includes("flexion-load")) {
+    items.push(toItem(cool.id, "stretch", homeVarFor("stretch", cool.id, homeBased)));
     stretchIds.push(cool.id);
     minutes += cool.durationSeconds / 60;
   }
@@ -506,6 +664,12 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     conditionIds.length > 0
       ? ` Clinical conditions: ${condHints.summaryLines.slice(0, 6).join("; ")}.`
       : "";
+  const adjDetail =
+    adj.summaryLines.length > 0
+      ? ` Language analysis: ${adj.summaryLines.slice(0, 6).join("; ")}.`
+      : "";
+  const safetyDetail =
+    safety.summaryLines.length > 0 ? ` Safety: ${safety.summaryLines.join(" · ")}.` : "";
   const subcatDetail =
     condHints.subcategories.length > 0
       ? ` Sub-categories: ${condHints.subcategories.slice(0, 5).join(", ")}.`
@@ -518,14 +682,21 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
           .join("; ")}.`
       : "";
   const biasDetail = combinedHints.biases.length
-    ? ` Program biases: ${combinedHints.biases.slice(0, 5).join(", ")}.`
+    ? ` Program biases: ${combinedHints.biases.slice(0, 8).join(", ")}.`
     : "";
   const rfDetail = combinedHints.redFlags.length
-    ? ` Safety notes from screening descriptors/conditions—seek licensed care if red flags apply.`
+    ? ` Safety notes from screening—seek licensed care if red flags apply.`
     : "";
   const clearanceDetail = condHints.clearanceRequired
-    ? ` Clearance-sensitive condition(s) detected: volume and intensity capped; follow surgeon/physician/PT guidance.`
+    ? ` Clearance-sensitive condition(s): volume/intensity capped; follow surgeon/physician/PT guidance.`
     : "";
+  const homeDetail = homeBased
+    ? ` Home-based program ON: chair/wall/floor/minimal-equipment variations preferred.`
+    : "";
+  const hrDetail =
+    safety.maxHr != null
+      ? ` Age ${safety.ageYears}: est. HRmax ${safety.maxHr} bpm; Borg ${safety.borg.label}; suggested HR cap ~${safety.targetHrCap} bpm.`
+      : ` Borg target: ${safety.borg.label}.`;
   const evidenceDetail =
     condHints.clinicalOutcomes[0] != null
       ? ` Evidence framing: ${condHints.clinicalOutcomes[0].evidenceNote}`
@@ -533,18 +704,24 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
 
   const adjustment: RoutineAdjustment = {
     at: new Date().toISOString(),
-    reason: conditionIds.length
-      ? "Generated from clinical condition variations + descriptors + intake"
-      : painDescriptorIds.length
-        ? "Generated from clinical pain descriptors + intake"
-        : input.concernParagraph
-          ? "Generated from written concerns + clinical intake"
-          : "Generated from symptoms, goals, and pain scale",
+    reason:
+      safety.precautionIds.length || safety.implantIds.length
+        ? "Generated from detailed Assessment (safety + adjectives + conditions + descriptors)"
+        : adj.hits.length
+          ? "Generated from Assessment adjectives + clinical intake"
+          : conditionIds.length
+            ? "Generated from clinical condition variations + descriptors + intake"
+            : painDescriptorIds.length
+              ? "Generated from clinical pain descriptors + intake"
+              : input.concernParagraph
+                ? "Generated from written concerns + clinical intake"
+                : "Generated from symptoms, goals, and pain scale",
     painFactor: avgPain,
     action:
       combinedHints.biases.includes("defer-to-provider") ||
       condHints.clearanceRequired ||
-      avgPain >= 6
+      avgPain >= 6 ||
+      safety.programBiases.includes("nwb")
         ? "regress"
         : avgPain >= 4
           ? "modify"
@@ -557,15 +734,19 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         : avgPain >= 4
           ? "Moderate pain: balanced mobility + activation with mid volume per outpatient load management."
           : "Pain tolerable: include mobility and progressive exercise dosing with warm-up/cool-down.") +
+      hrDetail +
       descDetail +
       condDetail +
+      adjDetail +
+      safetyDetail +
       subcatDetail +
       outcomeDetail +
       biasDetail +
       rfDetail +
       clearanceDetail +
+      homeDetail +
       evidenceDetail,
-    source: "user",
+    source: "safety",
   };
 
   const kindsLabel = [
@@ -583,7 +764,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         ? `Personalized ${kindsLabel} plan`
         : `Plan: ${areas.map((a) => a.replace("-", " ")).join(", ")}`,
     description:
-      "Clinically styled outpatient plan: warm-up mobility → targeted stretches and/or exercises → cool-down. Self-adjusts from pain, performance, and Jeffery discussions.",
+      "Clinically styled plan from detailed Assessment: adjectives, descriptors, conditions, precautions/devices, age/Borg dosing, and home-based variations when selected. Warm-up → targeted mobility/strength → cool-down.",
     focusAreas: areas,
     stretchIds,
     exerciseIds,
@@ -591,6 +772,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     estimatedMinutes: Math.max(1, Math.round(minutes)),
     difficulty: avgPain >= 5 ? "beginner" : difficulty,
     isPersonalized: true,
+    homeBasedProgram: homeBased,
     generatedFrom: {
       symptoms,
       areas,
@@ -605,6 +787,23 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       conditionCategories: condHints.categories,
       conditionSubcategories: condHints.subcategories,
       clinicalOutcomes: condHints.clinicalOutcomes.slice(0, 10),
+      ageYears: safety.ageYears,
+      maxHr: safety.maxHr,
+      targetHrCap: safety.targetHrCap,
+      borgTargetId: safety.borg.id,
+      borgLabel: safety.borg.label,
+      precautionIds: safety.precautionIds,
+      implantIds: safety.implantIds,
+      orthoticIds: safety.orthoticIds,
+      prostheticIds: safety.prostheticIds,
+      assistiveDeviceIds: safety.assistiveDeviceIds,
+      suggestedAssistiveDeviceIds: safety.suggestedAssistiveDeviceIds,
+      safetySummary: safety.summaryLines,
+      safetyEducation: safety.educationBlocks.slice(0, 20),
+      protocolNotes: input.protocolNotes,
+      adjectiveHits: adj.wordsFound,
+      adjectiveSummary: adj.summaryLines,
+      homeBasedProgram: homeBased,
     },
     selfAdjustHistory: [adjustment],
     createdAt: new Date().toISOString(),

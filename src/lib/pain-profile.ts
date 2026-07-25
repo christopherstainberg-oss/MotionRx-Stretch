@@ -25,6 +25,17 @@ export function saveLocalPainProfile(
     overallPain: partial.overallPain,
     areas: partial.areas,
     source: partial.source,
+    ageYears: partial.ageYears,
+    borgTargetId: partial.borgTargetId,
+    restingHr: partial.restingHr,
+    precautionIds: partial.precautionIds,
+    implantIds: partial.implantIds,
+    orthoticIds: partial.orthoticIds,
+    prostheticIds: partial.prostheticIds,
+    assistiveDeviceIds: partial.assistiveDeviceIds,
+    protocolNotes: partial.protocolNotes,
+    homeBasedProgram: partial.homeBasedProgram,
+    adjectiveSummary: partial.adjectiveSummary,
     updatedAt: new Date().toISOString(),
   };
   try {
