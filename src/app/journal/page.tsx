@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { PainScale } from "@/components/PainScale";
 import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
-import type { BodyPart, JournalEntry } from "@/lib/types";
+import { ModalityMiniList } from "@/components/ModalitySuggestions";
+import type { BodyPart, JournalEntry, ModalityRecommendation } from "@/lib/types";
 import { BODY_PART_LABELS } from "@/data/stretch-library";
 import { getDescriptorById } from "@/data/pain-descriptors";
+import { recommendModalities } from "@/lib/modality-engine";
 import { loadLocalPainProfile, saveLocalPainProfile } from "@/lib/pain-profile";
-import { BookOpen, Share2 } from "lucide-react";
+import { BookOpen, Share2, Sparkles } from "lucide-react";
 import { v4 as uuid } from "uuid";
 
 const AREAS = Object.keys(BODY_PART_LABELS) as BodyPart[];
@@ -22,6 +25,38 @@ export default function JournalPage() {
   const [flexibilityNote, setFlexibilityNote] = useState("");
   const [share, setShare] = useState(false);
   const [descriptorIds, setDescriptorIds] = useState<string[]>([]);
+  const [suggestedMods, setSuggestedMods] = useState<ModalityRecommendation[]>([]);
+
+  useEffect(() => {
+    const scored = recommendModalities({
+      painScore: pain,
+      descriptorIds,
+      experienceText: `${title} ${body} ${flexibilityNote}`,
+      timing: pain >= 6 ? "acute-flare" : "between-visits",
+      limit: 4,
+    });
+    setSuggestedMods(
+      scored.map((s) => ({
+        modalityId: s.modality.id,
+        name: s.modality.name,
+        category: s.modality.category,
+        setting: s.modality.setting,
+        timing: s.timing,
+        score: Math.round(s.score * 10) / 10,
+        confidence: s.confidence,
+        reasons: s.reasons,
+        plainLanguage: s.modality.plainLanguage,
+        howTo: s.modality.howTo,
+        evidenceNotes: s.modality.evidenceNotes,
+        durationMinutes: s.modality.durationMinutes,
+        frequency: s.modality.frequency,
+        precautions: s.modality.precautions,
+        contraindications: s.modality.contraindications,
+        outcomeLinks: s.modality.outcomeLinks,
+        homeSafe: s.modality.setting === "home" || s.modality.setting === "either",
+      }))
+    );
+  }, [pain, descriptorIds, title, body, flexibilityNote]);
 
   useEffect(() => {
     let local: JournalEntry[] = [];
@@ -79,6 +114,7 @@ export default function JournalPage() {
       sharedWithProvider: share,
       tags: share ? ["shared"] : [],
       painDescriptorIds: descriptorIds,
+      modalityIds: suggestedMods.map((m) => m.modalityId).slice(0, 8),
     };
     const next = [entry, ...entries];
     persist(next);
@@ -213,6 +249,20 @@ export default function JournalPage() {
             })}
           </div>
         </div>
+        {suggestedMods.length > 0 && (
+          <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-brand-900">
+                <Sparkles className="h-4 w-4 text-brand-600" />
+                Modalities matching today&apos;s notes
+              </p>
+              <Link href="/modalities" className="text-xs font-semibold text-brand-700 hover:underline">
+                Full plan
+              </Link>
+            </div>
+            <ModalityMiniList title="" items={suggestedMods} />
+          </div>
+        )}
         <label className="flex items-center gap-2 text-sm text-brand-800">
           <input
             type="checkbox"

@@ -10,9 +10,11 @@ import {
   ensureRoutineItems,
   STARTER_ROUTINES,
 } from "@/lib/routine-engine";
-import type { Routine } from "@/lib/types";
+import type { ModalityRecommendation, Routine } from "@/lib/types";
+import { postSessionModalitySuggestions } from "@/lib/modality-engine";
 import { PainScale } from "@/components/PainScale";
 import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
+import { ModalityMiniList } from "@/components/ModalitySuggestions";
 import { loadLocalPainProfile, saveLocalPainProfile } from "@/lib/pain-profile";
 import { CheckCircle2, ChevronRight } from "lucide-react";
 import { v4 as uuid } from "uuid";
@@ -28,6 +30,7 @@ function SessionInner() {
   const [adjusted, setAdjusted] = useState<Routine | null>(null);
   const [notes, setNotes] = useState("");
   const [descriptorIds, setDescriptorIds] = useState<string[]>([]);
+  const [postMods, setPostMods] = useState<ModalityRecommendation[]>([]);
 
   useEffect(() => {
     const profile = loadLocalPainProfile();
@@ -92,6 +95,14 @@ function SessionInner() {
       averagePainAfter: painAfter,
       difficultyFelt,
     });
+    const mods = postSessionModalitySuggestions({
+      painBefore,
+      painAfter,
+      difficultyFelt,
+      descriptorIds,
+      notes,
+    });
+    setPostMods(mods);
     setAdjusted(next);
     setPhase("done");
 
@@ -112,6 +123,7 @@ function SessionInner() {
       notes,
       completed: true,
       painDescriptorIds: descriptorIds,
+      modalityIds: mods.map((m) => m.modalityId),
     };
     localStorage.setItem(`session:${session.id}`, JSON.stringify(session));
     localStorage.setItem(`routine:${next.id}`, JSON.stringify(next));
@@ -222,9 +234,23 @@ function SessionInner() {
             Pain {painBefore} → {painAfter} · Effort {difficultyFelt}/5
           </p>
         </div>
+        {postMods.length > 0 && (
+          <div className="card space-y-3 p-5">
+            <ModalityMiniList
+              title="Post-session / recovery modalities for this rating"
+              items={postMods}
+            />
+            <Link href="/modalities" className="text-sm font-semibold text-brand-700 hover:underline">
+              Open full pre/post-visit modality plan →
+            </Link>
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           <Link href="/insights" className="btn-primary">
             Correlated insights
+          </Link>
+          <Link href="/modalities" className="btn-secondary">
+            Modalities
           </Link>
           <Link href="/progress" className="btn-secondary">
             Progress

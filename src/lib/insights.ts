@@ -6,8 +6,12 @@ import type {
   Goal,
   JefferyThread,
   PainProfile,
+  ModalityLog,
+  ModalityPlan,
 } from "@/lib/types";
 import { getDescriptorsByIds, summarizeDescriptors } from "@/data/pain-descriptors";
+import { getModalityById } from "@/data/modalities";
+import { buildVisitModalityPlan } from "@/lib/modality-engine";
 import { v4 as uuid } from "uuid";
 
 export function correlateInsights(input: {
@@ -18,6 +22,8 @@ export function correlateInsights(input: {
   jeffery?: JefferyThread | null;
   painProfile?: PainProfile | null;
   painHistory?: PainProfile[];
+  modalityPlans?: ModalityPlan[];
+  modalityLogs?: ModalityLog[];
 }): CorrelatedInsight[] {
   const insights: CorrelatedInsight[] = [];
   const now = new Date().toISOString();
@@ -211,6 +217,105 @@ export function correlateInsights(input: {
       sources: ["routines"],
       at: now,
     });
+  }
+
+  // —— Modalities correlation ——
+  const modPlans = input.modalityPlans || [];
+  const modLogs = input.modalityLogs || [];
+  const sessionModIds = completed.flatMap((s) => s.modalityIds || []);
+  const journalModIds = input.journal.flatMap((j) => j.modalityIds || []);
+  const planModIds = modPlans.flatMap((p) => [
+    ...p.preVisit.map((m) => m.modalityId),
+    ...p.postVisit.map((m) => m.modalityId),
+  ]);
+  const allModIds = [...sessionModIds, ...journalModIds, ...planModIds, ...modLogs.map((l) => l.modalityId)];
+  const modFreq = new Map<string, number>();
+  for (const id of allModIds) modFreq.set(id, (modFreq.get(id) || 0) + 1);
+  const topMods = Array.from(modFreq.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([id]) => id);
+
+  if (modPlans.length || topMods.length) {
+    const names = topMods
+      .map((id) => getModalityById(id)?.name)
+      .filter(Boolean)
+      .slice(0, 4);
+    const latestPlan = modPlans
+      .slice()
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+    insights.push({
+      id: uuid(),
+      title: "Modality plan linked to your pain data",
+      summary: latestPlan
+        ? `Latest modality plan (pain ~${latestPlan.painScore}/10) includes ${latestPlan.preVisit.length} pre-visit and ${latestPlan.postVisit.length} post-visit suggestions.${names.length ? ` Most referenced: ${names.join(", ")}.` : ""} ${latestPlan.narrative.slice(0, 180)}${latestPlan.narrative.length > 180 ? "…" : ""}`
+        : `Modalities appear across sessions/journal: ${names.join(", ") || "several adjuncts"}.`,
+      severity: latestPlan?.clinicalFlags.redFlags
+        ? "action"
+        : latestPlan?.clinicalFlags.highIrritability
+          ? "caution"
+          : "info",
+      sources: ["modalities", "pain", "descriptors", "sessions"],
+      recommendation: latestPlan?.clinicalFlags.stiffnessDominant
+        ? "Stiffness-dominant pattern: prioritize heat/mobility prep pre-session; keep passive tools short and always bridge into active work."
+        : latestPlan?.clinicalFlags.acuteIrritability
+          ? "Higher irritability: favor short cold, pacing, traffic-light rules, and relative rest over aggressive passive work."
+          : "Review pre-visit prep before appointments and log which modalities help on the Modalities page.",
+      relatedModalityIds: topMods,
+      relatedDescriptorIds: latestPlan?.descriptorIds?.slice(0, 8),
+      at: now,
+    });
+  }
+
+  const helpfulLogs = modLogs.filter((l) => l.helpful === true);
+  const unhelpfulLogs = modLogs.filter((l) => l.helpful === false);
+  if (helpfulLogs.length || unhelpfulLogs.length) {
+    insights.push({
+      id: uuid(),
+      title: "What modalities helped you",
+      summary: `You marked ${helpfulLogs.length} modality use(s) helpful and ${unhelpfulLogs.length} not helpful. This feedback should guide pre/post-visit choices.`,
+      severity: helpfulLogs.length > unhelpfulLogs.length ? "positive" : "info",
+      sources: ["modalities", "journal", "sessions"],
+      recommendation:
+        helpfulLogs.length > 0
+          ? `Keep leaning on: ${helpfulLogs
+              .slice(0, 3)
+              .map((l) => getModalityById(l.modalityId)?.name || l.modalityId)
+              .join(", ")}.`
+          : "Log helpful/not helpful on modality cards so future suggestions personalize.",
+      relatedModalityIds: [...helpfulLogs, ...unhelpfulLogs].map((l) => l.modalityId).slice(0, 8),
+      at: now,
+    });
+  }
+
+  // Live modality hint from current pain profile if no plan saved
+  if (!modPlans.length && input.painProfile && (input.painProfile.overallPain >= 0 || input.painProfile.descriptorIds.length)) {
+    const live = buildVisitModalityPlan({
+      painScore: input.painProfile.overallPain,
+      descriptorIds: input.painProfile.descriptorIds,
+      experienceText: input.painProfile.freeText,
+      recentSessions: completed.slice(0, 5),
+      recentJournal: input.journal.slice(0, 5),
+    });
+    const topPre = live.preVisit[0];
+    const topPost = live.postVisit[0];
+    if (topPre || topPost) {
+      insights.push({
+        id: uuid(),
+        title: "Suggested modalities from current pain profile",
+        summary: [
+          topPre ? `Pre-visit focus: ${topPre.name} — ${topPre.plainLanguage}` : "",
+          topPost ? `Post-visit focus: ${topPost.name} — ${topPost.plainLanguage}` : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        severity: "info",
+        sources: ["modalities", "pain", "descriptors"],
+        recommendation: "Open Modalities to generate and save a full pre/post-visit plan.",
+        relatedModalityIds: [topPre?.modalityId, topPost?.modalityId].filter(Boolean) as string[],
+        at: now,
+      });
+    }
   }
 
   if (!insights.length) {

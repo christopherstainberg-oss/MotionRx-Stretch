@@ -46,6 +46,9 @@ export async function POST(req: Request) {
     painDescriptorIds: Array.isArray(body.painDescriptorIds)
       ? body.painDescriptorIds.map(String).slice(0, 24)
       : [],
+    modalityIds: Array.isArray(body.modalityIds)
+      ? body.modalityIds.map(String).slice(0, 24)
+      : undefined,
   };
 
   await updateDb((db) => {

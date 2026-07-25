@@ -14,9 +14,17 @@ import {
   summarizeDescriptors,
 } from "@/data/pain-descriptors";
 import { generateHybridPlan, parseConcernParagraph } from "@/lib/routine-engine";
-import type { BodyPart, Difficulty, MovementKind, SymptomInput } from "@/lib/types";
+import { planFromSymptomInput } from "@/lib/modality-engine";
+import type {
+  BodyPart,
+  Difficulty,
+  ModalityPlan,
+  MovementKind,
+  SymptomInput,
+} from "@/lib/types";
 import { PainScale } from "@/components/PainScale";
 import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
+import { ModalityPlanPanels } from "@/components/ModalitySuggestions";
 import {
   averagePainFromAreas,
   loadLocalPainProfile,
@@ -67,6 +75,7 @@ export default function AssessPage() {
   const [autoApplyDesc, setAutoApplyDesc] = useState(true);
   const [routineId, setRoutineId] = useState<string | null>(null);
   const [generated, setGenerated] = useState<ReturnType<typeof generateHybridPlan> | null>(null);
+  const [modalityPlan, setModalityPlan] = useState<ModalityPlan | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -168,7 +177,28 @@ export default function AssessPage() {
 
   async function createPlan() {
     const routine = generateHybridPlan(input);
+    const modPlan = planFromSymptomInput({
+      ...input,
+      painDescriptorIds:
+        routine.generatedFrom?.painDescriptorIds || input.painDescriptorIds || descriptorIds,
+    });
+    modPlan.source = "assess";
+    const suggestedModalityIds = [
+      ...modPlan.preVisit,
+      ...modPlan.postVisit,
+      ...modPlan.preSession,
+      ...modPlan.postSession,
+    ]
+      .map((m) => m.modalityId)
+      .filter((id, i, arr) => arr.indexOf(id) === i)
+      .slice(0, 12);
+    routine.generatedFrom = {
+      ...routine.generatedFrom!,
+      modalityPlanId: modPlan.id,
+      suggestedModalityIds,
+    };
     setGenerated(routine);
+    setModalityPlan(modPlan);
     setSaving(true);
     const finalDesc =
       routine.generatedFrom?.painDescriptorIds || input.painDescriptorIds || descriptorIds;
@@ -188,10 +218,20 @@ export default function AssessPage() {
     try {
       localStorage.setItem(`routine:${routine.id}`, JSON.stringify(routine));
       localStorage.setItem("active-routine", JSON.stringify(routine));
+      localStorage.setItem("modality-plan", JSON.stringify(modPlan));
       await fetch("/api/pain-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...profile, source: "assess" }),
+      }).catch(() => {});
+      await fetch("/api/modalities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save-plan",
+          plan: modPlan,
+          source: "assess",
+        }),
       }).catch(() => {});
       const res = await fetch("/api/routines", {
         method: "POST",
@@ -631,6 +671,10 @@ export default function AssessPage() {
             >
               Start guided session
             </Link>
+            <Link href="/modalities" className="btn-secondary">
+              <Sparkles className="h-4 w-4" />
+              Pre/post-visit modalities
+            </Link>
             <Link href="/builder" className="btn-secondary">
               Customize / rotate
             </Link>
@@ -641,6 +685,26 @@ export default function AssessPage() {
               View correlations
             </Link>
           </div>
+        </section>
+      )}
+
+      {modalityPlan && (
+        <section className="space-y-3">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-brand-950">
+                Pre-visit & post-visit modality plan
+              </h2>
+              <p className="text-sm text-brand-700/80">
+                Matched to your pain rating, descriptors, and written experience—same clinical
+                data that shaped your movement plan.
+              </p>
+            </div>
+            <Link href="/modalities" className="text-sm font-semibold text-brand-700 hover:underline">
+              Full hub
+            </Link>
+          </div>
+          <ModalityPlanPanels plan={modalityPlan} showLink />
         </section>
       )}
     </div>

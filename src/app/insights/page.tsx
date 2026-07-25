@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { CorrelatedInsight, PainProfile } from "@/lib/types";
+import type { CorrelatedInsight, ModalityPlan, PainProfile } from "@/lib/types";
 import { correlateInsights } from "@/lib/insights";
 import type { JournalEntry, Routine, SessionLog, Goal } from "@/lib/types";
 import { loadLocalPainProfile } from "@/lib/pain-profile";
 import { getDescriptorById } from "@/data/pain-descriptors";
-import { Network } from "lucide-react";
+import { getModalityById } from "@/data/modalities";
+import { Network, Sparkles } from "lucide-react";
 import Link from "next/link";
 
 export default function InsightsPage() {
   const [insights, setInsights] = useState<CorrelatedInsight[]>([]);
   const [painProfile, setPainProfile] = useState<PainProfile | null>(null);
+  const [modalityPlan, setModalityPlan] = useState<ModalityPlan | null>(null);
 
   useEffect(() => {
     // Local correlation first (offline)
@@ -32,7 +34,15 @@ export default function InsightsPage() {
     const active = localStorage.getItem("active-routine");
     if (active) routines = [JSON.parse(active)];
     const localProfile = loadLocalPainProfile();
+    let localModPlan: ModalityPlan | null = null;
+    try {
+      const raw = localStorage.getItem("modality-plan");
+      if (raw) localModPlan = JSON.parse(raw) as ModalityPlan;
+    } catch {
+      localModPlan = null;
+    }
     setPainProfile(localProfile);
+    setModalityPlan(localModPlan);
     setInsights(
       correlateInsights({
         sessions,
@@ -40,6 +50,7 @@ export default function InsightsPage() {
         routines,
         goals,
         painProfile: localProfile,
+        modalityPlans: localModPlan ? [localModPlan] : [],
       })
     );
 
@@ -48,6 +59,7 @@ export default function InsightsPage() {
       .then((d) => {
         if (d.insights?.length) setInsights(d.insights);
         if (d.painProfile) setPainProfile(d.painProfile);
+        if (d.modalityPlan) setModalityPlan(d.modalityPlan);
       })
       .catch(() => {});
   }, []);
@@ -67,8 +79,8 @@ export default function InsightsPage() {
           Correlated insights
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-brand-700/85">
-          Clinical pain descriptors, sessions, journal, goals, routines, and Jeffery are analyzed
-          together—like an outpatient re-eval of the full story, not one number alone.
+          Clinical pain descriptors, modalities, sessions, journal, goals, routines, and Jeffery
+          are analyzed together—like an outpatient re-eval of the full story, not one number alone.
         </p>
       </div>
 
@@ -88,6 +100,32 @@ export default function InsightsPage() {
           </div>
           <Link href="/assess" className="btn-secondary mt-4 inline-flex text-xs">
             Update on Assess
+          </Link>
+        </section>
+      )}
+
+      {modalityPlan && (
+        <section className="card border-brand-200 p-5">
+          <h2 className="flex items-center gap-2 font-semibold text-brand-950">
+            <Sparkles className="h-5 w-5 text-brand-600" />
+            Linked modality plan
+          </h2>
+          <p className="mt-1 text-sm text-brand-700">
+            Pain ~{modalityPlan.painScore}/10 · {modalityPlan.preVisit.length} pre-visit ·{" "}
+            {modalityPlan.postVisit.length} post-visit suggestions
+          </p>
+          <p className="mt-2 text-sm text-brand-800/90 line-clamp-3">{modalityPlan.narrative}</p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {[...modalityPlan.preVisit, ...modalityPlan.postVisit]
+              .slice(0, 6)
+              .map((m) => (
+                <span key={m.modalityId} className="chip">
+                  {m.name}
+                </span>
+              ))}
+          </div>
+          <Link href="/modalities" className="btn-secondary mt-4 inline-flex text-xs">
+            Open modalities hub
           </Link>
         </section>
       )}
@@ -112,6 +150,11 @@ export default function InsightsPage() {
               {(ins.relatedDescriptorIds || []).slice(0, 4).map((id) => (
                 <span key={id} className="chip">
                   {getDescriptorById(id)?.label || id}
+                </span>
+              ))}
+              {(ins.relatedModalityIds || []).slice(0, 4).map((id) => (
+                <span key={id} className="chip">
+                  {getModalityById(id)?.name || id}
                 </span>
               ))}
             </div>

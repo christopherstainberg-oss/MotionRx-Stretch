@@ -15,6 +15,10 @@ import {
   matchDescriptorsFromText,
   summarizeDescriptors,
 } from "@/data/pain-descriptors";
+import {
+  buildVisitModalityPlan,
+  modalityCoachBlurb,
+} from "@/lib/modality-engine";
 
 const OPEN_ENDED = [
   "On a scale of 0–10, what is your pain right now, and what makes it better or worse?",
@@ -48,6 +52,9 @@ function clinicalEducation(topic: string): string {
   if (t.includes("posture") || t.includes("desk")) {
     return "Posture is less about a perfect pose and more about changing positions often, building mid-back/shoulder endurance, and pairing mobility with strength. Micro-breaks every 30–60 minutes often help more than one long stretch session.";
   }
+  if (t.includes("modalit")) {
+    return "Modalities (heat, ice, TENS education, soft-tissue tools, pacing, pre/post-visit prep) are short-term adjuncts. Outpatient PT standards use them to enable movement—not replace progressive loading. Stiffness often pairs with brief heat then mobility; irritable/post-load flares often pair with relative rest, traffic-light pain rules, and optional short cold. Clinic procedures (ultrasound, manual therapy, needling) should be PT-directed and always paired with a home exercise plan.";
+  }
   return "Rehab standards emphasize graded exposure: enough challenge to adapt, enough recovery to avoid flare-ups. Warm-up, quality technique, pain-aware dosing, and functional goals guide progression—similar to a clinic plan of care.";
 }
 
@@ -79,6 +86,13 @@ export function jefferyLocalReply(
   if (lower.includes("stretch")) topics.push("stretching");
   if (lower.includes("exercise") || lower.includes("strength")) topics.push("exercise");
   if (lower.includes("desk") || lower.includes("posture")) topics.push("posture");
+  if (
+    /heat|ice|modalit|tens|ultrasound|flare|pre-?visit|post-?visit|foam roll|pacing|compression/i.test(
+      lower
+    )
+  ) {
+    topics.push("modalities");
+  }
   if (!topics.length) topics.push("rehab-basics");
 
   const chatDesc = matchDescriptorsFromText(userText, 6);
@@ -200,10 +214,24 @@ export function jefferyLocalReply(
     })
     .join("\n");
 
+  const painForMods =
+    pain ??
+    ctx.sessions[0]?.averagePainAfter ??
+    ctx.journal[0]?.painOverall ??
+    3;
+  const modalityPlan = buildVisitModalityPlan({
+    painScore: painForMods,
+    descriptorIds: descIds,
+    experienceText: userText,
+    recentSessions: ctx.sessions,
+    recentJournal: ctx.journal,
+  });
+  const modalityBlurb = modalityCoachBlurb(modalityPlan);
+
   const content = [
     `Hi, I'm **Jeffery**, your MotionRx Stretch clinical mobility coach.`,
     ``,
-    `I read what you shared and connected it with your app data (routines, adjustments, sessions, journal, and clinical pain descriptors).`,
+    `I read what you shared and connected it with your app data (routines, adjustments, sessions, journal, clinical pain descriptors, and modality suggestions).`,
     known.length
       ? `**What I already know about your program:**\n${known
           .slice(0, 8)
@@ -227,6 +255,8 @@ export function jefferyLocalReply(
         ? `\n**Current focus program:** ${active.name} (${active.items?.length || active.stretchIds.length} movements). Tell me if it's too easy, too hard, or if pain changed.`
         : `\nDescribe your main issue in a short paragraph and I can draft a stretch + exercise plan.`,
     ``,
+    modalityBlurb,
+    ``,
     `**Question for you:** ${openEndedQuestion}`,
     ``,
     `_Educational support only—not a medical diagnosis. Seek licensed care for red flags (chest pain, progressive weakness, bowel/bladder changes, trauma, fever with back pain)._`,
@@ -245,6 +275,10 @@ export function jefferyLocalReply(
         adjustedRoutineId: adjustedRoutine?.id,
         openEndedQuestion,
         clinicalTopics: topics,
+        suggestedModalityIds: [
+          ...modalityPlan.preVisit.slice(0, 3),
+          ...modalityPlan.postVisit.slice(0, 3),
+        ].map((m) => m.modalityId),
       },
     },
     adjustedRoutine,

@@ -15,6 +15,7 @@ import {
   ListPlus,
   Menu,
   Network,
+  Sparkles,
   Stethoscope,
   TrendingUp,
   User,
@@ -26,6 +27,7 @@ const links = [
   { href: "/library", label: "Stretches", icon: Library, short: "Stretch" },
   { href: "/exercises", label: "Exercises", icon: Dumbbell, short: "Exercise" },
   { href: "/assess", label: "Assess", icon: Stethoscope, short: "Assess" },
+  { href: "/modalities", label: "Modalities", icon: Sparkles, short: "Mods" },
   { href: "/builder", label: "Builder", icon: ListPlus, short: "Build" },
   { href: "/routines", label: "Routines", icon: ListChecks, short: "Routines" },
   { href: "/jeffery", label: "Jeffery", icon: Bot, short: "Jeffery" },
@@ -38,10 +40,10 @@ const links = [
 /** Primary bottom tabs — highest-use paths on phones */
 const mobileTabs = [
   links[0], // Home
-  links[5], // Routines
+  links[6], // Routines
   links[3], // Assess
-  links[6], // Jeffery
-  links[10], // Account
+  links[7], // Jeffery
+  links[11], // Account
 ];
 
 function isActive(pathname: string, href: string) {
@@ -119,7 +121,7 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
 
           {/* Desktop / large tablet: condensed primary links */}
           <nav className="hidden items-center gap-0.5 lg:flex" aria-label="Main">
-            {links.slice(0, 8).map(({ href, label, icon: Icon }) => {
+            {links.slice(0, 9).map(({ href, label, icon: Icon }) => {
               const active = isActive(pathname, href);
               return (
                 <Link

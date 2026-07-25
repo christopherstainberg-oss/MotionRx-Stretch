@@ -15,6 +15,14 @@ export async function GET() {
   const painHistory = db.painProfiles
     .filter((p) => p.userId === userId)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  const modalityPlans = db.modalityPlans
+    .filter((p) => p.userId === userId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 10);
+  const modalityLogs = db.modalityLogs
+    .filter((l) => l.userId === userId)
+    .sort((a, b) => new Date(b.usedAt).getTime() - new Date(a.usedAt).getTime())
+    .slice(0, 40);
   const insights = correlateInsights({
     sessions,
     journal,
@@ -23,6 +31,12 @@ export async function GET() {
     jeffery,
     painProfile: painHistory[0] ?? null,
     painHistory,
+    modalityPlans,
+    modalityLogs,
   });
-  return NextResponse.json({ insights, painProfile: painHistory[0] ?? null });
+  return NextResponse.json({
+    insights,
+    painProfile: painHistory[0] ?? null,
+    modalityPlan: modalityPlans[0] ?? null,
+  });
 }

@@ -9,6 +9,7 @@ import {
   ListChecks,
   Network,
   ShieldCheck,
+  Sparkles,
   Stethoscope,
   TrendingUp,
 } from "lucide-react";
@@ -16,6 +17,7 @@ import { APP_NAME_OPTIONS, DEFAULT_APP_NAME } from "@/data/names";
 import { ICON_SET } from "@/data/icons";
 import { LIBRARY_STATS } from "@/data/stretch-library";
 import { EXERCISE_STATS } from "@/data/exercise-library";
+import { MODALITY_STATS } from "@/data/modalities";
 import { STARTER_ROUTINES } from "@/lib/routine-engine";
 import { AppLogo, IconMap } from "@/components/Icons";
 
@@ -56,6 +58,10 @@ export default function HomePage() {
                 <ListChecks className="h-4 w-4" />
                 Browse routines
               </Link>
+              <Link href="/modalities" className="btn-ghost w-full py-3 sm:w-auto">
+                <Sparkles className="h-4 w-4" />
+                Pre/post-visit modalities
+              </Link>
             </div>
           </div>
           <div className="grid w-full grid-cols-2 gap-2.5 sm:gap-3 lg:max-w-sm">
@@ -70,7 +76,11 @@ export default function HomePage() {
                 value: `${(EXERCISE_STATS.capacity / 1_000_000).toFixed(0)}M`,
                 hint: `${EXERCISE_STATS.baseCount} clinical bases`,
               },
-              { label: "Pain scale", value: "0–10", hint: "Self-adjust + Jeffery" },
+              {
+                label: "PT modalities",
+                value: String(MODALITY_STATS.total),
+                hint: `${MODALITY_STATS.home} home-capable`,
+              },
               { label: "PWA", value: "On", hint: "Install & go offline" },
             ].map((stat) => (
               <div
@@ -155,10 +165,16 @@ export default function HomePage() {
             text: "Ask questions; Jeffery can help adjust your program.",
           },
           {
+            href: "/modalities",
+            icon: Sparkles,
+            title: "PT modalities",
+            text: "Heat, ice, pacing, pre/post-visit prep—matched to your pain story.",
+          },
+          {
             href: "/insights",
             icon: Network,
             title: "See your big picture",
-            text: "Sessions, journal, pain, and goals shown together.",
+            text: "Sessions, journal, pain, modalities, and goals shown together.",
           },
           {
             href: "/progress",

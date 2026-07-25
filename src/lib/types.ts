@@ -207,6 +207,8 @@ export interface SessionLog {
   source?: "session" | "jeffery" | "builder";
   /** Clinical pain descriptor IDs selected for this session */
   painDescriptorIds?: string[];
+  /** Suggested or used modality IDs correlated with this session */
+  modalityIds?: string[];
 }
 
 export interface JournalEntry {
@@ -224,6 +226,8 @@ export interface JournalEntry {
   tags: string[];
   /** Clinical pain descriptor IDs for this reflection */
   painDescriptorIds?: string[];
+  /** Modalities tried or considered that day */
+  modalityIds?: string[];
 }
 
 /** Saved pain description profile correlated across the app */
@@ -260,6 +264,8 @@ export interface Routine {
     suggestedKinds?: MovementKind[];
     painDescriptorIds?: string[];
     descriptorSummary?: string[];
+    modalityPlanId?: string;
+    suggestedModalityIds?: string[];
   };
   selfAdjustHistory: RoutineAdjustment[];
   createdAt: string;
@@ -315,6 +321,7 @@ export interface JefferyMessage {
     adjustedRoutineId?: string;
     openEndedQuestion?: string;
     clinicalTopics?: string[];
+    suggestedModalityIds?: string[];
   };
 }
 
@@ -335,9 +342,82 @@ export interface CorrelatedInsight {
   summary: string;
   severity: "info" | "positive" | "caution" | "action";
   sources: Array<
-    "sessions" | "journal" | "pain" | "goals" | "jeffery" | "routines" | "descriptors"
+    | "sessions"
+    | "journal"
+    | "pain"
+    | "goals"
+    | "jeffery"
+    | "routines"
+    | "descriptors"
+    | "modalities"
   >;
   recommendation?: string;
   at: string;
   relatedDescriptorIds?: string[];
+  relatedModalityIds?: string[];
+}
+
+/** Scored modality suggestion returned by the engine / APIs */
+export interface ModalityRecommendation {
+  modalityId: string;
+  name: string;
+  category: string;
+  setting: string;
+  timing: string;
+  score: number;
+  confidence: "high" | "moderate" | "exploratory";
+  reasons: string[];
+  plainLanguage: string;
+  howTo: string[];
+  evidenceNotes: string;
+  durationMinutes?: string;
+  frequency?: string;
+  precautions: string[];
+  contraindications: string[];
+  outcomeLinks: string[];
+  homeSafe: boolean;
+}
+
+/** Snapshot of pre/post visit and related modality plan */
+export interface ModalityPlan {
+  id: string;
+  userId?: string;
+  createdAt: string;
+  painScore: number;
+  effectivePain: number;
+  descriptorIds: string[];
+  experienceSummary?: string;
+  clinicalFlags: {
+    stiffnessDominant: boolean;
+    inflammatoryPattern: boolean;
+    acuteIrritability: boolean;
+    neurologicCaution: boolean;
+    postActivitySoreness: boolean;
+    highIrritability: boolean;
+    redFlags: boolean;
+    programBiases: string[];
+  };
+  narrative: string;
+  preVisit: ModalityRecommendation[];
+  postVisit: ModalityRecommendation[];
+  acuteFlare: ModalityRecommendation[];
+  betweenVisits: ModalityRecommendation[];
+  preSession: ModalityRecommendation[];
+  postSession: ModalityRecommendation[];
+  source?: "assess" | "modalities" | "session" | "journal" | "jeffery" | "manual";
+}
+
+/** User log that a modality was tried */
+export interface ModalityLog {
+  id: string;
+  userId: string;
+  modalityId: string;
+  timing: string;
+  usedAt: string;
+  painBefore?: number;
+  painAfter?: number;
+  helpful?: boolean;
+  notes?: string;
+  descriptorIds?: string[];
+  context?: "pre-visit" | "post-visit" | "session" | "home" | "flare";
 }
