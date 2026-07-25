@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import {
+  applyClearGuestCookie,
+  applySessionCookie,
   createToken,
   loginUser,
   publicUser,
-  setSessionCookie,
   peekGuestId,
-  clearGuestCookie,
   migrateGuestData,
 } from "@/lib/auth";
 import { updateDb } from "@/lib/storage";
@@ -46,16 +46,27 @@ export async function POST(req: Request) {
       await updateDb((db) => {
         migrateGuestData(db, guestId, result.user.id);
       });
-      clearGuestCookie();
     }
 
     const sv =
       typeof result.user.sessionVersion === "number" ? result.user.sessionVersion : 0;
     const token = await createToken(result.user.id, sv);
-    await setSessionCookie(token);
-    return NextResponse.json({ user: publicUser(result.user) });
+    const res = NextResponse.json({ user: publicUser(result.user) });
+    applySessionCookie(res, token);
+    if (guestId) applyClearGuestCookie(res);
+    return res;
   } catch (e) {
-    console.error("login_failed", { err: String(e) });
-    return NextResponse.json({ error: "Login failed" }, { status: 500 });
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("login_failed", { err: message });
+    const isConfig =
+      /AUTH_SECRET|EACCES|ENOENT|EROFS|DATA_DIR|permission/i.test(message);
+    return NextResponse.json(
+      {
+        error: isConfig
+          ? "Login failed: server configuration error. Check AUTH_SECRET and data volume permissions."
+          : "Login failed",
+      },
+      { status: 500 }
+    );
   }
 }

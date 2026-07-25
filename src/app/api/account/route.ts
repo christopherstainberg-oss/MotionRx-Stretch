@@ -7,7 +7,7 @@ import {
   bumpSessionVersion,
   assertCanEditProfile,
   createToken,
-  setSessionCookie,
+  applySessionCookie,
   hashPassword,
 } from "@/lib/auth";
 import { updateDb } from "@/lib/storage";
@@ -183,13 +183,14 @@ export async function POST(req: Request) {
 
     const sv = await bumpSessionVersion(user.id);
     const token = await createToken(user.id, sv);
-    await setSessionCookie(token);
 
     const fresh = await getSessionUser();
-    return NextResponse.json({
+    const res = NextResponse.json({
       user: fresh ? publicUser(fresh) : null,
       message: "Password changed. Other sessions were signed out.",
     });
+    applySessionCookie(res, token);
+    return res;
   } catch (e) {
     console.error("account_post_failed", { err: String(e) });
     return NextResponse.json({ error: "Update failed" }, { status: 500 });

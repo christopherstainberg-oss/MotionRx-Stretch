@@ -1,16 +1,39 @@
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import type { NextResponse } from "next/server";
 import { readDb, updateDb, type DbShape } from "@/lib/storage";
 import type { UserPreferences, UserProfile } from "@/lib/types";
 import { v4 as uuid } from "uuid";
 import { isValidEmail } from "@/lib/rate-limit";
 import { sanitizeDisplayName } from "@/lib/security";
 
-const COOKIE = "motionrx_session";
-const GUEST_COOKIE = "motionrx_guest";
+export const SESSION_COOKIE = "motionrx_session";
+export const GUEST_COOKIE = "motionrx_guest";
 /** Access session lifetime (seconds) — shorter than prior 14d */
-const SESSION_MAX_AGE_SEC = 60 * 60 * 24 * 7; // 7 days
+export const SESSION_MAX_AGE_SEC = 60 * 60 * 24 * 7; // 7 days
+
+/**
+ * Secure cookies only when HTTPS is actually used.
+ * Production over plain HTTP (local Docker on :3000) must set COOKIE_SECURE=false
+ * or browsers will drop the session cookie and sign-in/register will appear broken.
+ */
+export function cookieSecure(): boolean {
+  const override = process.env.COOKIE_SECURE?.trim().toLowerCase();
+  if (override === "true" || override === "1") return true;
+  if (override === "false" || override === "0") return false;
+  return process.env.NODE_ENV === "production";
+}
+
+function sessionCookieOptions(maxAge: number) {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: cookieSecure(),
+    path: "/",
+    maxAge,
+  };
+}
 
 function authSecretBytes(): Uint8Array {
   const raw = process.env.AUTH_SECRET;
@@ -64,34 +87,29 @@ export async function verifyToken(
   }
 }
 
+/** Attach session cookie to a Route Handler response (preferred over cookies().set). */
+export function applySessionCookie(res: NextResponse, token: string) {
+  res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(SESSION_MAX_AGE_SEC));
+}
+
+export function applyClearSessionCookie(res: NextResponse) {
+  res.cookies.set(SESSION_COOKIE, "", sessionCookieOptions(0));
+}
+
+export function applyClearGuestCookie(res: NextResponse) {
+  res.cookies.set(GUEST_COOKIE, "", sessionCookieOptions(0));
+}
+
 export async function setSessionCookie(token: string) {
-  cookies().set(COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: SESSION_MAX_AGE_SEC,
-  });
+  cookies().set(SESSION_COOKIE, token, sessionCookieOptions(SESSION_MAX_AGE_SEC));
 }
 
 export async function clearSessionCookie() {
-  cookies().set(COOKIE, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 0,
-  });
+  cookies().set(SESSION_COOKIE, "", sessionCookieOptions(0));
 }
 
 export function clearGuestCookie() {
-  cookies().set(GUEST_COOKIE, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 0,
-  });
+  cookies().set(GUEST_COOKIE, "", sessionCookieOptions(0));
 }
 
 /** Stable guest id for anonymous data isolation (not a security principal) */
@@ -100,13 +118,7 @@ export function getOrCreateGuestId(): string {
   const existing = jar.get(GUEST_COOKIE)?.value;
   if (existing && /^guest_[a-f0-9-]{8,}$/i.test(existing)) return existing;
   const id = `guest_${uuid()}`;
-  jar.set(GUEST_COOKIE, id, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 365,
-  });
+  jar.set(GUEST_COOKIE, id, sessionCookieOptions(60 * 60 * 24 * 365));
   return id;
 }
 
@@ -125,7 +137,7 @@ function normalizeUser(u: UserProfile): UserProfile {
 }
 
 export async function getSessionUser(): Promise<UserProfile | null> {
-  const token = cookies().get(COOKIE)?.value;
+  const token = cookies().get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const parsed = await verifyToken(token);
   if (!parsed) return null;
@@ -194,16 +206,12 @@ export async function registerUser(input: {
     return { error: "Password must be at most 128 characters." };
   }
   const name = sanitizeDisplayName(input.name, 80) || "Mover";
-
-  const db = await readDb();
-  if (db.users.some((u) => u.email === email)) {
-    return { error: "An account with that email already exists." };
-  }
+  const passwordHash = await hashPassword(password);
   const user: UserProfile = {
     id: uuid(),
     email,
     name,
-    passwordHash: await hashPassword(password),
+    passwordHash,
     twoFactorEnabled: false,
     sessionVersion: 0,
     createdAt: new Date().toISOString(),
@@ -212,9 +220,19 @@ export async function registerUser(input: {
     favorites: [],
     painBaseline: {},
   };
+
+  // Check uniqueness inside the lock so concurrent registers cannot race.
+  let duplicate = false;
   await updateDb((d) => {
+    if (d.users.some((u) => u.email === email)) {
+      duplicate = true;
+      return;
+    }
     d.users.push(user);
   });
+  if (duplicate) {
+    return { error: "An account with that email already exists." };
+  }
   return { user };
 }
 
