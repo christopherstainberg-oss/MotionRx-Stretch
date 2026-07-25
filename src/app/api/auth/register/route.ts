@@ -8,7 +8,7 @@ import {
   peekGuestId,
   migrateGuestData,
 } from "@/lib/auth";
-import { updateDb } from "@/lib/storage";
+import { assertDataDirWritable, updateDb } from "@/lib/storage";
 import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
 import { assertSameOrigin, contentLengthOk } from "@/lib/security";
 
@@ -31,6 +31,9 @@ export async function POST(req: Request) {
     if (!assertSameOrigin(req)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    // Fail fast with a clear config error before hashing/writing users
+    await assertDataDirWritable();
 
     const body = await req.json().catch(() => ({}));
     const result = await registerUser({
@@ -59,7 +62,9 @@ export async function POST(req: Request) {
     console.error("register_failed", { err: message });
     // Surface config mistakes (missing AUTH_SECRET, unwritable DATA_DIR) without leaking stacks
     const isConfig =
-      /AUTH_SECRET|EACCES|ENOENT|EROFS|DATA_DIR|permission/i.test(message);
+      /AUTH_SECRET|EACCES|ENOENT|EROFS|DATA_DIR|permission|not writable/i.test(
+        message
+      );
     return NextResponse.json(
       {
         error: isConfig

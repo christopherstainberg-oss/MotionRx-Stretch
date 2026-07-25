@@ -9,8 +9,9 @@
 #
 # ── Portainer (Stacks → Add stack → Web editor) ──────────────────────────────
 # 1. Paste this entire file (do not select "Build" / Git build).
-# 2. Stack environment variables (required for a working deploy):
-#      AUTH_SECRET          openssl rand -base64 32
+# 2. Stack environment variables:
+#      AUTH_SECRET          openssl rand -base64 32  (optional: entrypoint auto-generates + persists)
+#      COOKIE_SECURE        false for HTTP; true behind HTTPS
 #      APP_PORT             default 3000
 #      GHCR_IO_IMAGE        default below
 #      GHCR_IO_USER         GitHub username (private package)

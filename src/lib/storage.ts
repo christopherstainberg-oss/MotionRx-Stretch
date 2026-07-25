@@ -13,6 +13,29 @@ import type {
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 
+/** Human-readable path for logs and health checks */
+export function getDataDir(): string {
+  return DATA_DIR;
+}
+
+/**
+ * Probe that DATA_DIR exists and is writable.
+ * Throws Error with EACCES/EROFS/ENOENT/DATA_DIR in the message for route handlers.
+ */
+export async function assertDataDirWritable(): Promise<void> {
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    const probe = path.join(DATA_DIR, `.write-probe.${process.pid}`);
+    await fs.writeFile(probe, "ok", "utf8");
+    await fs.unlink(probe);
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException)?.code || "UNKNOWN";
+    throw new Error(
+      `DATA_DIR not writable (${code}): ${DATA_DIR}. Fix volume permissions (container user nextjs uid 1001).`
+    );
+  }
+}
+
 export interface DbShape {
   users: UserProfile[];
   sessions: SessionLog[];
@@ -58,7 +81,14 @@ const emptyDb = (): DbShape => ({
 });
 
 async function ensureDir() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException)?.code || "UNKNOWN";
+    throw new Error(
+      `DATA_DIR create failed (${code}): ${DATA_DIR}. Check data volume permissions.`
+    );
+  }
 }
 
 function dbPath() {

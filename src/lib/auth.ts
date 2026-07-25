@@ -1,3 +1,5 @@
+import { readFileSync } from "fs";
+import path from "path";
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
@@ -35,17 +37,51 @@ function sessionCookieOptions(maxAge: number) {
   };
 }
 
-function authSecretBytes(): Uint8Array {
-  const raw = process.env.AUTH_SECRET;
-  if (!raw || raw.length < 16) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error(
-        "AUTH_SECRET must be set to a strong value (16+ chars) in production"
-      );
+let cachedSecret: Uint8Array | null = null;
+
+/**
+ * Resolve signing secret: AUTH_SECRET env, else DATA_DIR/.auth_secret
+ * (written by docker-entrypoint when env is missing).
+ */
+function resolveAuthSecret(): string {
+  const fromEnv = process.env.AUTH_SECRET?.trim();
+  if (fromEnv && fromEnv.length >= 16) return fromEnv;
+
+  // Lazy file fallback for containers where entrypoint persisted a secret
+  // but the process env was not re-exported (or Node was started without entrypoint).
+  try {
+    const dataDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
+    const fileSecret = readFileSync(path.join(dataDir, ".auth_secret"), "utf8").trim();
+    if (fileSecret.length >= 16) {
+      process.env.AUTH_SECRET = fileSecret;
+      return fileSecret;
     }
-    return new TextEncoder().encode("motionrx-dev-secret-change-in-production");
+  } catch {
+    // missing file or unreadable
   }
-  return new TextEncoder().encode(raw);
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "AUTH_SECRET must be set to a strong value (16+ chars) in production"
+    );
+  }
+  return "motionrx-dev-secret-change-in-production";
+}
+
+function authSecretBytes(): Uint8Array {
+  if (cachedSecret) return cachedSecret;
+  cachedSecret = new TextEncoder().encode(resolveAuthSecret());
+  return cachedSecret;
+}
+
+/** True when a production-ready signing secret is available (no throw). */
+export function authSecretReady(): boolean {
+  try {
+    resolveAuthSecret();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const defaultPrefs = (): UserPreferences => ({

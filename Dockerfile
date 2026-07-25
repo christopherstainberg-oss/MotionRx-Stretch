@@ -23,21 +23,28 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 ENV DATA_DIR=/app/data
-# AUTH_SECRET must be provided at runtime (docker-compose / orchestrator)
+# AUTH_SECRET: set via compose/Portainer, or entrypoint generates + persists under DATA_DIR
 
-RUN addgroup --system --gid 1001 nodejs \
+# su-exec: drop root after fixing named-volume ownership
+# openssl: generate AUTH_SECRET when not provided
+RUN apk add --no-cache su-exec openssl \
+  && addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 nextjs \
-  && mkdir -p /app/data \
+  && mkdir -p /app/data/uploads \
   && chown -R nextjs:nodejs /app/data
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
-USER nextjs
+# Start as root so entrypoint can chown the mounted volume, then su-exec → nextjs
+USER root
 EXPOSE 3000
 VOLUME ["/app/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
 
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["node", "server.js"]

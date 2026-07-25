@@ -97,10 +97,13 @@ Deploy conditions (validated for Portainer stacks):
    - Required while the `motionrx-stretch` package is **private**
 2. **Stacks → Add stack → Web editor** → paste `docker-compose.yml`
 3. Stack **environment variables** (see `portainer.stack.env.example`):
-   - `AUTH_SECRET` — strong secret (`openssl rand -base64 32`)
+   - `AUTH_SECRET` — strong secret (`openssl rand -base64 32`). Optional: the container entrypoint generates and persists one under the data volume if omitted.
+   - `COOKIE_SECURE` — `false` for plain HTTP; `true` when served over HTTPS
    - `APP_PORT` — optional, default `3000`
    - `GHCR_IO_USER` / `GHCR_IO_TOKEN` — same as registry (for Watchtower pulls)
 4. Deploy (**do not** enable Build, and **do not** use `docker-compose.build.yml`)
+
+If registration fails with “Check AUTH_SECRET and data volume permissions”, confirm `/api/health` returns `"auth.secretConfigured": true` and `"storage.writable": true`. The image entrypoint chowns the data volume for uid `1001` (nextjs) on startup.
 
 If the stack already failed, **Editor** the stack, replace the YAML with the current `docker-compose.yml` (no `build:` block), ensure the registry is configured, then **Update the stack**.
 
