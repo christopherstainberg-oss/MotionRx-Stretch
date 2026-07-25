@@ -269,7 +269,11 @@ export function buildWrittenPlanApproach(
       routine.homeBasedProgram ? ", using home-friendly variations" : ""
     }. Your free-text story${
       storyIntel
-        ? ` (${storyIntel.irritability} irritability${
+        ? ` (${
+            storyIntel.irritability !== "unknown"
+              ? `${storyIntel.irritability} irritability`
+              : "irritability not determined — not assumed"
+          }${
             storyIntel.activityResponse !== "unknown"
               ? `, activity ${storyIntel.activityResponse}`
               : ""

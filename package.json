@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test:story-intel": "tsx scripts/test-story-intelligence.mjs",
     "db:seed": "tsx scripts/seed.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "postinstall": "echo Ready"

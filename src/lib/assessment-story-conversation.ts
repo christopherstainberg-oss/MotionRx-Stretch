@@ -576,14 +576,22 @@ export function answerStoryConversation(
   } else if (/okay to (move|exercise)|safe to|should i (stop|rest|exercise)/i.test(t)) {
     core = `${name}, with ${regions}${
       intel.painNow != null
-        ? ` (~${intel.painNow}/10)`
+        ? ` (${intel.painNow}/10 as you stated)`
         : pain.level != null
-          ? ` (pain ~${pain.level}/10)`
-          : ""
-    } and ${intel.irritability} irritability, mild productive discomfort (often ≤3/10 that settles within about a day) can be okay during gentle mobility. Sharp, spreading, or “worse for more than a day” pain is a yellow/red light—ease range and volume.`;
+          ? ` (pain ${pain.level}/10 from your scale)`
+          : " (no 0–10 stated — not assumed)"
+    }${
+      intel.irritability !== "unknown"
+        ? ` and ${intel.irritability} irritability from your story`
+        : " (irritability not determined yet — not assumed)"
+    }, mild productive discomfort (often ≤3/10 that settles within about a day) can be okay during gentle mobility. Sharp, spreading, or “worse for more than a day” pain is a yellow/red light—ease range and volume.`;
   } else if (/how often|frequency|how many days|schedule/i.test(t)) {
     const mins = Math.max(8, Math.round(ctx.minutes * intel.planHints.minutesScale));
-    core = `${name}, with your story’s ${intel.irritability} irritability, short practice most days (~${mins} min) beats rare long sessions. If you flare more than a day, cut volume ~30–50% but keep gentle motion when you can.`;
+    core = `${name}, ${
+      intel.irritability !== "unknown"
+        ? `with your story’s ${intel.irritability} irritability, `
+        : "without assuming irritability, "
+    }short practice most days (~${mins} min) beats rare long sessions. If you flare more than a day, cut volume ~30–50% but keep gentle motion when you can.`;
   } else if (/avoid|don'?t|contraindic|surgery|implant|precaution/i.test(t)) {
     core = `${name}, prioritize avoiding end-range forcing, ballistic bouncing, and breath-holding under heavy strain. ${
       intel.planHints.avoidTags.slice(0, 4).length
@@ -681,25 +689,33 @@ function buildStoryIntelReflection(
       intel.laterality !== "unknown" ? ` (${intel.laterality})` : ""
     }${intel.sensory.length ? `; sensations like ${intel.sensory.slice(0, 3).join(", ")}` : ""}${
       intel.painNow != null
-        ? `; ~${intel.painNow}/10`
+        ? `; ${intel.painNow}/10 as you stated`
         : ctx.pain.level != null
-          ? `; ~${ctx.pain.level}/10`
-          : ""
-    }. Irritability reads **${intel.irritability}**${
+          ? `; ${ctx.pain.level}/10 from your pain scale`
+          : `; no 0–10 pain number stated yet (I will not invent one)`
+    }. ${
+      intel.irritability !== "unknown"
+        ? `Irritability from your stated evidence: **${intel.irritability}**`
+        : `Irritability: **not determined** (I will not assume low/moderate/high)`
+    }${
       intel.activityResponse !== "unknown"
         ? ` with activity response “${intel.activityResponse}”`
         : ""
     }.`
   );
   if (intel.aggravators.length) {
-    bits.push(`Aggravators I’m holding: ${intel.aggravators.slice(0, 4).join(", ")}.`);
+    bits.push(`Aggravators you actually described: ${intel.aggravators.slice(0, 4).join(", ")}.`);
+  } else {
+    bits.push(
+      `You have not yet named which positions, actions, or activities make it worse—I am not filling those in for you.`
+    );
   }
   if (intel.easers.length) {
-    bits.push(`Easers noted: ${intel.easers.slice(0, 3).join(", ")}.`);
+    bits.push(`Easers you described: ${intel.easers.slice(0, 3).join(", ")}.`);
   }
   if (intel.functionalLimits.length) {
     bits.push(
-      `Function anchors for the plan: ${intel.functionalLimits.slice(0, 4).join(", ")}.`
+      `Function limits you described: ${intel.functionalLimits.slice(0, 4).join(", ")}.`
     );
   }
   if (intel.planHints.evidenceLines[0]) {

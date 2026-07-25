@@ -512,26 +512,34 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
     `Phase: ${phaseLabel(phase)} — irritability-guided dosing (pain traffic light; mild productive discomfort ≤3/10 often acceptable if settles ≤24h).`,
     `Patterns: ${patterns.map(patternLabel).join("; ")}.`,
     story
-      ? `Free-text story: ${story.irritability} irritability${
+      ? `Free-text story: ${
+          story.irritability !== "unknown"
+            ? `${story.irritability} irritability`
+            : "irritability not determined (not assumed)"
+        }${
           story.activityResponse !== "unknown"
             ? `, activity ${story.activityResponse}`
             : ""
         }${
           story.aggravators.length
-            ? `; aggravators ${story.aggravators.slice(0, 4).join(", ")}`
-            : ""
-        }.`
+            ? `; aggravators you stated: ${story.aggravators.slice(0, 4).join(", ")}`
+            : "; aggravators not specified (not assumed)"
+        }${story.painNow != null ? `; pain ${story.painNow}/10 stated` : "; no 0–10 pain stated"}.`
       : null,
     `Session built as graded outpatient-style HEP: ${PHASE_BLUEPRINT[phase].join(" → ")}.`,
     avgPain >= 5 || story?.irritability === "high"
       ? "Higher irritability: prioritize control and protected ROM over aggressive stretch or load."
-      : "Lower irritability: progress motor control and capacity while maintaining mobility gains.",
+      : story?.irritability === "low"
+        ? "Lower irritability (stated evidence): progress motor control and capacity while maintaining mobility gains."
+        : "Irritability not assumed from silence — use traffic-light dosing and reassess from what the user states.",
     ...(story?.planHints.evidenceLines.slice(0, 3) || []),
     cond.clinicalOutcomes[0]
       ? `Outcome focus example: ${cond.clinicalOutcomes[0].label} (${cond.clinicalOutcomes[0].timeframe}).`
-      : story?.functionalLimits[0]
-        ? `Track function: ${story.functionalLimits[0]} (PSFS-style weekly).`
-        : "Track a patient-specific functional goal (PSFS-style) weekly.",
+      : story?.goals?.[0]
+        ? `Track goal you stated: ${story.goals[0]} (PSFS-style weekly).`
+        : story?.functionalLimits[0]
+          ? `Track function limit you stated: ${story.functionalLimits[0]} (PSFS-style weekly).`
+          : "Track a patient-specific functional goal (PSFS-style) weekly when stated.",
     clinicalHistorySummary({
       sex: input.sex,
       pastMedicalHistory: input.pastMedicalHistory,
@@ -543,9 +551,9 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
     `Rehab phase: ${phaseLabel(phase)}`,
     `Injury/clinical patterns: ${patterns.map(patternLabel).join(", ")}`,
     story
-      ? `Story irritability: ${story.irritability}${
-          story.painNow != null ? ` · ~${story.painNow}/10` : ""
-        }`
+      ? `Story irritability: ${
+          story.irritability !== "unknown" ? story.irritability : "not determined (not assumed)"
+        }${story.painNow != null ? ` · ${story.painNow}/10 stated` : " · no 0–10 stated"}`
       : null,
     `Priority regions: ${priorityAreas.slice(0, 5).join(", ")}`,
     `Volume bias: ${stretchQuota} mobility + ${exerciseQuota} strength/control (scaled)`,

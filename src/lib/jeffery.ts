@@ -37,12 +37,26 @@ const OPEN_ENDED = [
   "What support (pacing, rest, people, environment) helped most when symptoms rose?",
 ];
 
+/**
+ * Explicit 0–10 only. Never invent scores from “severe/moderate/mild” language.
+ */
 function extractPain(text: string): number | undefined {
-  const m = text.match(/\b([0-9]|10)\s*\/\s*10\b/) || text.match(/pain\s*(?:is|=|:)?\s*([0-9]|10)\b/i);
-  if (m) return Math.min(10, Number(m[1]));
-  if (/severe|unbearable|worst/i.test(text)) return 8;
-  if (/moderate/i.test(text)) return 4;
-  if (/mild|slight|little/i.test(text)) return 2;
+  const t = text.toLowerCase();
+  const scale = t.match(/\b(\d{1,2})\s*(?:\/\s*10|out of\s*10)\b/);
+  if (scale) {
+    const n = Number(scale[1]);
+    if (n >= 0 && n <= 10) return n;
+  }
+  const rated = t.match(
+    /\b(?:pain|hurt|ache|level|rated?|score|intensity)\s*(?:is|was|at|of|around|about|=|:)?\s*(?:a\s+)?(\d{1,2})\b/i
+  );
+  if (rated) {
+    const idx = rated.index ?? 0;
+    const after = t.slice(idx + rated[0].length, idx + rated[0].length + 16);
+    if (/^\s*(?:weeks?|months?|days?|years?|hrs?|hours?)\b/i.test(after)) return undefined;
+    const n = Number(rated[1]);
+    if (n >= 0 && n <= 10) return n;
+  }
   return undefined;
 }
 

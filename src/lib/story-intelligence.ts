@@ -1,7 +1,19 @@
 /**
  * Deep free-text story intelligence for Assessment “Describe Your Issue”.
- * Parses clinical narrative signals, drives adaptive open-ended Q&A that
- * reacts to user answers, and supplies high-signal scoring for Plan/Routine.
+ *
+ * Stack:
+ * 1) Assumption-safe extractors (this file) — explicit evidence only.
+ * 2) Elite systems layer (`story-engine-elite.ts`) — evidence ledger, dose envelope,
+ *    completeness telemetry, conflict detection, info-value adaptive interview,
+ *    provisional pattern hypotheses (never diagnoses).
+ *
+ * Engineering contract — DO NOT MAKE ASSUMPTIONS:
+ * - Record only what the user explicitly stated or structured UI fields they chose.
+ * - Pain 0–10 ONLY for explicit scale language. Never invent from adjectives.
+ * - Aggravators / easers / limits / goals ONLY with causal / limitation / goal language.
+ * - Irritability stays “unknown” until evidence exists.
+ * - Unknown stays unknown in live read — admit gaps, never fill them.
+ *
  * Educational only — not diagnosis or licensed care.
  */
 
@@ -10,6 +22,11 @@ import { BODY_PART_LABELS } from "@/data/stretch-library";
 import { matchDescriptorsFromText } from "@/data/pain-descriptors";
 import { matchConditionsFromText } from "@/data/clinical-conditions";
 import type { SexSelection } from "@/lib/clinical-history";
+import {
+  mergeAdaptiveQuestions,
+  runEliteStoryEngine,
+  type StoryEliteAnalysis,
+} from "@/lib/story-engine-elite";
 
 function displayPreferredName(preferredName?: string | null): string {
   const p = (preferredName || "").trim();
@@ -35,7 +52,8 @@ export type StoryTheme =
   | "red-flags"
   | "laterality";
 
-export type StoryIrritability = "low" | "moderate" | "high";
+/** “unknown” = insufficient evidence — never treat silence as moderate/low/high. */
+export type StoryIrritability = "low" | "moderate" | "high" | "unknown";
 export type ActivityResponse = "better" | "worse" | "same" | "delayed-worse" | "unknown";
 export type OnsetType = "sudden" | "gradual" | "insidious" | "unknown";
 export type Laterality = "left" | "right" | "bilateral" | "central" | "unknown";
@@ -108,6 +126,16 @@ export type StoryIntelligence = {
     placeholder: string;
     coachLine: string;
   };
+  /** Elite systems layer: evidence ledger, dose envelope, completeness, hypotheses */
+  elite?: StoryEliteAnalysis;
+  /** 0–100 interview completeness (elite) */
+  completeness?: number;
+  /** Engineer-facing signal grade */
+  intelligenceGrade?: StoryEliteAnalysis["intelligenceGrade"];
+  /** Stated trajectory only */
+  trajectory?: StoryEliteAnalysis["trajectory"];
+  /** Detected inconsistencies (never auto-resolved by invention) */
+  conflicts?: string[];
 };
 
 const ALL_THEMES: StoryTheme[] = [
@@ -129,26 +157,34 @@ const ALL_THEMES: StoryTheme[] = [
   "laterality",
 ];
 
+/** One stated region → one part. Never expand (e.g. hip must not invent groin+glutes). */
 const AREA_MAP: Array<{ re: RegExp; parts: BodyPart[] }> = [
   { re: /\b(low(?:er)?\s*back|lumbar|lumbago)\b/i, parts: ["lower-back"] },
-  { re: /\b(mid(?:dle)?\s*back|thoracic|upper\s*back)\b/i, parts: ["thoracic", "upper-back"] },
+  { re: /\b(mid(?:dle)?\s*back|thoracic)\b/i, parts: ["thoracic"] },
+  { re: /\b(upper\s*back)\b/i, parts: ["upper-back"] },
   { re: /\b(neck|cervical|whiplash)\b/i, parts: ["neck"] },
-  { re: /\b(shoulder|rotator\s*cuff|impinge)\b/i, parts: ["shoulders", "scapular"] },
+  { re: /\b(shoulder|rotator\s*cuff)\b/i, parts: ["shoulders"] },
   { re: /\b(scapula|shoulder\s*blade)\b/i, parts: ["scapular"] },
-  { re: /\b(hip|piriformis|groin)\b/i, parts: ["hips", "groin", "glutes"] },
-  { re: /\b(knee|patell|menisc|acl|mcl)\b/i, parts: ["knee", "quadriceps"] },
-  { re: /\b(ankle|achilles)\b/i, parts: ["ankles", "calves"] },
-  { re: /\b(foot|plantar|heel|arch)\b/i, parts: ["foot", "ankles"] },
-  { re: /\b(elbow|tennis\s*elbow|golfer.?s\s*elbow)\b/i, parts: ["elbow", "forearm"] },
-  { re: /\b(wrist|carpal|hand|finger)\b/i, parts: ["wrists", "hand"] },
+  { re: /\b(hip|hips)\b/i, parts: ["hips"] },
+  { re: /\b(piriformis)\b/i, parts: ["glutes"] },
+  { re: /\b(groin)\b/i, parts: ["groin"] },
+  { re: /\b(knee|patell|menisc)\b/i, parts: ["knee"] },
+  { re: /\b(acl|mcl|lcl|pcl)\b/i, parts: ["knee"] },
+  { re: /\b(ankle)\b/i, parts: ["ankles"] },
+  { re: /\b(achilles)\b/i, parts: ["calves"] },
+  { re: /\b(foot|plantar|heel|arch)\b/i, parts: ["foot"] },
+  { re: /\b(elbow|tennis\s*elbow|golfer.?s\s*elbow)\b/i, parts: ["elbow"] },
+  { re: /\b(forearm)\b/i, parts: ["forearm"] },
+  { re: /\b(wrist|carpal)\b/i, parts: ["wrists"] },
+  { re: /\b(hand|finger)\b/i, parts: ["hand"] },
   { re: /\b(jaw|tmj)\b/i, parts: ["jaw"] },
   { re: /\b(pelvis|si\s*joint|sacroiliac)\b/i, parts: ["pelvis"] },
-  { re: /\b(glute|butt)\b/i, parts: ["glutes"] },
+  { re: /\b(glute|butt(?:ock)?s?)\b/i, parts: ["glutes"] },
   { re: /\b(hamstring)\b/i, parts: ["hamstrings"] },
-  { re: /\b(quad|thigh)\b/i, parts: ["quadriceps"] },
+  { re: /\b(quad(?:riceps)?|thigh)\b/i, parts: ["quadriceps"] },
   { re: /\b(calf|calves)\b/i, parts: ["calves"] },
-  { re: /\b(core|abs)\b/i, parts: ["core"] },
-  { re: /\b(chest|pec)\b/i, parts: ["chest"] },
+  { re: /\b(core|abs|abdominal)\b/i, parts: ["core"] },
+  { re: /\b(chest|pec(?:toral)?s?)\b/i, parts: ["chest"] },
 ];
 
 function unique<T>(arr: T[]): T[] {
@@ -168,26 +204,108 @@ function snip(text: string, max = 90): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
+function clampPain(n: number): number | undefined {
+  if (!Number.isFinite(n) || n < 0 || n > 10) return undefined;
+  return Math.round(n);
+}
+
+/**
+ * Pain numbers ONLY when the user stated an explicit 0–10 rating.
+ * Never invent scores from “severe / moderate / sharp / mild” language.
+ * Never harvest bare integers from “2 weeks”, “3 months”, age, etc.
+ */
 function extractPainNumbers(text: string): { now?: number; worst?: number } {
   const t = text.toLowerCase();
-  const pairs = Array.from(
-    t.matchAll(
-      /(?:pain|hurt|ache|level|rated?|about|around|is|=|:)?\s*(\d{1,2})\s*(?:\/\s*10|out of 10)?/gi
-    )
-  );
-  const nums = pairs
-    .map((m) => Number(m[1]))
-    .filter((n) => n >= 0 && n <= 10);
-  if (!nums.length) {
-    if (/\b(unbearable|excruciating|severe)\b/i.test(t)) return { now: 7, worst: 9 };
-    if (/\b(moderate)\b/i.test(t)) return { now: 4, worst: 6 };
-    if (/\b(mild|slight|annoying)\b/i.test(t)) return { now: 2, worst: 4 };
-    if (/\b(sharp|stabbing)\b/i.test(t)) return { now: 6, worst: 8 };
-    return {};
+  const nowNums: number[] = [];
+  const worstNums: number[] = [];
+  const generalNums: number[] = [];
+
+  const pushByContext = (n: number, localCtx: string) => {
+    const v = clampPain(n);
+    if (v == null) return;
+    if (/\b(worst|max(?:imum)?|peaks?|highest|at (?:its |the )?worst|flare(?:s|d)? (?:to|at)|up to)\b/i.test(localCtx)) {
+      worstNums.push(v);
+    } else if (
+      /\b(now|current(?:ly)?|at rest|baseline|usual|average|typical(?:ly)?|most of (?:the )?day|resting|present(?:ly)?)\b/i.test(
+        localCtx
+      )
+    ) {
+      nowNums.push(v);
+    } else {
+      generalNums.push(v);
+    }
+  };
+
+  // Explicit scale: 7/10, 7 out of 10, 7 of 10
+  for (const m of t.matchAll(/\b(\d{1,2})\s*(?:\/\s*10|out of\s*10|of\s*10)\b/gi)) {
+    const idx = m.index ?? 0;
+    const local = t.slice(Math.max(0, idx - 48), Math.min(t.length, idx + m[0].length + 24));
+    pushByContext(Number(m[1]), local);
   }
-  const now = nums[0];
-  const worst = nums.length > 1 ? Math.max(...nums) : now;
+
+  // Explicit pain rating language: pain is 6, rated 4, level of 5, intensity about 3, ache at a 7
+  for (const m of t.matchAll(
+    /\b(?:pain|hurt(?:s|ing)?|ache|aching|discomfort|soreness|level|rated?|score|intensity|vas)\s*(?:is|was|at|of|around|about|=|:)?\s*(?:a\s+|an\s+)?(\d{1,2})(?:\s*\/\s*10)?\b/gi
+  )) {
+    const idx = m.index ?? 0;
+    const local = t.slice(Math.max(0, idx - 36), Math.min(t.length, idx + m[0].length + 20));
+    // Reject duration masquerading: "pain is 2 weeks" — digit must not be followed by time units
+    const after = t.slice(idx + m[0].length, idx + m[0].length + 16);
+    if (/^\s*(?:\/\s*10)?\s*(?:weeks?|months?|days?|years?|hrs?|hours?|mins?|minutes?)\b/i.test(after)) {
+      continue;
+    }
+    pushByContext(Number(m[1]), local);
+  }
+
+  // “it's a 7” / “about a 4” only when nearby pain/hurt/scale language exists
+  for (const m of t.matchAll(/\b(?:it'?s|its|about|around|roughly|maybe)\s+(?:a\s+|an\s+)?(\d{1,2})\b/gi)) {
+    const idx = m.index ?? 0;
+    const local = t.slice(Math.max(0, idx - 40), Math.min(t.length, idx + m[0].length + 24));
+    if (!/\b(pain|hurt|ache|\/\s*10|out of 10|scale|level|rated?|intensity|vas|sore)\b/i.test(local)) {
+      continue;
+    }
+    const after = t.slice(idx + m[0].length, idx + m[0].length + 16);
+    if (/^\s*(?:weeks?|months?|days?|years?|hrs?|hours?)\b/i.test(after)) continue;
+    pushByContext(Number(m[1]), local);
+  }
+
+  // Qualitative words never become fabricated numbers (SpaceX-grade: unknown stays unknown).
+  const now =
+    nowNums.length > 0
+      ? nowNums[nowNums.length - 1]
+      : generalNums.length > 0
+        ? generalNums[0]
+        : undefined;
+  const worst =
+    worstNums.length > 0
+      ? Math.max(...worstNums)
+      : generalNums.length > 1
+        ? Math.max(...generalNums)
+        : generalNums.length === 1 && nowNums.length > 0
+          ? generalNums[0]
+          : undefined;
+
+  // If only one explicit number exists, treat as "now" unless context marked worst.
+  if (now == null && worst != null && nowNums.length === 0 && generalNums.length === 0) {
+    return { worst };
+  }
+  if (now != null && worst == null && generalNums.length <= 1 && worstNums.length === 0) {
+    return { now };
+  }
   return { now, worst };
+}
+
+/** Qualitative intensity for irritability only — never converted to a fake 0–10. */
+function qualitativePainSeverity(text: string): "high" | "moderate" | "low" | "unknown" {
+  const t = text.toLowerCase();
+  if (/\b(unbearable|excruciating|agoniz|crippling|worst pain|through the roof)\b/i.test(t)) {
+    return "high";
+  }
+  if (/\b(severe|intense|brutal|awful|horrible)\b/i.test(t)) return "high";
+  if (/\b(moderate|medium|manageable but)\b/i.test(t)) return "moderate";
+  if (/\b(mild|slight|annoying|nuisance|low.?grade|dull annoyance)\b/i.test(t)) return "low";
+  // “sharp/stabbing” is sensory quality, NOT intensity — do not upgrade severity from quality alone.
+  return "unknown";
 }
 
 function extractList(text: string, patterns: Array<{ re: RegExp; label: string }>): string[] {
@@ -195,6 +313,208 @@ function extractList(text: string, patterns: Array<{ re: RegExp; label: string }
   for (const p of patterns) {
     if (p.re.test(text)) out.push(p.label);
   }
+  return unique(out);
+}
+
+const ACTIVITY_CATALOG: Array<{ re: RegExp; label: string }> = [
+  { re: /\b(sitt(?:ing|s)?|desk|prolonged sit|computer chair)\b/i, label: "sitting/desk" },
+  { re: /\b(stand(?:ing)? (?:too )?long|stand(?:ing)? still|prolonged stand)\b/i, label: "prolonged standing" },
+  { re: /\b(walk(?:ing|s|ed)?|gait|ambulat)\b/i, label: "walking" },
+  { re: /\b(stairs?|steps|step(?:ping)? up)\b/i, label: "stairs" },
+  { re: /\b(bend(?:ing|s)?|tie(?:ing)? shoes|put(?:ting)? on socks|flexion)\b/i, label: "bending" },
+  { re: /\b(lift(?:ing|s|ed)?|carry(?:ing|ies)?|carried|pick(?:ing)? up)\b/i, label: "lifting/carrying" },
+  { re: /\b(reach(?:ing|es)?|overhead|raise(?:s|ing)? (?:my |the )?arm)\b/i, label: "reaching/overhead" },
+  { re: /\b(twist(?:ing|s|ed)?|turn(?:ing)? (?:in bed|quickly|to look))\b/i, label: "twisting" },
+  { re: /\b(run(?:ning|s)?|jog(?:ging)?)\b/i, label: "running" },
+  { re: /\b(driv(?:ing|e|es|en)|commute)\b/i, label: "driving" },
+  { re: /\b(squat(?:ting|s)?|kneel(?:ing|s)?|lunge)\b/i, label: "squat/kneel" },
+  { re: /\b(work(?:ing)?|job|shift|at work)\b/i, label: "work tasks" },
+  { re: /\b(ly(?:ing|e) (?:down|in bed)|in bed|night|sleep(?:ing)?)\b/i, label: "night/lying" },
+  { re: /\b(morning|first thing|get(?:ting)? out of bed|wake(?:s|ing)? up)\b/i, label: "morning" },
+  { re: /\b(sport|gym|workout|exercise class)\b/i, label: "sport/gym" },
+  { re: /\b(dress(?:ing)?|socks|shoes|shirt overhead)\b/i, label: "dressing" },
+];
+
+/**
+ * Map free-text activity phrases → catalog labels (only what was mentioned).
+ */
+function labelsFromSnippet(snippet: string): string[] {
+  return extractList(snippet, ACTIVITY_CATALOG);
+}
+
+/**
+ * Causal link must *attach* to the activity mention — not merely co-occur
+ * somewhere nearby (“I walk to work… my back hurts” must NOT invent walking as an aggravator).
+ */
+function windowHasCausalLink(
+  text: string,
+  matchIndex: number,
+  matchLen: number,
+  kind: "agg" | "ease" | "limit"
+): boolean {
+  const before = text.slice(Math.max(0, matchIndex - 56), matchIndex);
+  const after = text.slice(matchIndex + matchLen, Math.min(text.length, matchIndex + matchLen + 56));
+  const b = before.toLowerCase();
+  const a = after.toLowerCase();
+
+  if (kind === "agg") {
+    // “… worse when / pain with / hurts after [ACTIVITY]”
+    if (
+      /\b(worse|worsens?|aggravat\w*|flares?|hurts?|hurting|pain(?:ful)?|ache|aching|stiff(?:ness)?|irritat\w*|bothers?|throbs?|stabs?)\s+(?:with|when|after|during|from|by|on|whenever)\s*(?:i\s+|my\s+|the\s+)?$/i.test(
+        b
+      )
+    ) {
+      return true;
+    }
+    // “[ACTIVITY] makes it worse / hurts / aggravates / flares / causes pain”
+    if (
+      /^\s*(?:,|\s)*(?:really\s+|always\s+|often\s+)?(makes? (?:it|my|the|this) .{0,24}(?:worse|flare|hurt|pain)|aggravates?|flares?(?:\s+it(?:\s+up)?)?|sets? it off|triggers?(?:\s+(?:it|pain|symptoms?))?|hurts?(?:\s+more)?|is painful|gets? worse|worsens?|causes? (?:pain|symptoms?)|is (?:the )?problem)/i.test(
+        a
+      )
+    ) {
+      return true;
+    }
+    // “hard to / can't [ACTIVITY]” (limitation-as-aggravator signal)
+    if (/\b(hard(?:er)? to|can't|cannot|unable to|struggle to)\s*(?:really\s+)?$/i.test(b)) {
+      return true;
+    }
+    return false;
+  }
+
+  if (kind === "ease") {
+    // “better with / eases with / helps after [ACTIVITY/modality]”
+    if (
+      /\b(better|easier|eases?|helps?|helped|relief|reliev\w*|improves?|calms?|settles?|reduces?|lessens?|soothes?)\s+(?:with|when|after|from|by|using)\s*(?:i\s+|my\s+|the\s+|a\s+|an\s+)?$/i.test(
+        b
+      )
+    ) {
+      return true;
+    }
+    // “[heat/walk] helps / eases / makes it better”
+    if (
+      /^\s*(?:,|\s)*(?:really\s+|always\s+|often\s+)?(helps?|helped|eases?|relieves?|makes? it better|calms?(?:\s+it)?|settles?(?:\s+it)?|improves?(?:\s+it)?)/i.test(
+        a
+      )
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  // functional limit: “hard to [ACTIVITY]” or “[ACTIVITY] is hard / limited”
+  if (/\b(hard(?:er)? to|can't|cannot|unable to|struggle to|difficulty|trouble|problem)\s*(?:with\s+)?$/i.test(b)) {
+    return true;
+  }
+  if (
+    /^\s*(?:,|\s)*(?:is |are |feels? )?(hard|difficult|limited|a problem|painful|impossible)|^\s*(?:limit|stop|prevent)/i.test(
+      a
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Extract labeled activities only when causal language is present.
+ * Also harvests explicit “worse when X / X makes it worse” clause snippets.
+ */
+function extractCausalActivities(
+  text: string,
+  kind: "agg" | "ease" | "limit"
+): string[] {
+  const out: string[] = [];
+  const t = text;
+
+  // Clause-level harvest: “worse when sitting more than 20 min”
+  const clauseRes: RegExp[] =
+    kind === "agg"
+      ? [
+          /(?:worse|worsens?|aggravat\w*|flares?|hurts?|pain(?:ful)?|irritat\w*|bothers?)\s+(?:with|when|after|during|from|by|on|whenever)\s+([^.,;!?\n]{2,70})/gi,
+          /(?:with|when|after|during)\s+([^.,;!?\n]{2,50}?)\s+(?:it\s+)?(?:hurts?|is worse|gets worse|flares?|aggravat\w*|becomes? painful)/gi,
+          /([^.,;!?\n]{2,50}?)\s+(?:makes? it worse|aggravates?(?:\s+it)?|flares?(?:\s+it(?:\s+up)?)?|sets? it off|triggers?(?:\s+(?:it|pain|symptoms?))?)/gi,
+          /(?:pain|hurt|ache|stiff(?:ness)?)\s+(?:with|when|after|during)\s+([^.,;!?\n]{2,50})/gi,
+        ]
+      : kind === "ease"
+        ? [
+            /(?:better|easier|eases?|helps?|helped|relief|reliev\w*|improves?|calms?|settles?)\s+(?:with|when|after|from|by|using)\s+([^.,;!?\n]{2,60})/gi,
+            /([^.,;!?\n]{2,50}?)\s+(?:helps?|helped|eases?|relieves?|makes? it better|calms? it|settles? it)/gi,
+          ]
+        : [
+            /(?:hard(?:er)? to|can't|cannot|unable to|struggl\w* (?:to|with)|difficulty|trouble|problem)\s+([^.,;!?\n]{2,60})/gi,
+            /([^.,;!?\n]{2,50}?)\s+(?:is hard|is difficult|is limited|limits? me|stop(?:s|ped)? me)/gi,
+          ];
+
+  for (const re of clauseRes) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(t)) !== null) {
+      const snippet = (m[1] || "").trim();
+      if (snippet.length < 2) continue;
+      const mapped = [
+        ...labelsFromSnippet(snippet),
+        ...(kind === "ease" ? extractList(snippet, EASER_CATALOG) : []),
+      ];
+      if (mapped.length) {
+        out.push(...mapped);
+        continue;
+      }
+      // Free-text only when it is a real user-stated activity (not a connector fragment)
+      const cleaned = snippet
+        .replace(/\s+/g, " ")
+        .replace(/^(the|my|a|an|and|or|then|also|just|really)\s+/i, "")
+        .trim();
+      if (
+        cleaned.length >= 4 &&
+        cleaned.length <= 40 &&
+        !/^(it|this|that|them|me|i|and|or|with|when|after)$/i.test(cleaned)
+      ) {
+        out.push(cleaned.slice(0, 48));
+      }
+    }
+  }
+
+  // Keyword + local causal window (catches “sitting for long periods makes my back angry”)
+  for (const cat of ACTIVITY_CATALOG) {
+    const re = new RegExp(cat.re.source, cat.re.flags.includes("g") ? cat.re.flags : `${cat.re.flags}g`);
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(t)) !== null) {
+      if (windowHasCausalLink(t, m.index, m[0].length, kind)) {
+        out.push(cat.label);
+      }
+    }
+  }
+
+  return unique(out);
+}
+
+const EASER_CATALOG: Array<{ re: RegExp; label: string }> = [
+  { re: /\b(heat|hot pack|heating pad|warm shower|warmth)\b/i, label: "heat" },
+  { re: /\b(ice|cold pack|frozen|icing)\b/i, label: "ice/cold" },
+  { re: /\b(rest|lying down|lie down|sit down and rest)\b/i, label: "rest/position change" },
+  { re: /\b(gentle walk|walk it off|walking helps|easy walk)\b/i, label: "gentle walking" },
+  { re: /\b(stretch(?:ing|es)?|yoga|mobility work)\b/i, label: "stretching" },
+  { re: /\b(meds?|medication|ibuprofen|tylenol|naproxen|acetaminophen|pain pill|advil|aleve)\b/i, label: "medication" },
+  { re: /\b(massage|foam roll(?:er|ing)?)\b/i, label: "massage/soft tissue" },
+  { re: /\b(keep moving|gentle movement|motion is lotion|light activity)\b/i, label: "gentle movement" },
+  { re: /\b(brace|support|tape|kinesio)\b/i, label: "brace/support" },
+  { re: /\b(position change|change positions?|shift(?:ing)? positions?)\b/i, label: "rest/position change" },
+];
+
+function extractEasersStrict(text: string): string[] {
+  const out: string[] = [];
+  // Catalog items only with ease-context window
+  for (const cat of EASER_CATALOG) {
+    const re = new RegExp(cat.re.source, cat.re.flags.includes("g") ? cat.re.flags : `${cat.re.flags}g`);
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      if (windowHasCausalLink(text, m.index, m[0].length, "ease")) {
+        out.push(cat.label);
+      }
+    }
+  }
+  // “better when I walk” etc. may map to activity labels — keep only when ease-framed.
+  out.push(...extractCausalActivities(text, "ease"));
   return unique(out);
 }
 
@@ -223,171 +543,346 @@ export function analyzeStoryIntelligence(
     ...AREA_MAP.flatMap((m) => (m.re.test(raw) ? m.parts : [])),
   ]);
 
+  // Laterality only with anatomic side language — not bare “I left work” / “right after”.
   let laterality: Laterality = "unknown";
-  if (/\b(both sides|bilateral|left and right)\b/i.test(raw)) laterality = "bilateral";
-  else if (/\b(left)\b/i.test(raw) && /\b(right)\b/i.test(raw)) laterality = "bilateral";
-  else if (/\b(left[- ]?(side|sided)?|l\.?\s*side)\b/i.test(raw)) laterality = "left";
-  else if (/\b(right[- ]?(side|sided)?|r\.?\s*side)\b/i.test(raw)) laterality = "right";
-  else if (/\b(central|midline|across the (back|spine))\b/i.test(raw)) laterality = "central";
+  if (
+    /\b(both sides|bilateral|left and right|right and left|both (?:my )?(?:legs?|arms?|shoulders?|hips?|knees?|sides))\b/i.test(
+      raw
+    )
+  ) {
+    laterality = "bilateral";
+  } else if (
+    /\b(left[- ]?(?:side|sided|leg|arm|shoulder|hip|knee|ankle|foot|hand|elbow|wrist|glute|buttock|low(?:er)? back|neck))\b/i.test(
+      raw
+    ) ||
+    /\b(on the left|left[- ]sided|L\.?\s*side)\b/i.test(raw)
+  ) {
+    laterality = "left";
+  } else if (
+    /\b(right[- ]?(?:side|sided|leg|arm|shoulder|hip|knee|ankle|foot|hand|elbow|wrist|glute|buttock|low(?:er)? back|neck))\b/i.test(
+      raw
+    ) ||
+    /\b(on the right|right[- ]sided|R\.?\s*side)\b/i.test(raw)
+  ) {
+    laterality = "right";
+  } else if (/\b(central|midline|across the (?:mid(?:line)?|back|spine))\b/i.test(raw)) {
+    laterality = "central";
+  }
 
+  // Sensory quality: explicit symptom words only — avoid “hot pack”, “weak coffee”, “catch the bus”.
   const sensory = extractList(raw, [
-    { re: /\b(sharp|stabbing|knife)\b/i, label: "sharp" },
-    { re: /\b(dull|ache|achy)\b/i, label: "dull/achy" },
-    { re: /\b(burning|hot)\b/i, label: "burning" },
-    { re: /\b(throbbing|pulsing)\b/i, label: "throbbing" },
-    { re: /\b(tight|stiff|stiffness)\b/i, label: "stiff/tight" },
-    { re: /\b(numb|numbness)\b/i, label: "numbness" },
-    { re: /\b(tingl|pins and needles|paresthesia)\b/i, label: "tingling" },
-    { re: /\b(weak|giving way|buckl)\b/i, label: "weakness/giving-way" },
-    { re: /\b(catch|lock|click|pop)\b/i, label: "catching/clicking" },
-    { re: /\b(swollen|swelling)\b/i, label: "swelling" },
-    { re: /\b(cramp)\b/i, label: "cramping" },
+    { re: /\b(sharp|stabbing|knife[- ]?like)\b/i, label: "sharp" },
+    { re: /\b(dull|ache|achy|aching)\b/i, label: "dull/achy" },
+    { re: /\b(burning|burns?|burn(?:ing)? pain)\b/i, label: "burning" },
+    { re: /\b(throbbing|pulsing|pounding)\b/i, label: "throbbing" },
+    { re: /\b(tight(?:ness)?|stiff(?:ness)?)\b/i, label: "stiff/tight" },
+    { re: /\b(numb(?:ness|ness)?|goes numb)\b/i, label: "numbness" },
+    { re: /\b(tingl(?:e|ing)|pins and needles|paresthesia)\b/i, label: "tingling" },
+    {
+      re: /\b(weakness|feels weak|giving way|gives way|buckl(?:e|es|ing)|leg gives)\b/i,
+      label: "weakness/giving-way",
+    },
+    {
+      re: /\b(catch(?:es|ing)?|lock(?:s|ing|ed)?|click(?:s|ing)?|pop(?:s|ping)?)\b.{0,20}\b(joint|knee|hip|shoulder|when i)|(?:joint|knee|hip|shoulder).{0,20}\b(catch|lock|click|pop)/i,
+      label: "catching/clicking",
+    },
+    { re: /\b(swollen|swelling|puff(?:y|iness))\b/i, label: "swelling" },
+    { re: /\b(cramp(?:s|ing)?|spasms?)\b/i, label: "cramping" },
   ]);
 
+  // Onset only from clear onset language — not bare “slowly” or “over weeks” without onset framing.
   let onset: OnsetType = "unknown";
-  if (/\b(sudden|suddenly|all of a sudden|immediate|heard a (pop|snap))\b/i.test(raw))
+  if (
+    /\b(sudden(?:ly)?|all of a sudden|immediate(?:ly)?|heard a (?:pop|snap)|came on suddenly|acute onset)\b/i.test(
+      raw
+    )
+  ) {
     onset = "sudden";
-  else if (/\b(gradual|gradually|over (time|weeks|months)|slowly|crept)\b/i.test(raw))
+  } else if (
+    /\b(gradual(?:ly)?|came on gradually|slow onset|crept up|built up over|over (?:the )?(?:past |last )?(?:few )?(?:weeks|months) it)\b/i.test(
+      raw
+    ) ||
+    /\b(started (?:gradually|slowly)|worsened gradually|progressively (?:got|gotten|getting) worse)\b/i.test(
+      raw
+    )
+  ) {
     onset = "gradual";
-  else if (/\b(no (clear|known) (injury|cause)|insidious|came out of nowhere)\b/i.test(raw))
+  } else if (
+    /\b(no (?:clear|known) (?:injury|cause)|insidious|came out of nowhere|for no (?:clear )?reason)\b/i.test(
+      raw
+    )
+  ) {
     onset = "insidious";
+  }
 
+  // Timeline: duration phrases, not bare calendar words (“today I went to work”).
   const timelineHints = extractList(raw, [
-    { re: /\b(today|this morning)\b/i, label: "today" },
-    { re: /\b(\d+\s*days?|a few days|this week)\b/i, label: "days–week" },
-    { re: /\b(\d+\s*weeks?|couple weeks|few weeks)\b/i, label: "weeks" },
-    { re: /\b(\d+\s*months?|several months)\b/i, label: "months" },
-    { re: /\b(years?|chronic|long.?standing|on and off)\b/i, label: "chronic/years" },
-    { re: /\b(after (a )?(fall|lift|workout|run|game|accident|surgery))\b/i, label: "post-event" },
+    {
+      re: /\b(?:started|began|since|for|pain (?:since|for)|woke up with).{0,20}\b(today|this morning)\b|\b(today|this morning)\b.{0,24}\b(?:started|began|woke|hurt|pain)\b/i,
+      label: "today",
+    },
+    {
+      re: /\b(?:for|since|past|last|about|around)\s+(\d+\s*days?|a few days)|(?:for|since)\s+this week\b|\b\d+\s*days?\s+(?:ago|of pain|now)\b/i,
+      label: "days–week",
+    },
+    {
+      re: /\b(?:for|since|past|last|about|around)\s+(\d+\s*weeks?|a couple weeks|few weeks)|(?:\d+\s*weeks?\s+ago)\b/i,
+      label: "weeks",
+    },
+    {
+      re: /\b(?:for|since|past|last|about|around)\s+(\d+\s*months?|several months)|(?:\d+\s*months?\s+ago)\b/i,
+      label: "months",
+    },
+    {
+      re: /\b(?:for|since|past|last)\s+(\d+\s*years?|years)|chronic|long[- ]standing|on and off for\b/i,
+      label: "chronic/years",
+    },
+    {
+      re: /\b(?:started|began|after|following)\s+(?:a\s+)?(fall|lift|workout|run|game|accident|surgery|injury)\b|\bafter (?:a )?(fall|lift|workout|run|game|accident|surgery)\b/i,
+      label: "post-event",
+    },
   ]);
 
   const { now: painNow, worst: painWorst } = extractPainNumbers(raw);
+  const painSeverityQual = qualitativePainSeverity(raw);
 
-  const aggravators = extractList(raw, [
-    { re: /\b(sitting|sit too long|desk)\b/i, label: "sitting/desk" },
-    { re: /\b(standing (too )?long|stand(ing)? still)\b/i, label: "prolonged standing" },
-    { re: /\b(walking|walks?|gait)\b/i, label: "walking" },
-    { re: /\b(stairs?|steps)\b/i, label: "stairs" },
-    { re: /\b(bending|bend|tie shoes|put on socks)\b/i, label: "bending" },
-    { re: /\b(lifting|lift|carry|carrying)\b/i, label: "lifting/carrying" },
-    { re: /\b(reaching|overhead|raise arm)\b/i, label: "reaching/overhead" },
-    { re: /\b(twisting|twist|turn(ing)?)\b/i, label: "twisting" },
-    { re: /\b(running|run|jog)\b/i, label: "running" },
-    { re: /\b(driving|drive)\b/i, label: "driving" },
-    { re: /\b(morning|first thing|get(ting)? out of bed)\b/i, label: "morning" },
-    { re: /\b(night|in bed|lying|sleep)\b/i, label: "night/lying" },
-    { re: /\b(squat|kneel|lunge)\b/i, label: "squat/kneel" },
-    { re: /\b(work|job|shift)\b/i, label: "work tasks" },
-  ]);
+  // Positions / actions / activities ONLY when the user frames them as causal — never bare mentions.
+  const aggravators = extractCausalActivities(raw, "agg");
+  const easers = extractEasersStrict(raw);
 
-  const easers = extractList(raw, [
-    { re: /\b(heat|hot pack|warm shower)\b/i, label: "heat" },
-    { re: /\b(ice|cold pack|frozen)\b/i, label: "ice/cold" },
-    { re: /\b(rest|lying down|sit down)\b/i, label: "rest/position change" },
-    { re: /\b(walking (helps|eases)|walk it off|gentle walk)\b/i, label: "gentle walking" },
-    { re: /\b(stretch|stretching|yoga)\b/i, label: "stretching" },
-    { re: /\b(meds?|ibuprofen|tylenol|naproxen|acetaminophen|pain pill)\b/i, label: "medication" },
-    { re: /\b(massage|foam roll)\b/i, label: "massage/soft tissue" },
-    { re: /\b(movement|keep moving|motion is lotion)\b/i, label: "gentle movement" },
-    { re: /\b(brace|support|tape)\b/i, label: "brace/support" },
-  ]);
-
+  // Time-of-day worst: require worst/pain/stiff framing, not mere “morning” co-occurrence.
   const timeOfDayWorst = extractList(raw, [
-    { re: /\b(morning|first thing|wake)\b/i, label: "morning" },
-    { re: /\b(afternoon|midday)\b/i, label: "afternoon" },
-    { re: /\b(evening|end of (the )?day)\b/i, label: "evening" },
-    { re: /\b(night|overnight|in bed)\b/i, label: "night" },
-    { re: /\b(after (work|activity|exercise|sitting))\b/i, label: "after activity/load" },
+    {
+      re: /\b(?:worse|worst|hurts?|pain(?:ful)?|stiff(?:ness)?|ache)\b[^.\n]{0,40}\b(morning|first thing)\b|\b(morning|first thing)\b[^.\n]{0,40}\b(?:worse|worst|hurts?|pain|stiff|ache)\b/i,
+      label: "morning",
+    },
+    {
+      re: /\b(?:worse|worst|hurts?|pain)\b[^.\n]{0,40}\b(afternoon|midday)\b|\b(afternoon|midday)\b[^.\n]{0,40}\b(?:worse|worst|hurts?|pain)\b/i,
+      label: "afternoon",
+    },
+    {
+      re: /\b(?:worse|worst|hurts?|pain)\b[^.\n]{0,40}\b(evening|end of (?:the )?day)\b|\b(evening|end of (?:the )?day)\b[^.\n]{0,40}\b(?:worse|worst|hurts?|pain)\b/i,
+      label: "evening",
+    },
+    {
+      re: /\b(?:worse|worst|hurts?|pain|wake(?:s|ing)?)\b[^.\n]{0,40}\b(night|overnight|in bed)\b|\b(night pain|overnight|pain (?:at|in) night|wakes? (?:me )?at night)\b/i,
+      label: "night",
+    },
+    {
+      re: /\b(?:worse|worst|hurts?|pain|stiff)\b[^.\n]{0,30}\bafter (?:work|activity|exercise|sitting|load)\b|\bafter (?:work|activity|exercise|sitting)\b[^.\n]{0,30}\b(?:worse|worst|hurts?|pain)\b/i,
+      label: "after activity/load",
+    },
   ]);
 
-  const functionalLimits = extractList(raw, [
-    { re: /\b(stairs?)\b/i, label: "stairs" },
-    { re: /\b(sit to stand|get(ting)? up from (a )?chair|stand(ing)? up)\b/i, label: "sit-to-stand" },
-    { re: /\b(dress|socks|shoes|shirt overhead)\b/i, label: "dressing" },
-    { re: /\b(sleep|wake(s)? up|toss and turn)\b/i, label: "sleep" },
-    { re: /\b(work|desk|computer|job)\b/i, label: "work/desk" },
-    { re: /\b(walk|walking|grocery|errands)\b/i, label: "walking/errands" },
-    { re: /\b(sport|gym|run|bike|swim|golf|tennis)\b/i, label: "sport/gym" },
-    { re: /\b(lift|carry|kids?|grandkids?)\b/i, label: "lifting/carrying" },
-    { re: /\b(drive|driving|commute)\b/i, label: "driving" },
-    { re: /\b(reach|overhead|shelves)\b/i, label: "reaching" },
+  // Functional limits require limitation language (hard to / can't / struggle), not bare task words.
+  const functionalLimits = unique([
+    ...extractCausalActivities(raw, "limit"),
+    ...extractList(raw, [
+      {
+        re: /\b(?:hard(?:er)? to|can't|cannot|struggle|difficulty|trouble|limited|unable to).{0,30}\b(stairs?|steps)\b|\b(stairs?|steps)\b.{0,30}\b(?:hard|can't|difficult|limit|problem|painful)\b/i,
+        label: "stairs",
+      },
+      {
+        re: /\b(?:hard(?:er)? to|can't|cannot|struggle|difficulty).{0,30}\b(sit to stand|get(?:ting)? up from|stand(?:ing)? up from)\b|\b(sit to stand|get(?:ting)? up from (?:a )?chair)\b.{0,20}\b(?:hard|pain|difficult)\b/i,
+        label: "sit-to-stand",
+      },
+      {
+        re: /\b(?:hard(?:er)? to|can't|cannot|struggle|difficulty).{0,30}\b(dress|socks|shoes|shirt)\b|\b(dressing is hard|can't (?:put on|reach) (?:socks|shoes|shirt))\b/i,
+        label: "dressing",
+      },
+      {
+        re: /\b(?:can't|cannot|hard to|struggle|trouble|pain (?:keeps?|prevents?) me from)\s+sleep|sleep(?:ing)? (?:is )?(?:hard|poor|broken|limited)|night pain (?:wakes|keeps)|toss and turn (?:from|with) pain|insomnia from/i,
+        label: "sleep",
+      },
+      {
+        re: /\b(?:hard(?:er)? to|can't|cannot|struggle|limit(?:s|ed)|interfere).{0,30}\b(work|desk|job|computer)\b|\b(work|desk|job)\b.{0,30}\b(?:hard|pain|limit|can't|difficult)\b/i,
+        label: "work/desk",
+      },
+      {
+        re: /\b(?:hard(?:er)? to|can't|cannot|struggle|limited).{0,30}\b(walk|walking|grocery|errands)\b|\b(walk(?:ing)?|errands)\b.{0,30}\b(?:hard|pain|limit|can't|only \d)\b/i,
+        label: "walking/errands",
+      },
+      {
+        re: /\b(?:hard(?:er)? to|can't|cannot|struggle|limited|stopped|unable).{0,30}\b(sport|gym|run|bike|swim|golf|tennis)\b|\b(sport|gym|run|bike)\b.{0,30}\b(?:hard|pain|limit|can't|had to stop)\b/i,
+        label: "sport/gym",
+      },
+      {
+        re: /\b(?:hard(?:er)? to|can't|cannot|struggle).{0,30}\b(lift|carry|kids?|grandkids?)\b|\b(lift(?:ing)?|carry(?:ing)?)\b.{0,30}\b(?:hard|pain|limit|can't)\b/i,
+        label: "lifting/carrying",
+      },
+      {
+        re: /\b(?:hard(?:er)? to|can't|cannot|struggle).{0,30}\b(drive|driving|commute)\b|\b(driv(?:ing|e)|commute)\b.{0,30}\b(?:hard|pain|limit|can't)\b/i,
+        label: "driving",
+      },
+      {
+        re: /\b(?:hard(?:er)? to|can't|cannot|struggle).{0,30}\b(reach|overhead|shelves)\b|\b(reach(?:ing)?|overhead)\b.{0,30}\b(?:hard|pain|limit|can't)\b/i,
+        label: "reaching",
+      },
+    ]),
   ]);
 
   const fearAvoidance =
-    /\b(afraid|fear|scared|avoid|don'?t want to make it worse|worried it will|guarding|terrified)\b/i.test(
+    /\b(afraid (?:to|of)|fear of|scared (?:to|of)|avoid(?:ing)? (?:because|due|movement|moving)|don'?t want to make it worse|worried (?:it|that) will|guarding|terrified to)\b/i.test(
       raw
     );
-  const sleepImpact = /\b(sleep|insomnia|wake|night pain|can'?t get comfortable)\b/i.test(raw);
-  const stressImpact = /\b(stress|anxious|anxiety|tense|tension|overwhelmed)\b/i.test(raw);
+  // Sleep impact only with sleep *problem* framing, not bare “I sleep 8 hours”.
+  const sleepImpact =
+    /\b(insomnia|night pain|can'?t (?:get comfortable|sleep)|cannot sleep|wakes?(?: me)? (?:up )?(?:at night|from pain|with pain)|pain (?:at night|wakes|disrupts sleep)|sleep(?:ing)? (?:is )?(?:poor|broken|limited|hard)|toss and turn.{0,20}pain)\b/i.test(
+      raw
+    );
+  const stressImpact =
+    /\b(stress(?:ed|ful)?|anxious|anxiety|tense|tension|overwhelmed).{0,40}\b(pain|worse|flare|tight)|(?:pain|symptoms?).{0,40}\b(stress|anxious|anxiety|tense)\b|\b(stress makes|when i'?m stressed|stress flares)\b/i.test(
+      raw
+    );
 
+  // Activity response only when user describes post-activity change — never infer from silence.
   let activityResponse: ActivityResponse = "unknown";
   if (
-    /\b(worse (the )?next day|delayed|2.?24 hour|pays for it later|sore after|irritated later|flares after)\b/i.test(
+    /\b(worse (?:the )?next day|delayed (?:pain|soreness|flare|spike)|2\s*[-–to]+\s*24\s*hour|pays for it later|sore (?:the )?(?:next day|later)|irritated later|flares? (?:the )?next day|flares? (?:\d+\s*)?hours? later)\b/i.test(
       raw
     )
   ) {
     activityResponse = "delayed-worse";
-  } else if (/\b(worse after|aggravates|flares with|makes it worse)\b/i.test(raw)) {
+  } else if (
+    /\b(worse after (?:i |I )?(?:move|moving|exercise|activity|stretch|workout|chores)|after (?:activity|exercise|moving|stretching).{0,20}worse|flares? with activity|activity makes it worse)\b/i.test(
+      raw
+    )
+  ) {
     activityResponse = "worse";
-  } else if (/\b(better after|eases with|loosens (up|after)|helps when I move)\b/i.test(raw)) {
+  } else if (
+    /\b(better after (?:i |I )?(?:move|moving|exercise|activity|stretch)|eases with (?:movement|activity|walking|motion)|loosens (?:up )?after|helps when i move|movement (?:helps|eases))\b/i.test(
+      raw
+    ) ||
+    /\bafter (?:i |I )?(?:exercise|activity|moving|stretch(?:ing)?|workout|walking).{0,40}\b(better|easier|looser|eases|helps)\b/i.test(
+      raw
+    ) ||
+    /\b(feel|feels|feeling) better after (?:i |I )?(?:exercise|activity|moving|stretch(?:ing)?|workout)\b/i.test(
+      raw
+    )
+  ) {
     activityResponse = "better";
-  } else if (/\b(same after|no change after|doesn'?t change)\b/i.test(raw)) {
+  } else if (
+    /\b(same after (?:activity|exercise|moving)|no change after (?:activity|exercise|moving)|doesn'?t change (?:with|after) (?:activity|exercise|moving))\b/i.test(
+      raw
+    )
+  ) {
     activityResponse = "same";
   }
 
   const radiation =
-    /\b(radiat|shoots?|travels?|down (my )?(leg|arm)|sciatic|into (the )?(foot|hand|butt))\b/i.test(
+    /\b(radiat(?:es|ing|ion)?|shoots? (?:down|into|to)|travels? (?:down|into|to)|down (?:my )?(?:leg|arm)|sciatic|into (?:the )?(?:foot|hand|butt(?:ock)?|thigh|calf))\b/i.test(
       raw
     );
+  // Neuro language: symptom statements only — not bare “nerve” / “weak” as personality words.
   const neuroLanguage =
     radiation ||
-    /\b(numb|tingl|pins|nerve|weakness|drop foot|saddle)\b/i.test(raw);
+    /\b(numb(?:ness)?|tingl(?:e|ing)|pins and needles|nerve pain|neuralgia|drop foot|foot drop|saddle (?:numb|anesthes)|true weakness|feels weak|muscle weakness)\b/i.test(
+      raw
+    );
 
-  const goals = unique([
-    ...(opts?.goals || []),
-    ...extractList(raw, [
-      { re: /\b(want to|hope to|goal|get back to|return to|wish i could)\b/i, label: "stated goal" },
-      { re: /\b(walk|hiking|steps)\b/i, label: "walk more comfortably" },
-      { re: /\b(sleep)\b/i, label: "sleep better" },
-      { re: /\b(work|desk|job)\b/i, label: "tolerate work/desk" },
-      { re: /\b(stairs?)\b/i, label: "manage stairs" },
-      { re: /\b(sport|gym|run|golf|tennis|bike)\b/i, label: "return to sport/gym" },
-      { re: /\b(play with|kids?|grandkids?)\b/i, label: "play with kids/family" },
-      { re: /\b(pain.?free|less pain|reduce pain)\b/i, label: "reduce pain interference" },
-    ]),
-  ]);
+  // Goals only from explicit goal language (or structured opts) — never bare activity words.
+  const hasGoalLanguage =
+    /\b(want to|hope to|goal|goals?|get back to|return to|wish i could|i'?d like to|trying to get back|so i can|in order to)\b/i.test(
+      raw
+    );
+  const goalsFromStory = hasGoalLanguage
+    ? extractList(raw, [
+        { re: /\b(want to|hope to|goal|get back to|return to|wish i could|i'?d like to)\b/i, label: "stated goal" },
+        {
+          re: /\b(?:want to|hope to|get back to|return to|wish i could|so i can).{0,40}\b(walk|hiking|steps)\b|\b(walk|hiking).{0,20}\b(?:again|comfortably|without pain)\b/i,
+          label: "walk more comfortably",
+        },
+        {
+          re: /\b(?:want to|hope to|goal|wish).{0,30}\bsleep\b|\bsleep (?:better|through the night)\b/i,
+          label: "sleep better",
+        },
+        {
+          re: /\b(?:want to|hope to|get back to|return to|so i can).{0,30}\b(work|desk|job)\b|\btolerate (?:work|desk)\b/i,
+          label: "tolerate work/desk",
+        },
+        {
+          re: /\b(?:want to|hope to|get back|manage|do).{0,30}\bstairs?\b|\bstairs?\b.{0,20}\b(?:again|without pain)\b/i,
+          label: "manage stairs",
+        },
+        {
+          re: /\b(?:want to|hope to|get back to|return to).{0,40}\b(sport|gym|run(?:ning)?|jog(?:ging)?|golf|tennis|bike|cycling)\b|\breturn to (?:sport|gym|running)\b/i,
+          label: "return to sport/gym",
+        },
+        {
+          re: /\b(?:want to|hope to|wish|so i can).{0,30}\b(play with|kids?|grandkids?)\b/i,
+          label: "play with kids/family",
+        },
+        {
+          re: /\b(pain.?free|less pain|reduce pain|pain under control)\b/i,
+          label: "reduce pain interference",
+        },
+      ])
+    : [];
+  const goals = unique([...(opts?.goals || []), ...goalsFromStory]);
 
+  // Red-flag *language* only when the phrase is present — still not a diagnosis.
   const redFlagHints = extractList(raw, [
-    { re: /\b(saddle|groin numbness|perineal)\b/i, label: "saddle anesthesia language" },
-    { re: /\b(bowel|bladder|incontinence|retention)\b/i, label: "bowel/bladder change" },
-    { re: /\b(fever|night sweats|unexplained weight)\b/i, label: "systemic fever/weight language" },
-    { re: /\b(trauma|bad fall|mva|car accident|fracture)\b/i, label: "significant trauma" },
-    { re: /\b(progressive weakness|foot drop|can'?t lift)\b/i, label: "progressive weakness" },
-    { re: /\b(chest pain|short(ness)? of breath|sob)\b/i, label: "cardio/resp language" },
-    { re: /\b(cancer|tumor|infection|iv drug)\b/i, label: "red-flag history language" },
+    {
+      re: /\b(saddle (?:numb|anesthes|area)|groin numbness|perineal numb|numb(?:ness)? in (?:the )?saddle)\b/i,
+      label: "saddle anesthesia language",
+    },
+    {
+      re: /\b(bowel|bladder).{0,24}\b(change|incontinence|retention|loss|control)|incontinence|urinary retention\b/i,
+      label: "bowel/bladder change",
+    },
+    {
+      re: /\b(fever with|night sweats|unexplained weight loss|fever and (?:severe )?pain)\b/i,
+      label: "systemic fever/weight language",
+    },
+    {
+      re: /\b(bad fall|fell (?:hard|badly)|mva|car accident|motor vehicle|fracture|broken bone|major trauma)\b/i,
+      label: "significant trauma",
+    },
+    {
+      re: /\b(progressive weakness|foot drop|drop foot|can'?t lift (?:my )?(?:foot|toes|arm)|rapidly worsen(?:ing)? weakness)\b/i,
+      label: "progressive weakness",
+    },
+    {
+      re: /\b(chest pain|short(?:ness)? of breath|can'?t (?:catch my )?breath)\b/i,
+      label: "cardio/resp language",
+    },
+    {
+      re: /\b(history of cancer|active cancer|tumor|bone infection|iv drug use|intravenous drug)\b/i,
+      label: "red-flag history language",
+    },
   ]);
 
+  // Directional cues require sensitivity/ease language — bare “bending forward” is not preference.
   const directionalCues = extractList(raw, [
-    { re: /\b(flexion|bending forward|touch(ing)? toes)\b/i, label: "flexion-sensitive" },
-    { re: /\b(extension|bending back|arching|standing tall)\b/i, label: "extension-sensitive" },
-    { re: /\b(sitting (worse|hurts)|worse sitting)\b/i, label: "sitting-sensitive" },
-    { re: /\b(standing (worse|hurts)|worse standing)\b/i, label: "standing-sensitive" },
-    { re: /\b(walking (worse|hurts)|worse walking)\b/i, label: "walking-sensitive" },
-    { re: /\b(prefer (to )?sit|sitting eases)\b/i, label: "sitting-eases" },
-    { re: /\b(prefer (to )?walk|walking eases)\b/i, label: "walking-eases" },
+    {
+      re: /\b(?:worse|hurts?|pain(?:ful)?|aggravat\w*).{0,24}\b(flexion|bending forward|touch(?:ing)? toes)|(?:flexion|bending forward|touch(?:ing)? toes).{0,24}\b(?:worse|hurts?|pain)\b/i,
+      label: "flexion-sensitive",
+    },
+    {
+      re: /\b(?:worse|hurts?|pain(?:ful)?|aggravat\w*).{0,24}\b(extension|bending back|arching)|(?:extension|bending back|arching).{0,24}\b(?:worse|hurts?|pain)\b/i,
+      label: "extension-sensitive",
+    },
+    { re: /\b(sitting (?:is )?worse|sitting hurts|worse (?:with |when )?sitting)\b/i, label: "sitting-sensitive" },
+    { re: /\b(standing (?:is )?worse|standing hurts|worse (?:with |when )?standing)\b/i, label: "standing-sensitive" },
+    { re: /\b(walking (?:is )?worse|walking hurts|worse (?:with |when )?walking)\b/i, label: "walking-sensitive" },
+    { re: /\b(prefer (?:to )?sit|sitting eases|better sitting|easier (?:to )?sit)\b/i, label: "sitting-eases" },
+    { re: /\b(prefer (?:to )?walk|walking eases|better walking|easier (?:to )?walk)\b/i, label: "walking-eases" },
   ]);
 
   const histBlob = `${opts?.pastMedicalHistory || ""} ${opts?.currentMedicalHistory || ""} ${raw}`;
   const hasHistory =
-    /\b(surgery|s\/p|arthroscopy|replacement|fracture|fusion|diabetes|hypertension|heart|asthma|arthritis|past:|currently|pmh|cmh)\b/i.test(
+    /\b(surgery|s\/p|arthroscopy|replacement|fracture|fusion|diabetes|hypertension|high blood pressure|heart disease|asthma|arthritis|past medical|currently (?:have|manage)|pmh|cmh)\b/i.test(
       histBlob
     );
 
+  // Theme coverage = evidence present only (never mark covered from weak co-occurrence).
   const coveredThemes: StoryTheme[] = [];
-  if (raw.length >= 20 || sensory.length || regions.length) coveredThemes.push("primary-complaint");
-  if (regions.length || sensory.length) coveredThemes.push("location-quality");
+  if (raw.length >= 20 || sensory.length || (regions.length > 0 && wordCount > 0)) {
+    coveredThemes.push("primary-complaint");
+  }
+  if ((regions.length && wordCount > 0) || sensory.length) coveredThemes.push("location-quality");
   if (onset !== "unknown" || timelineHints.length) coveredThemes.push("onset-timeline");
-  if (painNow != null) coveredThemes.push("pain-intensity");
+  if (painNow != null || painWorst != null) coveredThemes.push("pain-intensity");
   if (aggravators.length) coveredThemes.push("aggravators");
   if (easers.length) coveredThemes.push("easers");
   if (timeOfDayWorst.length) coveredThemes.push("time-pattern");
@@ -397,9 +892,10 @@ export function analyzeStoryIntelligence(
   if (sleepImpact || stressImpact) coveredThemes.push("sleep-stress");
   if (radiation || neuroLanguage) coveredThemes.push("radiation-neuro");
   if (hasHistory) coveredThemes.push("history");
-  if (goals.length || /\b(want|goal|hope|get back)\b/i.test(raw)) coveredThemes.push("goals");
-  if (redFlagHints.length || /\b(no red flags|nothing like that)\b/i.test(raw))
+  if (goals.length) coveredThemes.push("goals");
+  if (redFlagHints.length || /\b(no red flags|nothing like that)\b/i.test(raw)) {
     coveredThemes.push("red-flags");
+  }
   if (laterality !== "unknown") coveredThemes.push("laterality");
 
   const missingThemes = ALL_THEMES.filter((th) => !coveredThemes.includes(th));
@@ -411,28 +907,32 @@ export function analyzeStoryIntelligence(
   else if (wordCount < 120 || coveredThemes.length < 8) richness = "rich";
   else richness = "clinical";
 
-  // Irritability model (PT-style traffic-light proxy)
-  let irritability: StoryIrritability = "moderate";
+  // Irritability: ONLY from stated evidence. Silence → unknown (never assume moderate).
+  let irritability: StoryIrritability = "unknown";
   const highSignals =
     (painNow != null && painNow >= 6 ? 2 : 0) +
     (painWorst != null && painWorst >= 8 ? 1 : 0) +
+    (painSeverityQual === "high" ? 2 : 0) +
     (activityResponse === "delayed-worse" || activityResponse === "worse" ? 2 : 0) +
-    (aggravators.length >= 4 ? 1 : 0) +
+    (aggravators.length >= 3 ? 1 : 0) +
     (neuroLanguage ? 1 : 0) +
     (fearAvoidance ? 1 : 0) +
-    (sleepImpact && (painNow ?? 0) >= 5 ? 1 : 0);
+    (sleepImpact && painNow != null && painNow >= 5 ? 1 : 0);
   const lowSignals =
     (painNow != null && painNow <= 3 ? 2 : 0) +
+    (painSeverityQual === "low" ? 2 : 0) +
     (activityResponse === "better" ? 2 : 0) +
-    (easers.includes("gentle movement") || easers.includes("stretching") ? 1 : 0) +
-    (aggravators.length <= 1 && wordCount > 30 ? 1 : 0);
+    (easers.includes("gentle movement") || easers.includes("stretching") ? 1 : 0);
+  // Require solid evidence before labeling — partial signals leave unknown (not assumed).
   if (highSignals >= 3) irritability = "high";
   else if (lowSignals >= 3 && highSignals === 0) irritability = "low";
-  else if (highSignals >= 1) irritability = "moderate";
-  else if (lowSignals >= 1) irritability = "low";
+  else if (highSignals >= 2 && lowSignals === 0) irritability = "moderate";
+  else if (lowSignals >= 2 && highSignals === 0) irritability = "low";
+  else irritability = "unknown";
 
-  const descriptorIds = raw.length >= 8 ? matchDescriptorsFromText(raw, 14) : [];
-  const conditionIds = raw.length >= 8 ? matchConditionsFromText(raw, 12) : [];
+  // Descriptors/conditions: lower cap — keyword libraries can over-match; prefer precision.
+  const descriptorIds = raw.length >= 12 ? matchDescriptorsFromText(raw, 8) : [];
+  const conditionIds = raw.length >= 12 ? matchConditionsFromText(raw, 6) : [];
 
   const primaryComplaint =
     raw.length >= 12
@@ -454,7 +954,7 @@ export function analyzeStoryIntelligence(
   if (functionalLimits.length)
     answerSnippets.push({ theme: "function-limits", text: functionalLimits.join(", ") });
 
-  const planHints = buildPlanHints({
+  let planHints = buildPlanHints({
     regions,
     sensory,
     irritability,
@@ -471,7 +971,7 @@ export function analyzeStoryIntelligence(
     onset,
   });
 
-  const liveReadLines = buildLiveReadLines({
+  const baseLiveRead = buildLiveReadLines({
     name,
     richness,
     regions,
@@ -491,9 +991,7 @@ export function analyzeStoryIntelligence(
     missingThemes,
   });
 
-  const coachSummary = liveReadLines.slice(0, 4).join(" ");
-
-  const adaptiveQuestions = buildAdaptiveQuestions({
+  const baseAdaptive = buildAdaptiveQuestions({
     name,
     raw,
     regions,
@@ -522,6 +1020,107 @@ export function analyzeStoryIntelligence(
     sex: opts?.sex,
   });
 
+  // —— Elite systems layer (evidence ledger, dose envelope, info-value interview) ——
+  const baseSnapshot: StoryIntelligence = {
+    raw,
+    wordCount,
+    richness,
+    primaryComplaint,
+    regions,
+    laterality,
+    sensory,
+    onset,
+    timelineHints,
+    painNow,
+    painWorst,
+    aggravators,
+    easers,
+    timeOfDayWorst,
+    functionalLimits,
+    fearAvoidance,
+    sleepImpact,
+    stressImpact,
+    activityResponse,
+    irritability,
+    directionalCues,
+    radiation,
+    neuroLanguage,
+    goals,
+    redFlagHints,
+    coveredThemes: unique(coveredThemes),
+    missingThemes,
+    descriptorIds,
+    conditionIds,
+    answerSnippets,
+    planHints,
+    coachSummary: "",
+    liveReadLines: baseLiveRead,
+    adaptiveQuestions: baseAdaptive,
+    priorPrompt: {
+      heading: "",
+      question: "",
+      placeholder: "",
+      coachLine: "",
+    },
+  };
+
+  const elite = runEliteStoryEngine(baseSnapshot, { preferredName: name });
+
+  // Fuse dose envelope from elite (stated-evidence only) into plan hints
+  if (elite.doseEnvelope.mode !== "unknown") {
+    planHints = {
+      ...planHints,
+      phaseBias: elite.doseEnvelope.phaseBias,
+      minutesScale: planHints.minutesScale * elite.doseEnvelope.minutesScale,
+      maxDifficulty:
+        difficultyRank(elite.doseEnvelope.maxDifficulty) < difficultyRank(planHints.maxDifficulty)
+          ? elite.doseEnvelope.maxDifficulty
+          : planHints.maxDifficulty,
+      evidenceLines: unique([
+        ...elite.doseEnvelope.rationale.map((r) => `Dose envelope: ${r}`),
+        ...planHints.evidenceLines,
+        ...elite.systemsRead.slice(0, 2),
+      ]).slice(0, 10),
+      scoringBoost: planHints.scoringBoost + (elite.completeness >= 70 ? 3 : elite.completeness >= 40 ? 1 : 0),
+    };
+  } else {
+    planHints = {
+      ...planHints,
+      evidenceLines: unique([
+        ...elite.doseEnvelope.rationale.map((r) => `Dose envelope: ${r}`),
+        ...planHints.evidenceLines,
+      ]).slice(0, 10),
+    };
+  }
+
+  // Trajectory fine-tune (stated only)
+  if (elite.trajectory === "worsening" && planHints.phaseBias !== "protect-calm") {
+    planHints = {
+      ...planHints,
+      phaseBias: "protect-calm",
+      minutesScale: Math.min(planHints.minutesScale, 0.75),
+      maxDifficulty: "beginner",
+      evidenceLines: unique([
+        "Trajectory stated as worsening — protect-calm until trend stabilizes.",
+        ...planHints.evidenceLines,
+      ]).slice(0, 10),
+    };
+  } else if (elite.trajectory === "improving" && irritability === "low") {
+    planHints = {
+      ...planHints,
+      exerciseBias: planHints.exerciseBias + 0.1,
+      evidenceLines: unique([
+        "Trajectory stated as improving with low irritability — allow graded capacity bias.",
+        ...planHints.evidenceLines,
+      ]).slice(0, 10),
+    };
+  }
+
+  const liveReadLines =
+    elite.liveReadLines.length > 0 ? elite.liveReadLines : baseLiveRead;
+  const adaptiveQuestions = mergeAdaptiveQuestions(elite.adaptiveQuestions, baseAdaptive, 10);
+  const coachSummary = liveReadLines.slice(0, 4).join(" ");
+
   const priorPrompt = buildAdaptivePriorPrompt({
     name,
     richness,
@@ -533,6 +1132,13 @@ export function analyzeStoryIntelligence(
     primaryComplaint,
     adaptiveQuestions,
   });
+
+  // Upgrade prior prompt coach line with elite telemetry when useful
+  if (elite.intelligenceGrade !== "empty" && priorPrompt.coachLine) {
+    priorPrompt.coachLine = `${priorPrompt.coachLine} · Signal ${elite.intelligenceGrade} (${elite.completeness}/100)${
+      elite.criticalGaps[0] ? ` · next gap: ${elite.criticalGaps[0].theme}` : ""
+    }.`;
+  }
 
   return {
     raw,
@@ -570,7 +1176,18 @@ export function analyzeStoryIntelligence(
     liveReadLines,
     adaptiveQuestions,
     priorPrompt,
+    elite,
+    completeness: elite.completeness,
+    intelligenceGrade: elite.intelligenceGrade,
+    trajectory: elite.trajectory,
+    conflicts: elite.conflicts,
   };
+}
+
+function difficultyRank(d: Difficulty): number {
+  if (d === "beginner") return 1;
+  if (d === "intermediate") return 2;
+  return 3;
 }
 
 function buildPlanHints(s: {
@@ -622,16 +1239,28 @@ function buildPlanHints(s: {
     stretchBias += 0.1;
     preferTags.push("strength", "functional", "endurance", "motor-control");
     evidenceLines.push(
-      "Lower irritability: bias motor control and graded capacity while keeping mobility gains."
+      "Lower irritability (stated evidence): bias motor control and graded capacity while keeping mobility gains."
     );
     scoringBoost += 2;
-  } else {
+  } else if (s.irritability === "moderate") {
     phaseBias = s.sensory.includes("stiff/tight") ? "mobility-restore" : "motor-control";
     stretchBias += 0.2;
     exerciseBias += 0.2;
     preferTags.push("mobility", "activation", "motor-control");
-    evidenceLines.push("Moderate irritability: balanced mobility + control with traffic-light dosing.");
+    evidenceLines.push(
+      "Moderate irritability (stated evidence): balanced mobility + control with traffic-light dosing."
+    );
     scoringBoost += 2;
+  } else {
+    // unknown — neutral program defaults, explicitly not an assumption about the patient
+    phaseBias = "motor-control";
+    stretchBias += 0.15;
+    exerciseBias += 0.15;
+    preferTags.push("gentle", "mobility", "motor-control");
+    evidenceLines.push(
+      "Irritability not determined from story (not assumed) — neutral dosing until more evidence."
+    );
+    scoringBoost += 0;
   }
 
   if (s.activityResponse === "delayed-worse") {
@@ -748,9 +1377,8 @@ function buildPlanHints(s: {
     if (s.irritability !== "low") phaseBias = "protect-calm";
   }
 
-  const functionalGoals = s.goals.length
-    ? s.goals.slice(0, 6)
-    : s.functionalLimits.map((f) => `Improve ${f}`).slice(0, 4);
+  // Goals only if the user stated them — never invent “Improve stairs” from limits.
+  const functionalGoals = s.goals.length ? s.goals.slice(0, 6) : [];
 
   preferKinds =
     exerciseBias > stretchBias + 0.15
@@ -804,26 +1432,53 @@ function buildLiveReadLines(s: {
   }
 
   const region = regionLabel(s.regions);
+  const painBit =
+    s.painNow != null
+      ? ` · ${s.painNow}/10${
+          s.painWorst != null && s.painWorst !== s.painNow ? ` (worst ${s.painWorst}/10)` : ""
+        }`
+      : s.painWorst != null
+        ? ` · worst ${s.painWorst}/10`
+        : "";
   lines.push(
     `Clinical read: ${region}${s.laterality !== "unknown" ? ` (${s.laterality})` : ""}${
       s.sensory.length ? ` · feels ${s.sensory.slice(0, 3).join(", ")}` : ""
-    }${s.painNow != null ? ` · ~${s.painNow}/10` : ""}${
-      s.painWorst != null && s.painWorst !== s.painNow ? ` (worst ~${s.painWorst})` : ""
-    }.`
+    }${painBit || " · pain 0–10 not stated"}.`
   );
-  lines.push(
-    `Irritability: ${s.irritability}${
-      s.activityResponse !== "unknown" ? ` · after activity: ${s.activityResponse}` : ""
-    }${s.onset !== "unknown" ? ` · onset ${s.onset}` : ""}.`
-  );
-  if (s.aggravators.length)
-    lines.push(`Aggravators noted: ${s.aggravators.slice(0, 5).join(", ")}.`);
-  if (s.easers.length) lines.push(`Easers noted: ${s.easers.slice(0, 4).join(", ")}.`);
-  if (s.functionalLimits.length)
-    lines.push(`Function limited in: ${s.functionalLimits.slice(0, 5).join(", ")}.`);
-  if (s.neuroLanguage)
-    lines.push("Neuro/radiation language present — plan will stay gentle and centralization-minded.");
-  if (s.goals.length) lines.push(`Goals in story: ${s.goals.slice(0, 4).join("; ")}.`);
+  if (s.irritability === "unknown") {
+    lines.push(
+      `Irritability: not determined (not assumed)${
+        s.activityResponse !== "unknown" ? ` · after activity: ${s.activityResponse}` : ""
+      }${s.onset !== "unknown" ? ` · onset ${s.onset}` : ""}.`
+    );
+  } else {
+    lines.push(
+      `Irritability: ${s.irritability} (from stated evidence)${
+        s.activityResponse !== "unknown" ? ` · after activity: ${s.activityResponse}` : ""
+      }${s.onset !== "unknown" ? ` · onset ${s.onset}` : ""}.`
+    );
+  }
+  if (s.aggravators.length) {
+    lines.push(`Aggravators you stated: ${s.aggravators.slice(0, 5).join(", ")}.`);
+  } else if (s.richness !== "empty") {
+    lines.push("Aggravating positions/actions/activities: not specified yet (not assumed).");
+  }
+  if (s.easers.length) {
+    lines.push(`Easers you stated: ${s.easers.slice(0, 4).join(", ")}.`);
+  } else if (s.richness !== "empty" && s.richness !== "thin") {
+    lines.push("Easers: not specified yet (not assumed).");
+  }
+  if (s.functionalLimits.length) {
+    lines.push(`Function limits you stated: ${s.functionalLimits.slice(0, 5).join(", ")}.`);
+  }
+  if (s.neuroLanguage) {
+    lines.push("Neuro/radiation language you used — plan will stay gentle and centralization-minded.");
+  }
+  if (s.goals.length) {
+    lines.push(`Goals you stated: ${s.goals.slice(0, 4).join("; ")}.`);
+  } else if (s.richness !== "empty" && s.richness !== "thin") {
+    lines.push("Goals: not specified yet (not assumed).");
+  }
   lines.push(
     `Interview coverage: ${s.coveredThemes.length}/${ALL_THEMES.length} themes · still open: ${
       s.missingThemes.slice(0, 4).join(", ") || "none major"
@@ -897,7 +1552,17 @@ function buildAdaptivePriorPrompt(s: {
         next?.question ||
         `${s.name}, when symptoms spike, how long until they settle, and is there any small motion that still feels safe?`,
       placeholder: "Describe flare timing and any safe motions…",
-      coachLine: "High irritability → protect-calm dosing for Plan (short volume, isometrics, traffic lights).",
+      coachLine: "High irritability (from your words) → protect-calm dosing for Plan.",
+    };
+  }
+  if (s.irritability === "unknown" && s.richness !== "empty") {
+    return {
+      heading: "I’m not assuming — need more from you",
+      question:
+        next?.question ||
+        `${s.name}, I won’t invent what flares this. What positions, actions, or activities reliably make it worse or better?`,
+      placeholder: "What makes it worse? What eases it? Pain 0–10 if you know it…",
+      coachLine: "No assumptions: irritability, aggravators, and pain numbers stay blank until you state them.",
     };
   }
 
@@ -1095,20 +1760,20 @@ function buildAdaptiveQuestions(s: {
     push({
       id: "adapt-high-pain",
       label: "Safe motion at high pain?",
-      question: `With pain around ${s.painNow}/10, is there any small range or position that still feels relatively safe—and how long do flares last when you overdo it?`,
+      question: `You reported pain at ${s.painNow}/10. Is there any small range or position that still feels relatively safe—and how long do flares last when you overdo it?`,
       category: "irritability",
       theme: "pain-intensity",
-      reason: `You reported ~${s.painNow}/10 pain`,
+      reason: `You reported ${s.painNow}/10 pain`,
       priority: 89,
     });
   } else if (s.missingThemes.includes("pain-intensity") && s.raw.length >= 24) {
     push({
       id: "adapt-pain-scale",
       label: "Pain 0–10 pattern",
-      question: `On a 0–10 scale, where does ${region} sit most of the day, and where does it go at its worst? Does it stay local or travel?`,
+      question: `You have not given a 0–10 number yet—and I will not invent one. On a 0–10 scale, where does ${region} sit most of the day, and where does it go at its worst?`,
       category: "irritability",
       theme: "pain-intensity",
-      reason: "No pain number yet",
+      reason: "No pain number stated (not assumed)",
       priority: 78,
     });
   }
@@ -1217,10 +1882,10 @@ function buildAdaptiveQuestions(s: {
     push({
       id: "adapt-guard",
       label: "Any guarding?",
-      question: `With how irritable this sounds—are there moves you guard against or avoid because you’re worried they’ll set you back?`,
+      question: `You described a high-irritability picture—are there moves you guard against or avoid because you’re worried they’ll set you back? (Only if true for you.)`,
       category: "behavior",
       theme: "fear-avoidance",
-      reason: "High irritability often pairs with guarding",
+      reason: "High irritability from your stated evidence — asking, not assuming fear",
       priority: 72,
     });
   }
@@ -1389,6 +2054,16 @@ export function storyMovementBoost(
   const story = intel.raw.toLowerCase();
   for (const tok of tokens) if (story.includes(tok)) score += 2.5;
 
+  // Elite: only boost when completeness is high (more reliable stated map)
+  if (typeof intel.completeness === "number") {
+    if (intel.completeness >= 70) score += 2;
+    else if (intel.completeness < 30) score -= 1;
+  }
+  if (intel.elite?.doseEnvelope.mode === "protect") {
+    if (/gentle|isometric|protected|activation/i.test(blob)) score += 3;
+    if (/plyo|jump|heavy|ballistic/i.test(blob)) score -= 6;
+  }
+
   score += hints.scoringBoost * 0.15;
   return score;
 }
@@ -1396,11 +2071,24 @@ export function storyMovementBoost(
 /** Compact correlation payload for clinical context / Jeffery / insights */
 export function storyIntelCorrelationSummary(intel: StoryIntelligence): string[] {
   const lines = [...intel.liveReadLines];
+  if (intel.intelligenceGrade) {
+    lines.unshift(
+      `Story intel grade: ${intel.intelligenceGrade}${
+        typeof intel.completeness === "number" ? ` (${intel.completeness}/100)` : ""
+      }`
+    );
+  }
   for (const e of intel.planHints.evidenceLines.slice(0, 3)) {
     lines.push(e);
+  }
+  if (intel.conflicts?.[0]) lines.push(`Conflict: ${intel.conflicts[0]}`);
+  if (intel.elite?.clinicalHypotheses?.[0]) {
+    lines.push(
+      `Provisional: ${intel.elite.clinicalHypotheses[0].label} (${intel.elite.clinicalHypotheses[0].confidence})`
+    );
   }
   if (intel.adaptiveQuestions[0]) {
     lines.push(`Next interview focus: ${intel.adaptiveQuestions[0].label}`);
   }
-  return lines.slice(0, 12);
+  return lines.slice(0, 14);
 }

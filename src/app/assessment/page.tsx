@@ -1301,28 +1301,55 @@ export default function AssessmentPage() {
                 <div className="rounded-xl border border-brand-200 bg-white px-3 py-2.5 text-xs leading-relaxed text-brand-800 dark:border-brand-700 dark:bg-brand-950/60 dark:text-brand-100">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                      Live clinical read · powers Plan &amp; Routine
+                      Live clinical read · evidence-only · powers Plan &amp; Routine
                     </p>
                     <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-800 dark:bg-brand-900 dark:text-brand-100">
-                      {storyIntel.irritability} irritability
+                      {storyIntel.intelligenceGrade || "signal"}
+                      {typeof storyIntel.completeness === "number"
+                        ? ` · ${storyIntel.completeness}/100`
+                        : ""}
+                      {" · "}
+                      {storyIntel.irritability === "unknown"
+                        ? "irritability unknown"
+                        : `${storyIntel.irritability} irritability`}
                       {storyIntel.planHints.phaseBias
                         ? ` · ${storyIntel.planHints.phaseBias}`
                         : ""}
                     </span>
                   </div>
                   <ul className="mt-1.5 list-inside list-disc space-y-0.5">
-                    {storyIntel.liveReadLines.slice(0, 5).map((line, i) => (
+                    {storyIntel.liveReadLines.slice(0, 7).map((line, i) => (
                       <li key={i}>{line}</li>
                     ))}
                   </ul>
+                  {storyIntel.elite?.evidence?.length ? (
+                    <p className="mt-1.5 text-[11px] text-brand-600 dark:text-brand-300">
+                      Evidence ledger: {storyIntel.elite.evidence.length} item
+                      {storyIntel.elite.evidence.length === 1 ? "" : "s"}
+                      {storyIntel.elite.doseEnvelope
+                        ? ` · dose ${storyIntel.elite.doseEnvelope.mode}`
+                        : ""}
+                      {storyIntel.trajectory && storyIntel.trajectory !== "unknown"
+                        ? ` · trajectory ${storyIntel.trajectory}`
+                        : ""}
+                    </p>
+                  ) : null}
+                  {storyIntel.conflicts && storyIntel.conflicts.length > 0 ? (
+                    <p className="mt-1 text-[11px] font-medium text-amber-800 dark:text-amber-200">
+                      Conflict check: {storyIntel.conflicts[0]}
+                    </p>
+                  ) : null}
                   {storyIntel.missingThemes.length > 0 ? (
                     <p className="mt-1.5 text-[11px] text-brand-500">
-                      Still open in interview:{" "}
+                      Still open (not assumed):{" "}
                       {storyIntel.missingThemes.slice(0, 6).join(", ")}
+                      {storyIntel.elite?.criticalGaps?.[0]
+                        ? ` · highest-value gap: ${storyIntel.elite.criticalGaps[0].theme}`
+                        : ""}
                     </p>
                   ) : (
                     <p className="mt-1.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                      Interview themes look solid — Plan can dose from this story.
+                      Interview themes look solid — Plan can dose from stated evidence.
                     </p>
                   )}
                 </div>
