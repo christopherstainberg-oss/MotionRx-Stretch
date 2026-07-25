@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { CorrelatedInsight } from "@/lib/types";
+import type { CorrelatedInsight, PainProfile } from "@/lib/types";
 import { correlateInsights } from "@/lib/insights";
 import type { JournalEntry, Routine, SessionLog, Goal } from "@/lib/types";
+import { loadLocalPainProfile } from "@/lib/pain-profile";
+import { getDescriptorById } from "@/data/pain-descriptors";
 import { Network } from "lucide-react";
 import Link from "next/link";
 
 export default function InsightsPage() {
   const [insights, setInsights] = useState<CorrelatedInsight[]>([]);
+  const [painProfile, setPainProfile] = useState<PainProfile | null>(null);
 
   useEffect(() => {
     // Local correlation first (offline)
@@ -28,12 +31,23 @@ export default function InsightsPage() {
     let routines: Routine[] = [];
     const active = localStorage.getItem("active-routine");
     if (active) routines = [JSON.parse(active)];
-    setInsights(correlateInsights({ sessions, journal, routines, goals }));
+    const localProfile = loadLocalPainProfile();
+    setPainProfile(localProfile);
+    setInsights(
+      correlateInsights({
+        sessions,
+        journal,
+        routines,
+        goals,
+        painProfile: localProfile,
+      })
+    );
 
     fetch("/api/insights")
       .then((r) => r.json())
       .then((d) => {
         if (d.insights?.length) setInsights(d.insights);
+        if (d.painProfile) setPainProfile(d.painProfile);
       })
       .catch(() => {});
   }, []);
@@ -53,11 +67,30 @@ export default function InsightsPage() {
           Correlated insights
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-brand-700/85">
-          Sessions, pain, journal, goals, routine rotations, and Jeffery adjustments are analyzed
-          together—similar to how an outpatient PT re-evaluates the whole picture, not one number
-          alone.
+          Clinical pain descriptors, sessions, journal, goals, routines, and Jeffery are analyzed
+          together—like an outpatient re-eval of the full story, not one number alone.
         </p>
       </div>
+
+      {painProfile && (painProfile.descriptorIds || []).length > 0 && (
+        <section className="card border-brand-200 bg-brand-50/40 p-5">
+          <h2 className="font-semibold text-brand-950">Current pain description profile</h2>
+          <p className="mt-1 text-sm text-brand-700">
+            Last updated {new Date(painProfile.updatedAt).toLocaleString()} · overall{" "}
+            {painProfile.overallPain}/10 · source {painProfile.source}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {painProfile.descriptorIds.map((id) => (
+              <span key={id} className="chip">
+                {getDescriptorById(id)?.label || id}
+              </span>
+            ))}
+          </div>
+          <Link href="/assess" className="btn-secondary mt-4 inline-flex text-xs">
+            Update on Assess
+          </Link>
+        </section>
+      )}
 
       <div className="grid gap-4">
         {insights.map((ins) => (
@@ -74,6 +107,11 @@ export default function InsightsPage() {
               {ins.sources.map((s) => (
                 <span key={s} className="chip">
                   {s}
+                </span>
+              ))}
+              {(ins.relatedDescriptorIds || []).slice(0, 4).map((id) => (
+                <span key={id} className="chip">
+                  {getDescriptorById(id)?.label || id}
                 </span>
               ))}
             </div>

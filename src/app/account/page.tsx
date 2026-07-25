@@ -212,7 +212,7 @@ export default function AccountPage() {
           </li>
           <li>
             <strong>Self-updating:</strong> on each launch the SW checks for new assets; Docker
-            Watchtower keeps container images current from ghcr.io.
+            Watchtower keeps container images current from ghcr.io (GitHub Container Registry).
           </li>
         </ul>
       </section>

@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { PainScale } from "@/components/PainScale";
+import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
 import type { BodyPart, JournalEntry } from "@/lib/types";
 import { BODY_PART_LABELS } from "@/data/stretch-library";
+import { getDescriptorById } from "@/data/pain-descriptors";
+import { loadLocalPainProfile, saveLocalPainProfile } from "@/lib/pain-profile";
 import { BookOpen, Share2 } from "lucide-react";
 import { v4 as uuid } from "uuid";
 
@@ -18,6 +21,7 @@ export default function JournalPage() {
   const [parts, setParts] = useState<BodyPart[]>([]);
   const [flexibilityNote, setFlexibilityNote] = useState("");
   const [share, setShare] = useState(false);
+  const [descriptorIds, setDescriptorIds] = useState<string[]>([]);
 
   useEffect(() => {
     let local: JournalEntry[] = [];
@@ -28,6 +32,8 @@ export default function JournalPage() {
       local = [];
     }
     setEntries(local);
+    const profile = loadLocalPainProfile();
+    if (profile?.descriptorIds?.length) setDescriptorIds(profile.descriptorIds);
 
     fetch("/api/journal")
       .then((r) => r.json())
@@ -72,9 +78,18 @@ export default function JournalPage() {
       flexibilityNote: flexibilityNote.trim() || undefined,
       sharedWithProvider: share,
       tags: share ? ["shared"] : [],
+      painDescriptorIds: descriptorIds,
     };
     const next = [entry, ...entries];
     persist(next);
+    saveLocalPainProfile({
+      userId: "local",
+      descriptorIds,
+      freeText: body.trim(),
+      overallPain: pain,
+      areas: parts,
+      source: "journal",
+    });
     setTitle("");
     setBody("");
     setFlexibilityNote("");
@@ -84,6 +99,17 @@ export default function JournalPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(entry),
+      });
+      await fetch("/api/pain-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          descriptorIds,
+          freeText: body.trim(),
+          overallPain: pain,
+          areas: parts,
+          source: "journal",
+        }),
       });
     } catch {
       /* offline */
@@ -143,6 +169,14 @@ export default function JournalPage() {
           />
         </div>
         <PainScale label="Overall pain today" value={pain} onChange={setPain} id="journal-pain" />
+        <div className="rounded-xl border border-brand-100 p-3">
+          <PainDescriptorPicker
+            value={descriptorIds}
+            onChange={setDescriptorIds}
+            maxSelect={12}
+            compact
+          />
+        </div>
         <div>
           <label className="label" htmlFor="mood">
             Mood (1–5)
@@ -222,6 +256,11 @@ export default function JournalPage() {
               {entry.bodyParts.map((bp) => (
                 <span key={bp} className="chip">
                   {BODY_PART_LABELS[bp]}
+                </span>
+              ))}
+              {(entry.painDescriptorIds || []).slice(0, 6).map((id) => (
+                <span key={id} className="chip">
+                  {getDescriptorById(id)?.label || id}
                 </span>
               ))}
             </div>

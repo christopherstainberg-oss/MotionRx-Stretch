@@ -11,6 +11,8 @@ export {
   removeItemFromRoutine,
   ensureRoutineItems,
   parseConcernParagraph,
+  matchDescriptorsFromText,
+  analyzeParagraphDescriptors,
 } from "@/lib/plan-engine";
 
 function itemsFrom(

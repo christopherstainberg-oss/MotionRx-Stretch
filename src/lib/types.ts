@@ -189,6 +189,8 @@ export interface SessionLog {
   notes?: string;
   completed: boolean;
   source?: "session" | "jeffery" | "builder";
+  /** Clinical pain descriptor IDs selected for this session */
+  painDescriptorIds?: string[];
 }
 
 export interface JournalEntry {
@@ -204,6 +206,20 @@ export interface JournalEntry {
   flexibilityNote?: string;
   sharedWithProvider: boolean;
   tags: string[];
+  /** Clinical pain descriptor IDs for this reflection */
+  painDescriptorIds?: string[];
+}
+
+/** Saved pain description profile correlated across the app */
+export interface PainProfile {
+  id: string;
+  userId: string;
+  updatedAt: string;
+  descriptorIds: string[];
+  freeText?: string;
+  overallPain: number;
+  areas: BodyPart[];
+  source: "assess" | "journal" | "session" | "jeffery" | "manual";
 }
 
 export interface Routine {
@@ -226,6 +242,8 @@ export interface Routine {
     goals: string[];
     concernParagraph?: string;
     suggestedKinds?: MovementKind[];
+    painDescriptorIds?: string[];
+    descriptorSummary?: string[];
   };
   selfAdjustHistory: RoutineAdjustment[];
   createdAt: string;
@@ -267,6 +285,8 @@ export interface SymptomInput {
   /** Free-text clinical intake paragraph */
   concernParagraph?: string;
   preferKinds?: MovementKind[] | "auto";
+  /** Clinical pain descriptor IDs from the descriptor database */
+  painDescriptorIds?: string[];
 }
 
 export interface JefferyMessage {
@@ -289,6 +309,7 @@ export interface JefferyThread {
   knownAdjustments: string[];
   knownCustomItems: string[];
   lastPainInsight?: number;
+  lastDescriptorIds?: string[];
   updatedAt: string;
 }
 
@@ -297,7 +318,10 @@ export interface CorrelatedInsight {
   title: string;
   summary: string;
   severity: "info" | "positive" | "caution" | "action";
-  sources: Array<"sessions" | "journal" | "pain" | "goals" | "jeffery" | "routines">;
+  sources: Array<
+    "sessions" | "journal" | "pain" | "goals" | "jeffery" | "routines" | "descriptors"
+  >;
   recommendation?: string;
   at: string;
+  relatedDescriptorIds?: string[];
 }

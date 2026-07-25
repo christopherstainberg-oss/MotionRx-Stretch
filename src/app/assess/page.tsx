@@ -1,13 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { BODY_PART_LABELS, getStretchById } from "@/data/stretch-library";
 import { getExerciseById } from "@/data/exercise-library";
+import {
+  getDescriptorById,
+  matchDescriptorsFromText,
+  summarizeDescriptors,
+} from "@/data/pain-descriptors";
 import { generateHybridPlan, parseConcernParagraph } from "@/lib/routine-engine";
 import type { BodyPart, Difficulty, MovementKind, SymptomInput } from "@/lib/types";
 import { PainScale } from "@/components/PainScale";
-import { Stethoscope } from "lucide-react";
+import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
+import {
+  averagePainFromAreas,
+  loadLocalPainProfile,
+  saveLocalPainProfile,
+} from "@/lib/pain-profile";
+import { Sparkles, Stethoscope, X } from "lucide-react";
 
 const AREAS = Object.keys(BODY_PART_LABELS) as BodyPart[];
 const SYMPTOM_CHIPS = [
@@ -40,9 +51,27 @@ export default function AssessPage() {
   const [minutes, setMinutes] = useState(15);
   const [difficulty, setDifficulty] = useState<Difficulty>("beginner");
   const [preferKinds, setPreferKinds] = useState<"auto" | MovementKind[]>("auto");
+  /** Manually selected / applied descriptors */
+  const [descriptorIds, setDescriptorIds] = useState<string[]>([]);
+  /** Track which IDs came from paragraph auto-detect (can re-sync) */
+  const [autoDescIds, setAutoDescIds] = useState<string[]>([]);
+  const [autoApplyDesc, setAutoApplyDesc] = useState(true);
   const [routineId, setRoutineId] = useState<string | null>(null);
   const [generated, setGenerated] = useState<ReturnType<typeof generateHybridPlan> | null>(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const local = loadLocalPainProfile();
+    if (local?.descriptorIds?.length) setDescriptorIds(local.descriptorIds);
+    if (local?.freeText) setParagraph(local.freeText);
+    fetch("/api/pain-profile")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.profile?.descriptorIds?.length) setDescriptorIds(d.profile.descriptorIds);
+        if (d.profile?.freeText && !local?.freeText) setParagraph(d.profile.freeText);
+      })
+      .catch(() => {});
+  }, []);
 
   const toggle = <T,>(list: T[], item: T): T[] =>
     list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
@@ -51,6 +80,38 @@ export default function AssessPage() {
     () => (paragraph.trim().length > 12 ? parseConcernParagraph(paragraph) : null),
     [paragraph]
   );
+
+  // Live clinical descriptors from paragraph text
+  const paragraphDescriptors = useMemo(() => {
+    if (paragraph.trim().length < 12) return [] as string[];
+    return matchDescriptorsFromText(paragraph, 14);
+  }, [paragraph]);
+
+  const paragraphDescDetails = useMemo(
+    () =>
+      paragraphDescriptors
+        .map((id) => getDescriptorById(id))
+        .filter(Boolean)
+        .map((d) => d!),
+    [paragraphDescriptors]
+  );
+
+  // Auto-merge paragraph descriptors into selection when enabled
+  useEffect(() => {
+    if (!autoApplyDesc) return;
+    if (!paragraphDescriptors.length) {
+      setAutoDescIds([]);
+      return;
+    }
+    setAutoDescIds(paragraphDescriptors);
+    setDescriptorIds((prev) => {
+      const manualOnly = prev.filter((id) => !autoDescIds.includes(id));
+      return Array.from(new Set([...manualOnly, ...paragraphDescriptors]));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- autoDescIds intentionally previous set
+  }, [paragraphDescriptors, autoApplyDesc]);
+
+  const descHints = useMemo(() => summarizeDescriptors(descriptorIds), [descriptorIds]);
 
   function applyParagraphParse() {
     if (!parsedPreview) return;
@@ -61,10 +122,19 @@ export default function AssessPage() {
     const pain: Partial<Record<BodyPart, number>> = {};
     for (const a of parsedPreview.areas) pain[a] = parsedPreview.estimatedPain;
     setPainLevels(pain);
+    const matched = parsedPreview.painDescriptorIds?.length
+      ? parsedPreview.painDescriptorIds
+      : matchDescriptorsFromText(paragraph, 14);
+    setAutoDescIds(matched);
+    setDescriptorIds((prev) => Array.from(new Set([...prev, ...matched])));
+    setAutoApplyDesc(true);
   }
 
-  const input: SymptomInput = useMemo(
-    () => ({
+  const input: SymptomInput = useMemo(() => {
+    // Always re-merge latest paragraph matches for plan generation
+    const fromParagraph = matchDescriptorsFromText(paragraph, 14);
+    const mergedDesc = Array.from(new Set([...descriptorIds, ...fromParagraph]));
+    return {
       areas,
       symptoms,
       painLevels,
@@ -73,17 +143,47 @@ export default function AssessPage() {
       difficulty,
       concernParagraph: paragraph,
       preferKinds,
-    }),
-    [areas, symptoms, painLevels, goals, minutes, difficulty, paragraph, preferKinds]
-  );
+      painDescriptorIds: mergedDesc,
+    };
+  }, [
+    areas,
+    symptoms,
+    painLevels,
+    goals,
+    minutes,
+    difficulty,
+    paragraph,
+    preferKinds,
+    descriptorIds,
+  ]);
 
   async function createPlan() {
     const routine = generateHybridPlan(input);
     setGenerated(routine);
     setSaving(true);
+    const finalDesc =
+      routine.generatedFrom?.painDescriptorIds || input.painDescriptorIds || descriptorIds;
+    setDescriptorIds(finalDesc);
+    const overall = averagePainFromAreas(
+      painLevels,
+      areas.length ? areas : (["full-body"] as BodyPart[])
+    );
+    const profile = saveLocalPainProfile({
+      userId: "local",
+      descriptorIds: finalDesc,
+      freeText: paragraph,
+      overallPain: overall || parsedPreview?.estimatedPain || 0,
+      areas,
+      source: "assess",
+    });
     try {
       localStorage.setItem(`routine:${routine.id}`, JSON.stringify(routine));
       localStorage.setItem("active-routine", JSON.stringify(routine));
+      await fetch("/api/pain-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...profile, source: "assess" }),
+      }).catch(() => {});
       const res = await fetch("/api/routines", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -102,6 +202,12 @@ export default function AssessPage() {
     }
   }
 
+  function removeDescriptor(id: string) {
+    setAutoApplyDesc(false);
+    setDescriptorIds((prev) => prev.filter((x) => x !== id));
+    setAutoDescIds((prev) => prev.filter((x) => x !== id));
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-5 sm:space-y-6">
       <div>
@@ -113,43 +219,161 @@ export default function AssessPage() {
           How are you feeling?
         </h1>
         <p className="mt-1.5 text-sm leading-relaxed text-brand-700/85">
-          Describe issues in a short paragraph. We&apos;ll suggest{" "}
-          <strong>stretches and/or exercises</strong> with pain-aware logic—then you can fine-tune.
+          Start with a short paragraph about your issue. We extract{" "}
+          <strong>clinical pain descriptors</strong> from your words and build stretch/exercise plans
+          around them—then you can fine-tune.
         </p>
       </div>
 
-      <section className="card space-y-3 p-5">
-        <h2 className="font-semibold text-brand-900">Brief written concerns (primary)</h2>
+      {/* Primary: paragraph intake with live descriptor extraction */}
+      <section className="card space-y-4 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="font-semibold text-brand-900">Describe your issue (paragraph)</h2>
+            <p className="text-sm text-brand-700/85">
+              Write freely—how it feels, when it&apos;s worse, what helps, and where it is.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-medium text-brand-700">
+            <input
+              type="checkbox"
+              className="accent-brand-600"
+              checked={autoApplyDesc}
+              onChange={(e) => setAutoApplyDesc(e.target.checked)}
+            />
+            Auto-apply descriptors from text
+          </label>
+        </div>
+
         <textarea
-          className="input min-h-[120px]"
+          className="input min-h-[140px] text-base leading-relaxed"
           value={paragraph}
           onChange={(e) => setParagraph(e.target.value)}
-          placeholder="Example: I sit at a desk all day. My neck and upper back feel stiff by afternoon, pain about 3/10. Hips feel tight when I stand up. I want to move easier at work and not feel so rigid."
+          placeholder="Example: For the last two weeks my low back has a dull aching pain that gets worse when I sit at my desk. It feels tight and stiff in the morning for about 20 minutes. Sometimes I get sharp pain when I bend forward. Walking a little helps. Pain is about 4/10. I want to move easier at work."
+          aria-label="Describe your issue in a paragraph"
         />
-        {parsedPreview && (
-          <div className="rounded-xl bg-brand-50 p-3 text-sm text-brand-800">
-            <p className="font-medium">Detected from your paragraph</p>
-            <p className="mt-1">
-              Areas: {parsedPreview.areas.map((a) => BODY_PART_LABELS[a]).join(", ")}
+
+        {/* Live pain descriptors from paragraph */}
+        {paragraph.trim().length >= 12 && (
+          <div className="rounded-2xl border border-brand-200 bg-gradient-to-br from-brand-50 to-white p-4">
+            <p className="flex items-center gap-2 text-sm font-semibold text-brand-900">
+              <Sparkles className="h-4 w-4 text-brand-600" />
+              Pain descriptors detected from your paragraph
             </p>
-            <p>Symptoms: {parsedPreview.symptoms.join(", ")}</p>
-            <p>Goals: {parsedPreview.goals.join(", ")}</p>
-            <p>
-              Suggested mix:{" "}
-              {parsedPreview.preferKinds === "auto"
-                ? "auto (stretches + exercises)"
-                : parsedPreview.preferKinds.join(" + ")}{" "}
-              · estimated pain ~{parsedPreview.estimatedPain}/10
+            {paragraphDescDetails.length === 0 ? (
+              <p className="mt-2 text-sm text-brand-600">
+                Keep writing details (e.g. burning, worse sitting, morning stiffness, numbness) so we
+                can match clinical descriptors.
+              </p>
+            ) : (
+              <>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {paragraphDescDetails.map((d) => {
+                    const applied = descriptorIds.includes(d.id);
+                    return (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => {
+                          if (applied) removeDescriptor(d.id);
+                          else {
+                            setAutoApplyDesc(false);
+                            setDescriptorIds((prev) => [...prev, d.id]);
+                          }
+                        }}
+                        className={`inline-flex max-w-full items-start gap-1.5 rounded-xl border px-3 py-2 text-left text-xs transition ${
+                          applied
+                            ? "border-brand-500 bg-brand-100 text-brand-950"
+                            : "border-brand-200 bg-white text-brand-800 hover:border-brand-400"
+                        }`}
+                        title={d.plainLanguage}
+                      >
+                        <span>
+                          <span className="font-semibold">{d.label}</span>
+                          <span className="mt-0.5 block text-[11px] font-normal text-brand-600">
+                            {d.clinicalTerm}
+                          </span>
+                        </span>
+                        {applied && <X className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-[11px] text-brand-500">
+                  Tap a chip to add/remove. Auto-apply is {autoApplyDesc ? "on" : "off"}.
+                </p>
+              </>
+            )}
+
+            {parsedPreview && (
+              <div className="mt-4 space-y-1 border-t border-brand-100 pt-3 text-sm text-brand-800">
+                <p className="font-medium">Also detected</p>
+                <p>
+                  <strong>Areas:</strong>{" "}
+                  {parsedPreview.areas.map((a) => BODY_PART_LABELS[a]).join(", ")}
+                </p>
+                <p>
+                  <strong>Symptoms:</strong> {parsedPreview.symptoms.join(", ")}
+                </p>
+                <p>
+                  <strong>Goals:</strong> {parsedPreview.goals.join(", ")}
+                </p>
+                <p>
+                  <strong>Plan mix:</strong>{" "}
+                  {parsedPreview.preferKinds === "auto"
+                    ? "auto (stretches + exercises)"
+                    : parsedPreview.preferKinds.join(" + ")}{" "}
+                  · estimated pain ~{parsedPreview.estimatedPain}/10
+                </p>
+                <button
+                  type="button"
+                  className="btn-secondary mt-2 text-xs"
+                  onClick={applyParagraphParse}
+                >
+                  Apply all detected fields to the form
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {descriptorIds.length > 0 && (
+          <div className="rounded-xl bg-brand-50/80 p-3 text-sm text-brand-800">
+            <p className="font-medium">
+              Active descriptors shaping your program ({descriptorIds.length})
             </p>
-            <button type="button" className="btn-secondary mt-2 text-xs" onClick={applyParagraphParse}>
-              Apply detected fields
-            </button>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {descriptorIds.map((id) => (
+                <span key={id} className="chip">
+                  {getDescriptorById(id)?.label || id}
+                </span>
+              ))}
+            </div>
+            <p className="mt-2 text-xs">
+              Stretch bias {(descHints.stretchBias * 100).toFixed(0)}% · Exercise bias{" "}
+              {(descHints.exerciseBias * 100).toFixed(0)}% · Irritability +
+              {descHints.effectivePainBoost.toFixed(1)}
+              {descHints.biases.length
+                ? ` · ${descHints.biases.slice(0, 5).join(", ")}`
+                : ""}
+            </p>
           </div>
         )}
       </section>
 
+      <section className="card p-5">
+        <p className="mb-3 text-sm text-brand-700/85">
+          Optional: browse the full clinical database to add more descriptors beyond what was
+          detected in your paragraph.
+        </p>
+        <PainDescriptorPicker value={descriptorIds} onChange={(ids) => {
+          setAutoApplyDesc(false);
+          setDescriptorIds(ids);
+        }} />
+      </section>
+
       <section className="card space-y-3 p-5">
-        <h2 className="font-semibold text-brand-900">Suggest</h2>
+        <h2 className="font-semibold text-brand-900">Suggest movement mix</h2>
         <div className="flex flex-wrap gap-2">
           {(
             [
@@ -322,9 +546,9 @@ export default function AssessPage() {
 
       <button
         type="button"
-        className="btn-primary w-full py-3"
+        className="btn-primary w-full py-3.5 text-base"
         onClick={createPlan}
-        disabled={saving || (!paragraph.trim() && areas.length === 0)}
+        disabled={saving || (!paragraph.trim() && areas.length === 0 && descriptorIds.length === 0)}
       >
         {saving ? "Building plan…" : "Generate clinical stretch + exercise plan"}
       </button>
@@ -342,6 +566,20 @@ export default function AssessPage() {
             <p className="rounded-xl bg-brand-50 p-3 text-sm text-brand-800">
               <strong>Dosing note:</strong> {generated.selfAdjustHistory[0].details}
             </p>
+          )}
+          {(generated.generatedFrom?.descriptorSummary || []).length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">
+                Paragraph / descriptor-driven plan
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {generated.generatedFrom!.descriptorSummary!.map((label) => (
+                  <span key={label} className="chip">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
           <ol className="space-y-2">
             {generated.items.map((item, i) => {
@@ -361,7 +599,9 @@ export default function AssessPage() {
                     </span>
                     {m && (
                       <Link
-                        href={item.kind === "stretch" ? `/library/${m.slug}` : `/exercises/${m.slug}`}
+                        href={
+                          item.kind === "stretch" ? `/library/${m.slug}` : `/exercises/${m.slug}`
+                        }
                         className="font-semibold text-brand-700"
                       >
                         View
@@ -387,6 +627,9 @@ export default function AssessPage() {
             </Link>
             <Link href="/jeffery" className="btn-ghost">
               Discuss with Jeffery
+            </Link>
+            <Link href="/insights" className="btn-ghost">
+              View correlations
             </Link>
           </div>
         </section>

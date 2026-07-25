@@ -43,6 +43,9 @@ export async function POST(req: Request) {
     sharedWithProvider: Boolean(body.sharedWithProvider),
     tags: Array.isArray(body.tags) ? body.tags.slice(0, 20).map(String) : [],
     bodyParts: Array.isArray(body.bodyParts) ? body.bodyParts.slice(0, 15) : [],
+    painDescriptorIds: Array.isArray(body.painDescriptorIds)
+      ? body.painDescriptorIds.map(String).slice(0, 24)
+      : [],
   };
 
   await updateDb((db) => {

@@ -43,6 +43,9 @@ export async function POST(req: Request) {
     durationMinutes: Math.max(0, Math.min(180, Number(body.durationMinutes) || 0)),
     notes: body.notes ? sanitizeText(body.notes, 1000) : undefined,
     completed: Boolean(body.completed),
+    painDescriptorIds: Array.isArray(body.painDescriptorIds)
+      ? body.painDescriptorIds.map(String).slice(0, 24)
+      : [],
   };
 
   await updateDb((db) => {

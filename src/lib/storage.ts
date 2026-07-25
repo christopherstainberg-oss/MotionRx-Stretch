@@ -3,6 +3,7 @@ import path from "path";
 import type {
   JefferyThread,
   JournalEntry,
+  PainProfile,
   Routine,
   SessionLog,
   UserProfile,
@@ -17,6 +18,7 @@ export interface DbShape {
   routines: Routine[];
   communityPosts: CommunityPost[];
   jefferyThreads: JefferyThread[];
+  painProfiles: PainProfile[];
 }
 
 export interface CommunityPost {
@@ -35,6 +37,7 @@ const emptyDb = (): DbShape => ({
   journal: [],
   routines: [],
   jefferyThreads: [],
+  painProfiles: [],
   communityPosts: [
     {
       id: "welcome-1",
@@ -108,6 +111,7 @@ function normalizeDb(raw: Partial<DbShape>): DbShape {
     jefferyThreads: Array.isArray(raw.jefferyThreads)
       ? raw.jefferyThreads
       : base.jefferyThreads,
+    painProfiles: Array.isArray(raw.painProfiles) ? raw.painProfiles : base.painProfiles,
   };
 }
 

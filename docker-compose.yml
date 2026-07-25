@@ -1,12 +1,15 @@
 # MotionRx Stretch stack for Docker / Portainer
-# Pull/build images and deploy with Portainer Stacks or: docker compose up -d
+# Images are hosted on ghcr.io (GitHub Container Registry).
 #
-# ghcr.io example image name (set GHCR_IMAGE after publishing):
-#   ghcr.io/<owner>/motionrx-stretch:latest
+# Example:
+#   GHCR_IO_IMAGE=ghcr.io/christopherstainberg-oss/motionrx-stretch:latest
+#
+# Pull & run:
+#   docker compose pull && docker compose up -d
 
 services:
   motionrx:
-    image: ${GHCR_IMAGE:-motionrx-stretch:local}
+    image: ${GHCR_IO_IMAGE:-ghcr.io/christopherstainberg-oss/motionrx-stretch:latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -35,8 +38,9 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
       - "com.motionrx.description=MotionRx Stretch Physical Therapy PWA"
+      - "com.motionrx.registry=ghcr.io"
 
-  # Automatic container updates from the registry (e.g. ghcr.io)
+  # Automatic container updates from ghcr.io
   watchtower:
     image: containrrr/watchtower:latest
     container_name: motionrx-watchtower
@@ -48,6 +52,9 @@ services:
       - WATCHTOWER_POLL_INTERVAL=${WATCHTOWER_POLL_INTERVAL:-3600}
       - WATCHTOWER_LABEL_ENABLE=true
       - WATCHTOWER_INCLUDE_RESTARTING=true
+      # Prefer ghcr.io registry pulls
+      - REPO_USER=${GHCR_IO_USER:-}
+      - REPO_PASS=${GHCR_IO_TOKEN:-}
     networks:
       - motionrx-net
     depends_on:

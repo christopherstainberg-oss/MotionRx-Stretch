@@ -12,6 +12,17 @@ export async function GET() {
   const routines = db.routines.filter((r) => r.userId === userId);
   const goals = user?.goals ?? [];
   const jeffery = db.jefferyThreads.find((t) => t.userId === userId) ?? null;
-  const insights = correlateInsights({ sessions, journal, routines, goals, jeffery });
-  return NextResponse.json({ insights });
+  const painHistory = db.painProfiles
+    .filter((p) => p.userId === userId)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  const insights = correlateInsights({
+    sessions,
+    journal,
+    routines,
+    goals,
+    jeffery,
+    painProfile: painHistory[0] ?? null,
+    painHistory,
+  });
+  return NextResponse.json({ insights, painProfile: painHistory[0] ?? null });
 }

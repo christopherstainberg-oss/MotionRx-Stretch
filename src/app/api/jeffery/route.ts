@@ -58,18 +58,28 @@ export async function POST(req: Request) {
   const routines = db.routines.filter((r) => r.userId === userId);
   const sessions = db.sessions.filter((s) => s.userId === userId).slice(0, 30);
   const journal = db.journal.filter((j) => j.userId === userId).slice(0, 20);
+  const painProfile = db.painProfiles
+    .filter((p) => p.userId === userId)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
 
   const reply = await jefferyReply(text, {
     routines,
     sessions,
     journal,
     thread,
+    painDescriptorIds: painProfile?.descriptorIds,
   });
 
   thread.messages.push(reply.message);
   thread.updatedAt = new Date().toISOString();
   if (reply.message.meta?.painMentioned !== undefined) {
     thread.lastPainInsight = reply.message.meta.painMentioned;
+  }
+  if (painProfile?.descriptorIds?.length) {
+    thread.lastDescriptorIds = painProfile.descriptorIds;
+  }
+  if (reply.adjustedRoutine?.generatedFrom?.painDescriptorIds?.length) {
+    thread.lastDescriptorIds = reply.adjustedRoutine.generatedFrom.painDescriptorIds;
   }
   if (reply.adjustedRoutine) {
     thread.knownAdjustments.push(

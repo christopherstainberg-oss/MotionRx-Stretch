@@ -2,7 +2,7 @@
 
 **Official brand: MotionRx Stretch** — *Prescribed motion for real life*
 
-Clinically inspired **Progressive Web App** for guided stretching and mobility: symptom-based routines, pain-scale dosing, step-by-step (kid-friendly) instructions, institutional video links, progress tracking, journal, community tips, education, secure login, Docker/Portainer deploy, and Watchtower auto-updates via **ghcr.io**.
+Clinically inspired **Progressive Web App** for guided stretching and mobility: symptom-based routines, pain-scale dosing, step-by-step (kid-friendly) instructions, institutional video links, progress tracking, journal, community tips, education, secure login, Docker/Portainer deploy, and Watchtower auto-updates from **[ghcr.io](https://ghcr.io)** (GitHub Container Registry).
 
 Built from `Build.MD` requirements.
 
@@ -38,7 +38,7 @@ Built from `Build.MD` requirements.
 - **Self-adjusting programs** after session feedback (progress / hold / modify / regress)
 - **Step-by-step** kid-friendly guidance, institutional video fields
 - **Journal**, **progress/goals**, **education**, **community**, **secure auth**, **PWA**
-- **Docker / Portainer / Watchtower / ghcr.io**
+- **Docker / Portainer / Watchtower / [ghcr.io](https://ghcr.io)**
 
 ### Library scale note
 
@@ -89,24 +89,41 @@ Services:
 
 Health: `GET /api/health`
 
-### ghcr.io publish
+### Publish & pull from ghcr.io
+
+Images are published to **ghcr.io** (not a short “GHCR” alias—always use the full host):
+
+```text
+ghcr.io/<owner>/<image>:<tag>
+```
+
+Example for this repo:
+
+```text
+ghcr.io/christopherstainberg-oss/motionrx-stretch:latest
+```
 
 ```bash
-# Login
+# Login to ghcr.io
 echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
 
-# Build & push
-docker build -t ghcr.io/YOUR_ORG/motionrx-stretch:latest .
-docker push ghcr.io/YOUR_ORG/motionrx-stretch:latest
+# Build & push (image names must be lowercase on ghcr.io)
+docker build -t ghcr.io/christopherstainberg-oss/motionrx-stretch:latest .
+docker push ghcr.io/christopherstainberg-oss/motionrx-stretch:latest
+
+# Pull & run via Compose
+export GHCR_IO_IMAGE=ghcr.io/christopherstainberg-oss/motionrx-stretch:latest
+docker compose pull
+docker compose up -d
 ```
 
-Set in `.env`:
+Set in `.env` (see `.env.example`):
 
 ```env
-GHCR_IMAGE=ghcr.io/YOUR_ORG/motionrx-stretch:latest
+GHCR_IO_IMAGE=ghcr.io/christopherstainberg-oss/motionrx-stretch:latest
 ```
 
-Watchtower will pull newer tags and recreate the app container.
+CI workflow **Build & Publish (ghcr.io)** pushes `latest` and commit SHA tags on every `main` push. Watchtower polls **ghcr.io** and recreates the app container when a new tag is available.
 
 ---
 

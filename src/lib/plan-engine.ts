@@ -1,5 +1,9 @@
 import { BASE_EXERCISES, getExerciseById } from "@/data/exercise-library";
 import { BASE_STRETCHES, getStretchById } from "@/data/stretch-library";
+import {
+  matchDescriptorsFromText,
+  summarizeDescriptors,
+} from "@/data/pain-descriptors";
 import type {
   BodyPart,
   Difficulty,
@@ -10,6 +14,8 @@ import type {
   SymptomInput,
 } from "@/lib/types";
 import { v4 as uuid } from "uuid";
+
+export { matchDescriptorsFromText, analyzeParagraphDescriptors } from "@/data/pain-descriptors";
 
 const DIFFICULTY_RANK: Record<Difficulty, number> = {
   beginner: 1,
@@ -86,6 +92,9 @@ export function parseConcernParagraph(paragraph: string): {
   goals: string[];
   preferKinds: MovementKind[] | "auto";
   estimatedPain: number;
+  /** Clinical pain descriptors extracted from the paragraph */
+  painDescriptorIds: string[];
+  descriptorLabels: string[];
 } {
   const text = paragraph.toLowerCase();
   const areas = new Set<BodyPart>();
@@ -129,10 +138,16 @@ export function parseConcernParagraph(paragraph: string): {
   else if (text.includes("mild") || text.includes("slight")) pain = 2;
   else if (text.includes("sharp")) pain = 6;
 
+  const painDescriptorIds = matchDescriptorsFromText(paragraph, 14);
+  const descHints = summarizeDescriptors(painDescriptorIds);
+  // Adjust estimated pain with descriptor irritability
+  pain = Math.min(10, Math.max(0, pain + Math.round(descHints.effectivePainBoost * 0.5)));
+
   const exScore = EXERCISE_HINTS.filter((h) => text.includes(h)).length;
   const stScore = STRETCH_HINTS.filter((h) => text.includes(h)).length;
   let preferKinds: MovementKind[] | "auto" = "auto";
-  if (exScore > stScore + 1) preferKinds = ["exercise", "stretch"];
+  if (descHints.preferKinds !== "auto") preferKinds = descHints.preferKinds;
+  else if (exScore > stScore + 1) preferKinds = ["exercise", "stretch"];
   else if (stScore > exScore + 1) preferKinds = ["stretch", "exercise"];
   else preferKinds = "auto";
 
@@ -142,6 +157,8 @@ export function parseConcernParagraph(paragraph: string): {
     goals,
     preferKinds,
     estimatedPain: pain,
+    painDescriptorIds,
+    descriptorLabels: descHints.summaryLines,
   };
 }
 
@@ -157,7 +174,8 @@ function scoreMovement(
   benefits: string[],
   input: SymptomInput,
   areaPain: number,
-  kind: MovementKind
+  kind: MovementKind,
+  descHints?: ReturnType<typeof summarizeDescriptors>
 ): number {
   let score = 0;
   for (const area of input.areas) {
@@ -178,6 +196,30 @@ function scoreMovement(
   if (areaPain >= 5 && kind === "stretch") score += 1;
   if (areaPain >= 5 && tags.includes("neural")) score -= 4;
   if (tags.includes("warmup") || tags.includes("activation")) score += 1;
+
+  // Clinical pain descriptor influence
+  if (descHints) {
+    if (kind === "stretch") score += descHints.stretchBias * 4;
+    if (kind === "exercise") score += descHints.exerciseBias * 4;
+    for (const t of descHints.preferTags) {
+      if (tags.includes(t) || blob.includes(t)) score += 3;
+    }
+    for (const t of descHints.avoidTags) {
+      if (t === "all") score -= 20;
+      else if (tags.includes(t) || blob.includes(t)) score -= 5;
+    }
+    if (descHints.biases.includes("neural-caution") && tags.includes("neural")) score -= 6;
+    if (descHints.biases.includes("warm-up-heavy") && tags.includes("warmup")) score += 3;
+    if (descHints.biases.includes("cooldown-heavy") && tags.includes("cooldown")) score += 2;
+    if (descHints.biases.includes("motor-control") && tags.includes("motor-control")) score += 3;
+    if (descHints.biases.includes("postural-endurance") && (tags.includes("posture") || tags.includes("desk")))
+      score += 3;
+    if (descHints.biases.includes("balance-focus") && tags.includes("balance")) score += 3;
+    if (descHints.biases.includes("prefer-extension") && blob.includes("extension")) score += 2;
+    if (descHints.biases.includes("prefer-flexion") && blob.includes("flexion")) score += 2;
+    if (descHints.biases.includes("defer-to-provider")) score -= 2;
+  }
+
   return score;
 }
 
@@ -190,41 +232,63 @@ function toItem(movementId: string, kind: MovementKind): RoutineItem {
   };
 }
 
-/** Clinically styled hybrid plan from chips + free-text paragraph */
+/** Clinically styled hybrid plan from chips + free-text + pain descriptors */
 export function generateHybridPlan(input: SymptomInput, userId?: string): Routine {
   const parsed = input.concernParagraph
     ? parseConcernParagraph(input.concernParagraph)
     : null;
+
+  const textMatched = input.concernParagraph
+    ? matchDescriptorsFromText(input.concernParagraph, 8)
+    : [];
+  const painDescriptorIds = Array.from(
+    new Set([...(input.painDescriptorIds || []), ...textMatched])
+  );
+  const descHints = summarizeDescriptors(painDescriptorIds);
 
   const areas = input.areas.length
     ? input.areas
     : parsed?.areas ?? (["full-body"] as BodyPart[]);
   const symptoms = input.symptoms.length ? input.symptoms : parsed?.symptoms ?? [];
   const goals = input.goals.length ? input.goals : parsed?.goals ?? [];
-  const avgPain =
+  const rawAvg =
     areas.reduce((sum, a) => sum + (input.painLevels[a] ?? parsed?.estimatedPain ?? 3), 0) /
     Math.max(areas.length, 1);
+  const avgPain = Math.min(10, rawAvg + descHints.effectivePainBoost);
+
+  let difficulty = input.difficulty;
+  if (descHints.maxDifficulty) {
+    const rank = { beginner: 1, intermediate: 2, advanced: 3 };
+    if (rank[descHints.maxDifficulty] < rank[difficulty]) {
+      difficulty = descHints.maxDifficulty;
+    }
+  }
+  if (avgPain >= 6) difficulty = "beginner";
 
   const merged: SymptomInput = {
     ...input,
     areas,
     symptoms,
     goals,
+    difficulty,
+    painDescriptorIds,
     painLevels: {
       ...Object.fromEntries(areas.map((a) => [a, input.painLevels[a] ?? parsed?.estimatedPain ?? 3])),
       ...input.painLevels,
     },
   };
 
-  const prefer =
+  const prefer: MovementKind[] =
     input.preferKinds && input.preferKinds !== "auto"
       ? input.preferKinds
-      : parsed?.preferKinds && parsed.preferKinds !== "auto"
-        ? parsed.preferKinds
-        : (["stretch", "exercise"] as MovementKind[]);
+      : descHints.preferKinds !== "auto"
+        ? descHints.preferKinds
+        : parsed?.preferKinds && parsed.preferKinds !== "auto"
+          ? parsed.preferKinds
+          : (["stretch", "exercise"] as MovementKind[]);
 
   const stretchCandidates = BASE_STRETCHES.filter((s) =>
-    rankOk(s.difficulty, input.difficulty, avgPain)
+    rankOk(s.difficulty, difficulty, avgPain)
   )
     .map((s) => ({
       s,
@@ -235,13 +299,14 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         s.benefits,
         merged,
         Math.max(...s.bodyParts.map((bp) => merged.painLevels[bp] ?? avgPain), 0),
-        "stretch"
+        "stretch",
+        descHints
       ),
     }))
     .sort((a, b) => b.score - a.score);
 
   const exerciseCandidates = BASE_EXERCISES.filter((e) =>
-    rankOk(e.difficulty, input.difficulty, avgPain)
+    rankOk(e.difficulty, difficulty, avgPain)
   )
     .map((e) => ({
       e,
@@ -252,7 +317,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         e.benefits,
         merged,
         Math.max(...e.bodyParts.map((bp) => merged.painLevels[bp] ?? avgPain), 0),
-        "exercise"
+        "exercise",
+        descHints
       ),
     }))
     .sort((a, b) => b.score - a.score);
@@ -261,7 +327,13 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   const stretchIds: string[] = [];
   const exerciseIds: string[] = [];
   let minutes = 0;
-  const target = Math.max(8, Math.min(45, input.availableMinutes));
+  let target = Math.max(8, Math.min(45, input.availableMinutes));
+  if (descHints.biases.includes("short-volume")) {
+    target = Math.min(target, Math.max(8, Math.round(target * 0.7)));
+  }
+  if (descHints.biases.includes("defer-to-provider")) {
+    target = Math.min(target, 10);
+  }
 
   // Always start with mobility warm-up when possible
   const warm = BASE_STRETCHES.find((s) => s.id === "cat-cow");
@@ -271,12 +343,29 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     minutes += warm.durationSeconds / 60;
   }
 
+  // Extra gentle mobility when warm-up-heavy descriptors present
+  if (descHints.biases.includes("warm-up-heavy")) {
+    const extraWarm = BASE_STRETCHES.find((s) => s.id === "pelvic-tilt");
+    if (extraWarm && !stretchIds.includes(extraWarm.id)) {
+      items.push(toItem(extraWarm.id, "stretch"));
+      stretchIds.push(extraWarm.id);
+      minutes += extraWarm.durationSeconds / 60;
+    }
+  }
+
   const wantStretch = prefer.includes("stretch");
-  const wantExercise = prefer.includes("exercise");
+  const wantExercise =
+    prefer.includes("exercise") && !descHints.biases.includes("defer-to-provider");
 
   // Interleave based on preference order
-  const maxStretches = wantStretch ? (wantExercise ? 4 : 6) : 1;
-  const maxExercises = wantExercise ? (wantStretch ? 4 : 6) : 0;
+  let maxStretches = wantStretch ? (wantExercise ? 4 : 6) : 1;
+  let maxExercises = wantExercise ? (wantStretch ? 4 : 6) : 0;
+  if (descHints.stretchBias > 0.4) maxStretches += 1;
+  if (descHints.exerciseBias > 0.4) maxExercises += 1;
+  if (descHints.biases.includes("short-volume")) {
+    maxStretches = Math.min(maxStretches, 4);
+    maxExercises = Math.min(maxExercises, 3);
+  }
 
   let si = 0;
   let ei = 0;
@@ -321,20 +410,42 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     minutes += cool.durationSeconds / 60;
   }
 
+  const descDetail =
+    painDescriptorIds.length > 0
+      ? ` Descriptors: ${descHints.summaryLines.slice(0, 6).join("; ")}.`
+      : "";
+  const biasDetail = descHints.biases.length
+    ? ` Program biases: ${descHints.biases.slice(0, 5).join(", ")}.`
+    : "";
+  const rfDetail = descHints.redFlags.length
+    ? ` Safety notes applied from screening descriptors—seek care if red flags apply.`
+    : "";
+
   const adjustment: RoutineAdjustment = {
     at: new Date().toISOString(),
-    reason: input.concernParagraph
-      ? "Generated from written concerns + clinical intake"
-      : "Generated from symptoms, goals, and pain scale",
+    reason: painDescriptorIds.length
+      ? "Generated from clinical pain descriptors + intake"
+      : input.concernParagraph
+        ? "Generated from written concerns + clinical intake"
+        : "Generated from symptoms, goals, and pain scale",
     painFactor: avgPain,
     action:
-      avgPain >= 6 ? "regress" : avgPain >= 4 ? "modify" : avgPain <= 2 ? "progress" : "hold",
+      descHints.biases.includes("defer-to-provider") || avgPain >= 6
+        ? "regress"
+        : avgPain >= 4
+          ? "modify"
+          : avgPain <= 2
+            ? "progress"
+            : "hold",
     details:
-      avgPain >= 6
+      (avgPain >= 6
         ? "Elevated pain: beginner-biased selection, prioritize control and gentle mobility, reduce aggressive end-range."
         : avgPain >= 4
           ? "Moderate pain: balanced mobility + activation with mid volume per outpatient load management."
-          : "Pain tolerable: include mobility and progressive exercise dosing with warm-up/cool-down.",
+          : "Pain tolerable: include mobility and progressive exercise dosing with warm-up/cool-down.") +
+      descDetail +
+      biasDetail +
+      rfDetail,
     source: "user",
   };
 
@@ -359,7 +470,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     exerciseIds,
     items,
     estimatedMinutes: Math.max(1, Math.round(minutes)),
-    difficulty: avgPain >= 5 ? "beginner" : input.difficulty,
+    difficulty: avgPain >= 5 ? "beginner" : difficulty,
     isPersonalized: true,
     generatedFrom: {
       symptoms,
@@ -368,6 +479,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       goals,
       concernParagraph: input.concernParagraph,
       suggestedKinds: prefer,
+      painDescriptorIds,
+      descriptorSummary: descHints.summaryLines,
     },
     selfAdjustHistory: [adjustment],
     createdAt: new Date().toISOString(),

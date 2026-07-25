@@ -12,6 +12,8 @@ import {
 } from "@/lib/routine-engine";
 import type { Routine } from "@/lib/types";
 import { PainScale } from "@/components/PainScale";
+import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
+import { loadLocalPainProfile, saveLocalPainProfile } from "@/lib/pain-profile";
 import { CheckCircle2, ChevronRight } from "lucide-react";
 import { v4 as uuid } from "uuid";
 
@@ -25,8 +27,11 @@ function SessionInner() {
   const [phase, setPhase] = useState<"intro" | "active" | "done">("intro");
   const [adjusted, setAdjusted] = useState<Routine | null>(null);
   const [notes, setNotes] = useState("");
+  const [descriptorIds, setDescriptorIds] = useState<string[]>([]);
 
   useEffect(() => {
+    const profile = loadLocalPainProfile();
+    if (profile?.descriptorIds?.length) setDescriptorIds(profile.descriptorIds);
     const id = params.get("id");
     const starter = params.get("starter");
     if (id) {
@@ -106,10 +111,19 @@ function SessionInner() {
       difficultyFelt,
       notes,
       completed: true,
+      painDescriptorIds: descriptorIds,
     };
     localStorage.setItem(`session:${session.id}`, JSON.stringify(session));
     localStorage.setItem(`routine:${next.id}`, JSON.stringify(next));
     localStorage.setItem("active-routine", JSON.stringify(next));
+    saveLocalPainProfile({
+      userId: "local",
+      descriptorIds,
+      freeText: notes,
+      overallPain: painAfter,
+      areas: routine.focusAreas,
+      source: "session",
+    });
     try {
       await fetch("/api/sessions", {
         method: "POST",
@@ -120,6 +134,17 @@ function SessionInner() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(next),
+      });
+      await fetch("/api/pain-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          descriptorIds,
+          freeText: notes,
+          overallPain: painAfter,
+          areas: routine.focusAreas,
+          source: "session",
+        }),
       });
     } catch {
       /* offline ok */
@@ -150,6 +175,15 @@ function SessionInner() {
             id="pain-before"
           />
         </div>
+        {(routine.generatedFrom?.descriptorSummary || []).length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {routine.generatedFrom!.descriptorSummary!.map((d) => (
+              <span key={d} className="chip">
+                {d}
+              </span>
+            ))}
+          </div>
+        )}
         <ol className="card divide-y divide-brand-100 p-2 text-sm">
           {movements.map(({ item, m }, i) => (
             <li key={item.id} className="flex justify-between px-3 py-2">
@@ -235,6 +269,12 @@ function SessionInner() {
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
+          <PainDescriptorPicker
+            value={descriptorIds}
+            onChange={setDescriptorIds}
+            maxSelect={12}
+            compact
+          />
           <button type="button" className="btn-primary w-full" onClick={finish}>
             Save & adjust next routine
           </button>

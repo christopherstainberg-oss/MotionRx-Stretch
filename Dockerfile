@@ -1,4 +1,8 @@
-# MotionRx Stretch — multi-stage production image for ghcr.io
+# MotionRx Stretch — multi-stage production image
+# Publish to ghcr.io (GitHub Container Registry), e.g.:
+#   docker build -t ghcr.io/<owner>/motionrx-stretch:latest .
+#   docker push ghcr.io/<owner>/motionrx-stretch:latest
+
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./

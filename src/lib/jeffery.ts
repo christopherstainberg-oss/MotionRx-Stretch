@@ -10,6 +10,11 @@ import { generateHybridPlan, adjustRoutineFromFeedback } from "@/lib/plan-engine
 import { v4 as uuid } from "uuid";
 import { getStretchById } from "@/data/stretch-library";
 import { getExerciseById } from "@/data/exercise-library";
+import {
+  getDescriptorsByIds,
+  matchDescriptorsFromText,
+  summarizeDescriptors,
+} from "@/data/pain-descriptors";
 
 const OPEN_ENDED = [
   "On a scale of 0–10, what is your pain right now, and what makes it better or worse?",
@@ -52,6 +57,7 @@ export interface JefferyContext {
   journal: JournalEntry[];
   favorites?: string[];
   thread?: JefferyThread | null;
+  painDescriptorIds?: string[];
 }
 
 export interface JefferyReply {
@@ -75,6 +81,15 @@ export function jefferyLocalReply(
   if (lower.includes("desk") || lower.includes("posture")) topics.push("posture");
   if (!topics.length) topics.push("rehab-basics");
 
+  const chatDesc = matchDescriptorsFromText(userText, 6);
+  const profileDesc = ctx.painDescriptorIds || ctx.thread?.lastDescriptorIds || [];
+  const routineDesc = ctx.routines.flatMap((r) => r.generatedFrom?.painDescriptorIds || []);
+  const descIds = Array.from(new Set([...chatDesc, ...profileDesc, ...routineDesc])).slice(0, 16);
+  const descHints = summarizeDescriptors(descIds);
+  const descLabels = getDescriptorsByIds(descIds)
+    .map((d) => d.label)
+    .slice(0, 8);
+
   const adjustments = ctx.routines.flatMap((r) =>
     r.selfAdjustHistory.map(
       (a) => `${r.name}: ${a.action} — ${a.details} (${a.source || "system"})`
@@ -87,6 +102,9 @@ export function jefferyLocalReply(
       (s) =>
         `Session ${new Date(s.startedAt).toLocaleDateString()}: pain ${s.averagePainBefore}→${s.averagePainAfter}`
     ),
+    ...(descLabels.length
+      ? [`Pain descriptors in your record: ${descLabels.join(", ")}`]
+      : []),
   ];
 
   let adjustedRoutine: Routine | undefined;
@@ -155,6 +173,7 @@ export function jefferyLocalReply(
       difficulty: "beginner",
       concernParagraph: userText,
       preferKinds: "auto",
+      painDescriptorIds: descIds,
     };
     adjustedRoutine = generateHybridPlan(input);
     adjustedRoutine.selfAdjustHistory.push({
@@ -184,17 +203,23 @@ export function jefferyLocalReply(
   const content = [
     `Hi, I'm **Jeffery**, your MotionRx Stretch clinical mobility coach.`,
     ``,
-    `I read what you shared and connected it with your app data (routines, adjustments, sessions, and journal when available).`,
+    `I read what you shared and connected it with your app data (routines, adjustments, sessions, journal, and clinical pain descriptors).`,
     known.length
       ? `**What I already know about your program:**\n${known
-          .slice(0, 6)
+          .slice(0, 8)
           .map((k) => `• ${k}`)
           .join("\n")}`
       : `I don't have much history yet—we'll build it as you train and journal.`,
+    descLabels.length
+      ? `\n**Descriptor-driven dosing hints:** stretch bias ${descHints.stretchBias.toFixed(2)}, exercise bias ${descHints.exerciseBias.toFixed(2)}, irritability boost +${descHints.effectivePainBoost.toFixed(1)}.${descHints.biases.length ? ` Biases: ${descHints.biases.slice(0, 5).join(", ")}.` : ""}`
+      : "",
+    descHints.redFlags.length
+      ? `\n**Safety notes:** ${descHints.redFlags[0]}`
+      : "",
     ``,
     `**Clinical education:**\n${edu}`,
     pain !== undefined
-      ? `\nYou mentioned pain around **${pain}/10**. We'll treat that as a dosing signal.`
+      ? `\nYou mentioned pain around **${pain}/10**. We'll treat that as a dosing signal alongside your descriptors.`
       : "",
     adjustedRoutine
       ? `\n**I adjusted / drafted your program based on this discussion.**\n${routineLines || adjustedRoutine.name}\n\n_Open the Routines or Builder page to review, rotate items, or start a session._`
