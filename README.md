@@ -71,13 +71,42 @@ npm start
 
 ## Docker Compose / Portainer
 
-1. Copy `.env.example` → `.env` and set `AUTH_SECRET`.
-2. In Portainer: **Stacks → Add stack** → paste `docker-compose.yml` (or deploy from repo).
-3. Build & deploy:
+`docker-compose.yml` is **image-only** (no `build:`) so Portainer does not hit:
+
+```text
+compose build operation failed: mkdir /.docker: permission denied
+```
+
+### Portainer deploy
+
+1. **Registries → Add registry**
+   - Name: `ghcr.io`
+   - Registry URL: `ghcr.io`
+   - Username: GitHub username  
+   - Password: PAT with **`read:packages`**  
+   - Required while the `motionrx-stretch` package is **private**
+2. **Stacks → Add stack → Web editor** → paste `docker-compose.yml`
+3. Stack **environment variables**:
+   - `AUTH_SECRET` — strong secret (`openssl rand -base64 32`)
+   - `APP_PORT` — optional, default `3000`
+   - `GHCR_IO_USER` / `GHCR_IO_TOKEN` — same as registry (for Watchtower pulls)
+4. Deploy (**do not** use a compose file that includes `build:`)
+
+If the stack already failed, **Editor** the stack, replace the YAML with the current `docker-compose.yml` (no `build:` block), ensure the registry is configured, then **Update the stack**.
+
+### CLI
 
 ```bash
-docker compose build
+cp .env.example .env   # set AUTH_SECRET (+ GHCR_IO_USER / GHCR_IO_TOKEN if private)
+docker compose pull
 docker compose up -d
+```
+
+Build from source (not for Portainer paste):
+
+```bash
+docker compose -f docker-compose.build.yml build
+docker compose -f docker-compose.build.yml up -d
 ```
 
 Services:

@@ -1,34 +1,18 @@
-# MotionRx Stretch — Portainer / Docker Compose stack (IMAGE PULL ONLY)
+# Optional: build MotionRx Stretch from local source (CLI / Git deploy only).
+# Do NOT use this file in Portainer web-editor paste — it triggers compose build
+# and can fail with: mkdir /.docker: permission denied
 #
-# Fixes Portainer error:
-#   "compose build operation failed: mkdir /.docker: permission denied"
-# by NOT including a `build:` section. Portainer deploys pre-built images from ghcr.io.
-#
-# Local source builds: use docker-compose.build.yml instead
-#   docker compose -f docker-compose.build.yml build && docker compose up -d
-#
-# ── Portainer (Stacks → Add stack → Web editor) ──────────────────────────────
-# 1. Paste this entire file.
-# 2. Environment variables (stack env):
-#      AUTH_SECRET          required in production (openssl rand -base64 32)
-#      APP_PORT             default 3000
-#      GHCR_IO_IMAGE        default below
-#      GHCR_IO_USER         GitHub username (private package)
-#      GHCR_IO_TOKEN        PAT with read:packages (private package)
-# 3. Portainer → Registries → Add registry:
-#      URL:      ghcr.io
-#      Username: your GitHub username
-#      Password: PAT with read:packages
-#    (Package motionrx-stretch is private — pull fails without this.)
-# 4. Deploy the stack. Do not enable "Build" options.
-#
-# Image (always lowercase on ghcr.io):
-#   ghcr.io/christopherstainberg-oss/motionrx-stretch:latest
+# Usage:
+#   docker compose -f docker-compose.build.yml build
+#   docker compose -f docker-compose.build.yml up -d
+# Or tag and push to ghcr.io, then deploy docker-compose.yml in Portainer.
 
 services:
   motionrx:
     image: ${GHCR_IO_IMAGE:-ghcr.io/christopherstainberg-oss/motionrx-stretch:latest}
-    # No `build:` — Portainer must pull the image (avoids mkdir /.docker permission denied)
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: motionrx-app
     restart: unless-stopped
     ports:
