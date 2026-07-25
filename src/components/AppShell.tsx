@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { Nav } from "@/components/Nav";
 import { PwaRegister } from "@/components/PwaRegister";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { VideoCatalogRefresh } from "@/components/VideoCatalogRefresh";
 import { DEFAULT_APP_NAME } from "@/data/names";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -17,6 +18,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main id="main-content" tabIndex={-1} className="flex-1 outline-none">
           {children}
         </main>
+        <VideoCatalogRefresh />
         <PwaRegister />
       </div>
     );
@@ -25,6 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col">
       <OfflineBanner />
+      <VideoCatalogRefresh />
       <Nav brandName={DEFAULT_APP_NAME.name} />
       <main
         id="main-content"

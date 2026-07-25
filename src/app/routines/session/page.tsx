@@ -18,6 +18,7 @@ import { getModalityGuide } from "@/data/modality-guides";
 import { PainScale } from "@/components/PainScale";
 import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
 import { ModalityMiniList } from "@/components/ModalitySuggestions";
+import { InstitutionalVideoEmbed } from "@/components/InstitutionalVideoEmbed";
 import { loadLocalPainProfile, saveLocalPainProfile } from "@/lib/pain-profile";
 import { CheckCircle2, ChevronRight, Sparkles } from "lucide-react";
 import { v4 as uuid } from "uuid";
@@ -471,17 +472,9 @@ function SessionInner() {
           <strong>Why this matters:</strong> {m.clinical.whyImportant}
         </p>
 
-        <div className="mt-4 aspect-video overflow-hidden rounded-xl bg-brand-950">
-          <iframe
-            className="h-full w-full"
-            src={`https://www.youtube-nocookie.com/embed/${m.video.youtubeId}`}
-            title={m.video.title}
-            allowFullScreen
-          />
+        <div className="mt-4">
+          <InstitutionalVideoEmbed video={m.video} bodyParts={m.bodyParts} />
         </div>
-        <p className="mt-2 text-xs text-brand-500">
-          {m.video.institution} · institutional education source
-        </p>
 
         <ol className="mt-6 space-y-3">
           {m.steps.map((s) => (

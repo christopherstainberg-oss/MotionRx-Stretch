@@ -331,3 +331,88 @@ export function videoForRegion(region: VideoRegion, titleOverride?: string) {
 export function allCatalogYoutubeIds(): string[] {
   return Object.values(INSTITUTIONAL_VIDEOS).map((v) => v.youtubeId);
 }
+
+/** Lookup catalog entry by YouTube ID */
+export function getCatalogVideoById(youtubeId: string): InstitutionalVideo | undefined {
+  return Object.values(INSTITUTIONAL_VIDEOS).find((v) => v.youtubeId === youtubeId);
+}
+
+/**
+ * Ordered candidate list for a body region (primary + tagged peers + ultimate fallbacks).
+ * Used by auto-refresh resolver so a dead primary never leaves the user without video.
+ */
+export function candidatesForRegion(region: VideoRegion | string): InstitutionalVideo[] {
+  const seen = new Set<string>();
+  const out: InstitutionalVideo[] = [];
+
+  const push = (v: InstitutionalVideo | undefined) => {
+    if (!v || seen.has(v.youtubeId)) return;
+    seen.add(v.youtubeId);
+    out.push(v);
+  };
+
+  const key = region in VIDEO_BY_REGION ? (region as VideoRegion) : "general";
+  push(VIDEO_BY_REGION[key]);
+
+  for (const v of Object.values(INSTITUTIONAL_VIDEOS)) {
+    if (v.regions.includes(key) || v.regions.includes(region)) push(v);
+  }
+
+  // Always keep strong full-body institutional anchors at the end of the chain
+  push(INSTITUTIONAL_VIDEOS.nia_full_workout);
+  push(INSTITUTIONAL_VIDEOS.nia_flexibility_6);
+  push(INSTITUTIONAL_VIDEOS.hopkins_movement);
+  push(INSTITUTIONAL_VIDEOS.vha_full_body);
+  push(INSTITUTIONAL_VIDEOS.mayo_or_stretch);
+
+  return out;
+}
+
+/** Infer video region from body-part tags when libraries don't pass one */
+export function inferRegionFromBodyParts(bodyParts: string[] | undefined): VideoRegion {
+  if (!bodyParts?.length) return "general";
+  const map: Record<string, VideoRegion> = {
+    neck: "neck",
+    shoulders: "shoulder",
+    shoulder: "shoulder",
+    chest: "chest",
+    upper_back: "thoracic",
+    mid_back: "thoracic",
+    thoracic: "thoracic",
+    lower_back: "lowerBack",
+    low_back: "lowerBack",
+    back: "back",
+    hips: "hip",
+    hip: "hip",
+    glutes: "hip",
+    hamstrings: "hamstring",
+    hamstring: "hamstring",
+    quads: "leg",
+    thigh: "leg",
+    knee: "leg",
+    knees: "leg",
+    leg: "leg",
+    legs: "leg",
+    calf: "calf",
+    calves: "calf",
+    ankle: "ankle",
+    ankles: "ankle",
+    foot: "ankle",
+    core: "core",
+    balance: "balance",
+    full_body: "full",
+    wrist: "general",
+    elbow: "general",
+    hand: "general",
+  };
+  for (const bp of bodyParts) {
+    const hit = map[bp.toLowerCase().replace(/\s+/g, "_")];
+    if (hit) return hit;
+  }
+  return "general";
+}
+
+/** Ultimate always-try list if region chain fails (every catalog ID) */
+export function allCatalogVideos(): InstitutionalVideo[] {
+  return Object.values(INSTITUTIONAL_VIDEOS);
+}

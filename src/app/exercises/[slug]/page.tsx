@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getExerciseBySlug, EXERCISE_CATEGORY_LABELS } from "@/data/exercise-library";
 import { BODY_PART_LABELS } from "@/data/stretch-library";
-import { AlertTriangle, CheckCircle2, GraduationCap, PlayCircle } from "lucide-react";
+import { InstitutionalVideoEmbed } from "@/components/InstitutionalVideoEmbed";
+import { AlertTriangle, CheckCircle2, GraduationCap } from "lucide-react";
 
 export function generateMetadata({ params }: { params: { slug: string } }) {
   const ex = getExerciseBySlug(params.slug);
@@ -58,24 +59,12 @@ export default function ExerciseDetailPage({ params }: { params: { slug: string 
 
       <div className="grid gap-6 lg:grid-cols-5">
         <div className="space-y-6 lg:col-span-3">
-          <section className="card overflow-hidden">
-            <div className="aspect-video bg-brand-950">
-              <iframe
-                className="h-full w-full"
-                src={`https://www.youtube-nocookie.com/embed/${ex.video.youtubeId}`}
-                title={ex.video.title}
-                allowFullScreen
-              />
-            </div>
-            <div className="flex gap-2 p-4 text-sm">
-              <PlayCircle className="mt-0.5 h-4 w-4 text-brand-600" />
-              <div>
-                <p className="font-medium">{ex.video.title}</p>
-                <p className="text-brand-600">
-                  {ex.video.institution} · institutional education source
-                </p>
-              </div>
-            </div>
+          <section className="card overflow-hidden p-4">
+            <InstitutionalVideoEmbed video={ex.video} bodyParts={ex.bodyParts} />
+            <p className="mt-2 text-xs text-brand-500">
+              Links auto-refresh against institutional oEmbed health checks. If a preferred
+              video is removed, MotionRx swaps to the next vetted educational source.
+            </p>
           </section>
 
           <section className="card p-6">

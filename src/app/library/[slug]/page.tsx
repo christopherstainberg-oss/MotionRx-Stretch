@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getStretchBySlug, BODY_PART_LABELS } from "@/data/stretch-library";
-import { AlertTriangle, CheckCircle2, GraduationCap, PlayCircle, Wind } from "lucide-react";
+import { InstitutionalVideoEmbed } from "@/components/InstitutionalVideoEmbed";
+import { AlertTriangle, CheckCircle2, GraduationCap, Wind } from "lucide-react";
 
 export function generateMetadata({ params }: { params: { slug: string } }) {
   const stretch = getStretchBySlug(params.slug);
@@ -59,29 +60,15 @@ export default function StretchDetailPage({ params }: { params: { slug: string }
 
       <div className="grid gap-6 lg:grid-cols-5">
         <div className="space-y-6 lg:col-span-3">
-          <section className="card overflow-hidden">
-            <div className="aspect-video bg-brand-950">
-              <iframe
-                className="h-full w-full"
-                src={`https://www.youtube-nocookie.com/embed/${stretch.video.youtubeId}`}
-                title={stretch.video.title}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            </div>
-            <div className="flex items-start gap-2 p-4 text-sm">
-              <PlayCircle className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
-              <div>
-                <p className="font-medium text-brand-900">{stretch.video.title}</p>
-                <p className="text-brand-600">
-                  Institutional source: {stretch.video.institution} · {stretch.video.source}
-                </p>
-                <p className="mt-1 text-xs text-brand-500">
-                  Videos are intended from healthcare institutions / professional education only.
-                  Replace IDs in data as you curate your approved list.
-                </p>
-              </div>
-            </div>
+          <section className="card overflow-hidden p-4">
+            <InstitutionalVideoEmbed
+              video={stretch.video}
+              bodyParts={stretch.bodyParts}
+            />
+            <p className="mt-2 text-xs text-brand-500">
+              Links auto-refresh against institutional oEmbed health checks. If a preferred
+              video is removed, MotionRx swaps to the next vetted educational source.
+            </p>
           </section>
 
           <section className="card p-6">
