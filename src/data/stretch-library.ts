@@ -6,6 +6,7 @@ import type {
   StretchStep,
   StretchVariation,
 } from "@/lib/types";
+import { ADDITIONAL_STRETCH_SEEDS } from "@/data/stretch-clinical-expansion";
 
 /** Institutional / healthcare-professional educational sources only */
 const SOURCES = {
@@ -1083,28 +1084,30 @@ function slugify(name: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
-function finalize(seed: Seed): Stretch {
+function finalize(seed: Seed & { clinical?: Stretch["clinical"] }): Stretch {
   const muscles = seed.primaryMuscles.join(", ");
   const areas = seed.bodyParts.join(", ");
+  const { clinical: providedClinical, ...rest } = seed;
   return {
-    ...seed,
+    ...rest,
     kind: "stretch",
     slug: seed.slug ?? slugify(seed.name),
     durationBucket: bucket(seed.durationSeconds),
-    clinical: {
-      whatItDoes: `Gently lengthens and mobilizes ${muscles || "target tissues"} while teaching controlled range through the ${areas || "body"}.`,
-      whyImportant:
-        seed.benefits[0] ||
-        "Improves comfort with movement and supports daily mobility when dosed appropriately.",
-      clinicalOutcome: `${seed.evidenceNotes} Expected outcomes are gradual improvements in range, ease of motion, and symptom tolerance—not forced flexibility overnight.`,
-      outpatientRationale:
-        "Aligned with outpatient PT dosing: warm-up readiness, tolerable intensity, pain-aware progression, and functional carryover.",
-    },
+    clinical:
+      providedClinical ?? {
+        whatItDoes: `Gently lengthens and mobilizes ${muscles || "target tissues"} while teaching controlled range through the ${areas || "body"}.`,
+        whyImportant:
+          seed.benefits[0] ||
+          "Improves comfort with movement and supports daily mobility when dosed appropriately.",
+        clinicalOutcome: `${seed.evidenceNotes} Expected outcomes are gradual improvements in range, ease of motion, activity tolerance, and pain ratings when dosed as part of a graded program—not forced flexibility overnight.`,
+        outpatientRationale:
+          "Aligned with outpatient PT dosing: warm-up readiness, tolerable intensity, pain-aware progression, and functional outcome monitoring.",
+      },
   };
 }
 
-/** Core clinical library (base stretches) */
-export const BASE_STRETCHES: Stretch[] = SEEDS.map(finalize);
+/** Core clinical library (base stretches) — independent of exercise catalog */
+export const BASE_STRETCHES: Stretch[] = [...SEEDS, ...ADDITIONAL_STRETCH_SEEDS].map(finalize);
 
 /**
  * Expand library with side-specific, duration, and context variants.
@@ -1123,7 +1126,24 @@ function expandLibrary(base: Stretch[]): Stretch[] {
   for (const stretch of base) {
     const unilateral =
       stretch.bodyParts.some((b) =>
-        ["hips", "hamstrings", "quadriceps", "calves", "ankles", "shoulders", "wrists"].includes(b)
+        [
+          "hips",
+          "hamstrings",
+          "quadriceps",
+          "calves",
+          "ankles",
+          "shoulders",
+          "wrists",
+          "knee",
+          "elbow",
+          "forearm",
+          "hand",
+          "foot",
+          "toes",
+          "groin",
+          "scapular",
+          "shins",
+        ].includes(b)
       ) && !stretch.name.toLowerCase().includes("double");
 
     if (unilateral) {
@@ -1164,22 +1184,63 @@ function expandLibrary(base: Stretch[]): Stretch[] {
 export const STRETCH_LIBRARY: Stretch[] = expandLibrary(BASE_STRETCHES);
 
 export const BODY_PART_LABELS: Record<BodyPart, string> = {
-  neck: "Neck",
+  neck: "Neck / Cervical",
+  jaw: "Jaw / TMJ",
   shoulders: "Shoulders",
+  scapular: "Shoulder Blade / Scapular",
   "upper-back": "Upper Back",
-  "lower-back": "Lower Back",
+  thoracic: "Thoracic / Mid-Back",
   chest: "Chest",
+  "lower-back": "Lower Back / Lumbar",
+  pelvis: "Pelvis / SI Region",
   hips: "Hips",
+  groin: "Groin / Adductors",
   glutes: "Glutes",
   hamstrings: "Hamstrings",
   quadriceps: "Quadriceps",
+  knee: "Knee",
   calves: "Calves",
+  shins: "Shins / Anterior Leg",
   ankles: "Ankles",
+  foot: "Foot / Arch",
+  toes: "Toes",
+  elbow: "Elbow",
+  forearm: "Forearm",
   wrists: "Wrists",
+  hand: "Hand / Fingers",
+  core: "Core / Trunk",
   "full-body": "Full Body",
-  thoracic: "Thoracic / Mid-Back",
-  core: "Core",
 };
+
+/** Suggested high-use targets for intake UI ordering */
+export const SUGGESTED_BODY_PART_ORDER: BodyPart[] = [
+  "neck",
+  "shoulders",
+  "scapular",
+  "thoracic",
+  "upper-back",
+  "chest",
+  "lower-back",
+  "pelvis",
+  "hips",
+  "groin",
+  "glutes",
+  "hamstrings",
+  "quadriceps",
+  "knee",
+  "calves",
+  "shins",
+  "ankles",
+  "foot",
+  "toes",
+  "elbow",
+  "forearm",
+  "wrists",
+  "hand",
+  "jaw",
+  "core",
+  "full-body",
+];
 
 export function getStretchById(id: string): Stretch | undefined {
   return STRETCH_LIBRARY.find((s) => s.id === id);

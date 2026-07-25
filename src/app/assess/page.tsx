@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BODY_PART_LABELS, getStretchById } from "@/data/stretch-library";
+import {
+  BODY_PART_LABELS,
+  SUGGESTED_BODY_PART_ORDER,
+  getStretchById,
+} from "@/data/stretch-library";
 import { getExerciseById } from "@/data/exercise-library";
 import {
   getDescriptorById,
@@ -20,7 +24,12 @@ import {
 } from "@/lib/pain-profile";
 import { Sparkles, Stethoscope, X } from "lucide-react";
 
-const AREAS = Object.keys(BODY_PART_LABELS) as BodyPart[];
+const AREAS: BodyPart[] = [
+  ...SUGGESTED_BODY_PART_ORDER,
+  ...(Object.keys(BODY_PART_LABELS) as BodyPart[]).filter(
+    (a) => !SUGGESTED_BODY_PART_ORDER.includes(a)
+  ),
+];
 const SYMPTOM_CHIPS = [
   "stiffness",
   "desk posture",

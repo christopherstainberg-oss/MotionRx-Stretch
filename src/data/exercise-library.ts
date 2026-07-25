@@ -7,6 +7,7 @@ import type {
   StretchStep,
   StretchVariation,
 } from "@/lib/types";
+import { ADDITIONAL_EXERCISE_SEEDS } from "@/data/exercise-clinical-expansion";
 
 /** Catalog target capacity per Build.MD (virtual + clinical bases) */
 export const EXERCISE_CATALOG_CAPACITY = 1_000_000;
@@ -607,7 +608,8 @@ function finalize(seed: Seed): Exercise {
   };
 }
 
-export const BASE_EXERCISES: Exercise[] = SEEDS.map(finalize);
+/** Independent exercise catalog bases (separate from stretch library) */
+export const BASE_EXERCISES: Exercise[] = [...SEEDS, ...ADDITIONAL_EXERCISE_SEEDS].map(finalize);
 
 const MODIFIERS = [
   { tag: "seated", label: "Seated Edition", scale: 0.9, difficultyShift: -1 },

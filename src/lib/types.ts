@@ -1,19 +1,35 @@
+/**
+ * Expanded regional targets for outpatient-style PT programming.
+ * Includes joint-level and functional-region labels used in common
+ * outcome measures (NDI, ODI, LEFS, QuickDASH, KOOS, FAAM, etc.).
+ */
 export type BodyPart =
   | "neck"
+  | "jaw"
   | "shoulders"
+  | "scapular"
   | "upper-back"
-  | "lower-back"
+  | "thoracic"
   | "chest"
+  | "lower-back"
+  | "pelvis"
   | "hips"
+  | "groin"
   | "glutes"
   | "hamstrings"
   | "quadriceps"
+  | "knee"
   | "calves"
+  | "shins"
   | "ankles"
+  | "foot"
+  | "toes"
+  | "elbow"
+  | "forearm"
   | "wrists"
-  | "full-body"
-  | "thoracic"
-  | "core";
+  | "hand"
+  | "core"
+  | "full-body";
 
 export type Difficulty = "beginner" | "intermediate" | "advanced";
 export type DurationBucket = "under-1-min" | "1-2-min" | "2-5-min" | "5-plus-min";
