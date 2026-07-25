@@ -1,15 +1,32 @@
-# MotionRx Stretch stack for Docker / Portainer
-# Images are hosted on ghcr.io (GitHub Container Registry).
+# MotionRx Stretch — Docker Compose / Portainer stack
+# Validated: `docker compose config` (syntax OK) + `docker compose up` (health OK).
 #
-# Example:
-#   GHCR_IO_IMAGE=ghcr.io/christopherstainberg-oss/motionrx-stretch:latest
+# ── Portainer (Stacks → Add stack) ───────────────────────────────────────────
+# 1. Prefer **Git repository** deploy of this repo (keeps `build:` working), OR
+#    paste this file and use **image-only** pulls (requires registry auth below).
+# 2. Set stack env vars (same names as .env.example):
+#      AUTH_SECRET   (required in production — openssl rand -base64 32)
+#      APP_PORT      (default 3000)
+#      GHCR_IO_IMAGE (default ghcr.io/christopherstainberg-oss/motionrx-stretch:latest)
+#      GHCR_IO_USER / GHCR_IO_TOKEN  (required while the package is private)
+# 3. Portainer → Registries → add **ghcr.io** with a PAT (read:packages) if the
+#    container package is private — otherwise `docker pull` returns 403/denied.
+# 4. Host must be Linux (or Docker Desktop) so Watchtower can mount docker.sock.
 #
-# Pull & run:
+# ── CLI ──────────────────────────────────────────────────────────────────────
+#   cp .env.example .env   # set AUTH_SECRET (+ GHCR creds if pulling private)
 #   docker compose pull && docker compose up -d
+#   # or build locally without registry:
+#   docker compose build && docker compose up -d
+#
+# Image (ghcr.io is always lowercase):
+#   ghcr.io/christopherstainberg-oss/motionrx-stretch:latest
 
 services:
   motionrx:
     image: ${GHCR_IO_IMAGE:-ghcr.io/christopherstainberg-oss/motionrx-stretch:latest}
+    # Used when stack is deployed from Git / local build context.
+    # Portainer web-editor paste without Git: pull `image` instead (needs registry login).
     build:
       context: .
       dockerfile: Dockerfile
@@ -20,6 +37,7 @@ services:
     environment:
       - NODE_ENV=production
       # Generate a strong secret: openssl rand -base64 32
+      # Set a real secret in Portainer stack env / .env (openssl rand -base64 32)
       - AUTH_SECRET=${AUTH_SECRET:-dev-only-change-me-use-openssl-rand}
       - DATA_DIR=/app/data
       - PORT=3000
@@ -30,6 +48,7 @@ services:
     networks:
       - motionrx-net
     healthcheck:
+      # wget is available on node:20-alpine (busybox)
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 5s
@@ -40,7 +59,7 @@ services:
       - "com.motionrx.description=MotionRx Stretch Physical Therapy PWA"
       - "com.motionrx.registry=ghcr.io"
 
-  # Automatic container updates from ghcr.io
+  # Automatic updates from ghcr.io (only containers with watchtower.enable label)
   watchtower:
     image: containrrr/watchtower:latest
     container_name: motionrx-watchtower
@@ -52,7 +71,7 @@ services:
       - WATCHTOWER_POLL_INTERVAL=${WATCHTOWER_POLL_INTERVAL:-3600}
       - WATCHTOWER_LABEL_ENABLE=true
       - WATCHTOWER_INCLUDE_RESTARTING=true
-      # Prefer ghcr.io registry pulls
+      # Required for private ghcr.io packages (PAT with read:packages)
       - REPO_USER=${GHCR_IO_USER:-}
       - REPO_PASS=${GHCR_IO_TOKEN:-}
     networks:
