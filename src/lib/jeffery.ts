@@ -31,6 +31,10 @@ const OPEN_ENDED = [
   "Are you noticing stiffness more in the morning, after sitting, or after activity?",
   "If we change only one thing next session (easier, shorter, or more control work), what would help most?",
   "What progress would feel meaningful to you over the next two weeks?",
+  "If you told your PT or counselor one honest sentence about today, what would it be?",
+  "What is one win from this week—even a small one—that we should protect in your plan?",
+  "Is fear of movement, sleep, or stress shaping whether you feel ready to progress?",
+  "What support (pacing, rest, people, environment) helped most when symptoms rose?",
 ];
 
 function extractPain(text: string): number | undefined {
@@ -118,15 +122,47 @@ export function jefferyLocalReply(
       (a) => `${r.name}: ${a.action} — ${a.details} (${a.source || "system"})`
     )
   );
+  let journalBridge: {
+    summary?: string;
+    question?: string;
+    signal?: string;
+    pain?: number;
+  } | null = null;
+  if (typeof globalThis !== "undefined" && "localStorage" in globalThis) {
+    try {
+      const raw = (globalThis as unknown as { localStorage?: Storage }).localStorage?.getItem(
+        "jeffery-journal-bridge"
+      );
+      if (raw) journalBridge = JSON.parse(raw);
+    } catch {
+      journalBridge = null;
+    }
+  }
+
   const known = [
     ...adjustments.slice(-8),
-    ...ctx.journal.slice(0, 3).map((j) => `Journal “${j.title}”: pain ${j.painOverall}/10`),
+    ...ctx.journal.slice(0, 5).map((j) => {
+      const bits = [
+        `Journal “${j.title}”: pain ${j.painOverall}/10`,
+        j.mood != null ? `mood ${j.mood}/5` : null,
+        j.progressionSignal ? `signal ${j.progressionSignal}` : null,
+        j.didWell ? `win: ${j.didWell.slice(0, 60)}` : null,
+        j.planAdjusted ? "adjusted plan" : null,
+      ].filter(Boolean);
+      return bits.join(" · ");
+    }),
     ...ctx.sessions.slice(0, 3).map(
       (s) =>
         `Session ${new Date(s.startedAt).toLocaleDateString()}: pain ${s.averagePainBefore}→${s.averagePainAfter}`
     ),
     ...(descLabels.length
       ? [`Pain descriptors in your record: ${descLabels.join(", ")}`]
+      : []),
+    ...(journalBridge?.summary
+      ? [`Latest journal bridge: ${journalBridge.summary.slice(0, 180)}`]
+      : []),
+    ...(journalBridge?.question
+      ? [`Open journal question: ${journalBridge.question}`]
       : []),
   ];
 

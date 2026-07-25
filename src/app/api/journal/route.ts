@@ -28,20 +28,32 @@ export async function POST(req: Request) {
   }
 
   const { userId } = await getActorId();
+  const clamp15 = (n: unknown, fallback: 1 | 2 | 3 | 4 | 5 = 3): 1 | 2 | 3 | 4 | 5 =>
+    ([1, 2, 3, 4, 5].includes(Number(n)) ? Number(n) : fallback) as 1 | 2 | 3 | 4 | 5;
+
+  const signal = ["progress", "maintain", "regress", "flare"].includes(
+    String(body.progressionSignal)
+  )
+    ? (body.progressionSignal as JournalEntry["progressionSignal"])
+    : undefined;
+
   const entry: JournalEntry = {
     ...body,
     userId,
     title: sanitizeText(String(body.title), 160),
-    body: sanitizeText(String(body.body || ""), 5000),
+    body: sanitizeText(String(body.body || ""), 8000),
     flexibilityNote: body.flexibilityNote
       ? sanitizeText(body.flexibilityNote, 500)
       : undefined,
+    didWell: body.didWell ? sanitizeText(String(body.didWell), 800) : undefined,
+    improveNext: body.improveNext ? sanitizeText(String(body.improveNext), 800) : undefined,
     painOverall: Math.max(0, Math.min(10, Number(body.painOverall) || 0)),
-    mood: ([1, 2, 3, 4, 5].includes(Number(body.mood))
-      ? Number(body.mood)
-      : 3) as 1 | 2 | 3 | 4 | 5,
+    mood: clamp15(body.mood),
+    energy: body.energy != null ? clamp15(body.energy) : undefined,
+    sleepQuality: body.sleepQuality != null ? clamp15(body.sleepQuality) : undefined,
+    sessionCompleted: Boolean(body.sessionCompleted),
     sharedWithProvider: Boolean(body.sharedWithProvider),
-    tags: Array.isArray(body.tags) ? body.tags.slice(0, 20).map(String) : [],
+    tags: Array.isArray(body.tags) ? body.tags.slice(0, 24).map(String) : [],
     bodyParts: Array.isArray(body.bodyParts) ? body.bodyParts.slice(0, 15) : [],
     painDescriptorIds: Array.isArray(body.painDescriptorIds)
       ? body.painDescriptorIds.map(String).slice(0, 24)
@@ -49,6 +61,24 @@ export async function POST(req: Request) {
     modalityIds: Array.isArray(body.modalityIds)
       ? body.modalityIds.map(String).slice(0, 24)
       : undefined,
+    progressionSignal: signal,
+    jefferySummary: body.jefferySummary
+      ? sanitizeText(String(body.jefferySummary), 2000)
+      : undefined,
+    jefferyQuestion: body.jefferyQuestion
+      ? sanitizeText(String(body.jefferyQuestion), 500)
+      : undefined,
+    winsSuggested: Array.isArray(body.winsSuggested)
+      ? body.winsSuggested.map((s) => sanitizeText(String(s), 300)).slice(0, 6)
+      : undefined,
+    improvementsSuggested: Array.isArray(body.improvementsSuggested)
+      ? body.improvementsSuggested.map((s) => sanitizeText(String(s), 300)).slice(0, 6)
+      : undefined,
+    planAdjusted: Boolean(body.planAdjusted),
+    planAdjustmentNote: body.planAdjustmentNote
+      ? sanitizeText(String(body.planAdjustmentNote), 500)
+      : undefined,
+    promptId: body.promptId ? sanitizeText(String(body.promptId), 80) : undefined,
   };
 
   await updateDb((db) => {

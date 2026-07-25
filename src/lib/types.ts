@@ -238,6 +238,9 @@ export interface SessionLog {
   modalityIds?: string[];
 }
 
+/** How today's journal signals plan dosing */
+export type JournalProgressionSignal = "progress" | "maintain" | "regress" | "flare";
+
 export interface JournalEntry {
   id: string;
   userId: string;
@@ -255,6 +258,31 @@ export interface JournalEntry {
   painDescriptorIds?: string[];
   /** Modalities tried or considered that day */
   modalityIds?: string[];
+  /** Optional energy / readiness (1 low – 5 high) */
+  energy?: 1 | 2 | 3 | 4 | 5;
+  /** Optional sleep quality 1–5 */
+  sleepQuality?: 1 | 2 | 3 | 4 | 5;
+  /** What went well today (user) */
+  didWell?: string;
+  /** What to improve next (user) */
+  improveNext?: string;
+  /** Whether a movement session was completed today */
+  sessionCompleted?: boolean;
+  /** Engine-detected progression signal */
+  progressionSignal?: JournalProgressionSignal;
+  /** Coach (Jeffery) summary stored with the entry */
+  jefferySummary?: string;
+  /** Open therapist/counselor-style question from Jeffery */
+  jefferyQuestion?: string;
+  /** Strengths Jeffery noted */
+  winsSuggested?: string[];
+  /** Improvement suggestions from Jeffery */
+  improvementsSuggested?: string[];
+  /** Whether this entry adjusted the active routine */
+  planAdjusted?: boolean;
+  planAdjustmentNote?: string;
+  /** Prompt starter used (if any) */
+  promptId?: string;
 }
 
 /** Saved pain description profile correlated across the app */
@@ -361,7 +389,7 @@ export interface RoutineAdjustment {
   painFactor: number;
   action: "progress" | "regress" | "modify" | "hold" | "rotate" | "jeffery";
   details: string;
-  source?: "session" | "pain" | "jeffery" | "user" | "builder" | "safety" | "home";
+  source?: "session" | "pain" | "jeffery" | "user" | "builder" | "safety" | "home" | "journal";
 }
 
 export interface AppNameOption {
