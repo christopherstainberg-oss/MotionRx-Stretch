@@ -1,12 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import {
-  BODY_PART_LABELS,
-  SUGGESTED_BODY_PART_ORDER,
-  getStretchById,
-} from "@/data/stretch-library";
+import { BODY_PART_LABELS, getStretchById } from "@/data/stretch-library";
 import { getExerciseById } from "@/data/exercise-library";
 import {
   getDescriptorById,
@@ -60,29 +56,52 @@ import {
 } from "lucide-react";
 
 const STEPS = [
-  { id: 1, title: "Your story", short: "Story" },
-  { id: 2, title: "Body & pain", short: "Body" },
-  { id: 3, title: "Safety", short: "Safety" },
-  { id: 4, title: "Preferences", short: "Prefs" },
-  { id: 5, title: "Your plan", short: "Plan" },
+  { id: 1, title: "Your story", short: "1 · Story" },
+  { id: 2, title: "Body & pain", short: "2 · Body" },
+  { id: 3, title: "Safety", short: "3 · Safety" },
+  { id: 4, title: "Preferences", short: "4 · Prefs" },
+  { id: 5, title: "Your plan", short: "5 · Plan" },
 ] as const;
 
-const AREAS: BodyPart[] = [
-  ...SUGGESTED_BODY_PART_ORDER,
-  ...(Object.keys(BODY_PART_LABELS) as BodyPart[]).filter(
-    (a) => !SUGGESTED_BODY_PART_ORDER.includes(a)
-  ),
+/** Grouped body regions for scannable sub-categories */
+const BODY_AREA_GROUPS: Array<{ id: string; label: string; parts: BodyPart[] }> = [
+  {
+    id: "spine-head",
+    label: "Neck, jaw & spine",
+    parts: ["neck", "jaw", "upper-back", "thoracic", "lower-back", "pelvis"],
+  },
+  {
+    id: "upper",
+    label: "Shoulders & arms",
+    parts: ["shoulders", "scapular", "chest", "elbow", "forearm", "wrists", "hand"],
+  },
+  {
+    id: "lower",
+    label: "Hips & legs",
+    parts: ["hips", "groin", "glutes", "hamstrings", "quadriceps", "knee", "calves", "shins"],
+  },
+  {
+    id: "feet-core",
+    label: "Feet, ankles & core",
+    parts: ["ankles", "foot", "toes", "core", "full-body"],
+  },
 ];
-const SYMPTOM_CHIPS = [
-  "stiffness",
-  "desk posture",
-  "morning tightness",
-  "after workout soreness",
-  "limited mobility",
-  "stress tension",
-  "walking discomfort",
-  "weakness",
+
+const AREAS: BodyPart[] = BODY_AREA_GROUPS.flatMap((g) => g.parts);
+
+const SYMPTOM_GROUPS: Array<{ id: string; label: string; items: string[] }> = [
+  {
+    id: "feel",
+    label: "How it feels",
+    items: ["stiffness", "morning tightness", "stress tension", "weakness"],
+  },
+  {
+    id: "when",
+    label: "When it shows up",
+    items: ["desk posture", "after workout soreness", "walking discomfort", "limited mobility"],
+  },
 ];
+
 const GOAL_CHIPS = [
   "improve flexibility",
   "build strength",
@@ -126,6 +145,7 @@ export default function AssessmentPage() {
   const [homeBasedProgram, setHomeBasedProgram] = useState(true);
   const [step, setStep] = useState(1);
   const [deviceTab, setDeviceTab] = useState<"precautions" | "implants" | "supports">("precautions");
+  const [bodyGroupOpen, setBodyGroupOpen] = useState<string>("spine-head");
 
   useEffect(() => {
     const local = loadLocalPainProfile();
@@ -445,62 +465,82 @@ export default function AssessmentPage() {
     (adjectivePreview?.hits.length ? 1 : 0) +
     (safetyPreview.precautionIds.length || safetyPreview.implantIds.length ? 1 : 0);
 
-  function chipClass(on: boolean, tone: "brand" | "accent" = "brand") {
-    if (tone === "accent") {
-      return on
-        ? "bg-accent-500 text-white ring-accent-500"
-        : "bg-white text-brand-800 ring-brand-200 hover:bg-brand-50 dark:bg-brand-950 dark:ring-brand-700";
-    }
+  function chipClass(on: boolean) {
     return on
-      ? "bg-brand-600 text-white ring-brand-600"
-      : "bg-white text-brand-800 ring-brand-200 hover:bg-brand-50 dark:bg-brand-950 dark:ring-brand-700";
+      ? "border-brand-600 bg-brand-600 text-white"
+      : "border-brand-200 bg-white text-brand-800 hover:border-brand-400 dark:border-brand-700 dark:bg-brand-950 dark:text-brand-100";
+  }
+
+  function SubSection({
+    title,
+    hint,
+    children,
+    action,
+  }: {
+    title: string;
+    hint?: string;
+    children: ReactNode;
+    action?: ReactNode;
+  }) {
+    return (
+      <div className="space-y-3 border-t border-brand-100 pt-5 first:border-t-0 first:pt-0 dark:border-brand-800">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-brand-950">{title}</h3>
+            {hint && <p className="mt-0.5 text-xs text-brand-500">{hint}</p>}
+          </div>
+          {action}
+        </div>
+        {children}
+      </div>
+    );
   }
 
   function StepNav() {
+    const progress = ((step - 1) / (STEPS.length - 1)) * 100;
     return (
-      <nav aria-label="Assessment steps" className="mb-5">
-        <ol className="flex items-center gap-1 sm:gap-2">
-          {STEPS.map((s, i) => {
+      <nav aria-label="Assessment steps" className="mb-6">
+        <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-brand-100 dark:bg-brand-900">
+          <div
+            className="h-full rounded-full bg-brand-600 transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <ol className="grid grid-cols-5 gap-1">
+          {STEPS.map((s) => {
             const active = step === s.id;
             const done = step > s.id || (s.id === 5 && Boolean(generated));
             return (
-              <li key={s.id} className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
+              <li key={s.id}>
                 <button
                   type="button"
                   onClick={() => setStep(s.id)}
-                  className={`flex w-full min-w-0 flex-col items-center gap-1 rounded-xl px-1 py-2 text-center transition sm:flex-row sm:px-2 ${
-                    active
-                      ? "bg-brand-600 text-white shadow-sm"
-                      : done
-                        ? "bg-brand-100 text-brand-900 dark:bg-brand-900/60 dark:text-brand-100"
-                        : "bg-brand-50 text-brand-600 dark:bg-brand-950"
+                  className={`flex w-full flex-col items-center gap-1 rounded-lg px-0.5 py-1.5 text-center transition ${
+                    active ? "text-brand-900" : done ? "text-brand-700" : "text-brand-400"
                   }`}
                 >
                   <span
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                    className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
                       active
-                        ? "bg-white/20"
+                        ? "bg-brand-600 text-white"
                         : done
-                          ? "bg-brand-600 text-white"
-                          : "bg-white text-brand-700 ring-1 ring-brand-200 dark:bg-brand-900"
+                          ? "bg-brand-200 text-brand-900 dark:bg-brand-800 dark:text-brand-100"
+                          : "bg-brand-50 text-brand-500 ring-1 ring-brand-100 dark:bg-brand-950 dark:ring-brand-800"
                     }`}
                   >
-                    {done && !active ? <Check className="h-3.5 w-3.5" /> : s.id}
+                    {done && !active ? <Check className="h-4 w-4" /> : s.id}
                   </span>
-                  <span className="truncate text-[10px] font-semibold sm:text-xs">
-                    <span className="sm:hidden">{s.short}</span>
-                    <span className="hidden sm:inline">{s.title}</span>
+                  <span className="hidden text-[10px] font-medium leading-tight sm:block">
+                    {s.title}
                   </span>
                 </button>
-                {i < STEPS.length - 1 && (
-                  <span className="hidden h-px w-2 shrink-0 bg-brand-200 sm:block dark:bg-brand-700" />
-                )}
               </li>
             );
           })}
         </ol>
-        <p className="mt-2 text-center text-xs text-brand-500">
-          Step {step} of {STEPS.length} · {STEPS[step - 1]?.title}
+        <p className="mt-2 text-center text-sm font-medium text-brand-800">
+          {STEPS[step - 1]?.short}
+          <span className="font-normal text-brand-500"> · of {STEPS.length}</span>
         </p>
       </nav>
     );
@@ -520,19 +560,19 @@ export default function AssessmentPage() {
     showGenerate?: boolean;
   }) {
     return (
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-brand-100 pt-4 dark:border-brand-800">
+      <div className="mt-6 flex items-center justify-between gap-3 border-t border-brand-100 pt-5 dark:border-brand-800">
         {onBack ? (
-          <button type="button" className="btn-ghost" onClick={onBack}>
+          <button type="button" className="btn-ghost px-3" onClick={onBack}>
             <ChevronLeft className="h-4 w-4" />
             Back
           </button>
         ) : (
-          <span />
+          <span className="w-20" />
         )}
         {showGenerate ? (
           <button
             type="button"
-            className="btn-primary min-w-[10rem]"
+            className="btn-primary min-w-[11rem]"
             onClick={createPlan}
             disabled={saving || !canGenerate}
           >
@@ -554,18 +594,17 @@ export default function AssessmentPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl pb-8">
-      <header className="mb-5">
+    <div className="mx-auto max-w-xl pb-10 sm:max-w-2xl">
+      <header className="mb-4 text-center sm:mb-6 sm:text-left">
         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-500">
           Clinical intake
         </p>
-        <h1 className="flex items-center gap-2 text-xl font-bold text-brand-950 sm:text-2xl">
+        <h1 className="inline-flex items-center gap-2 text-xl font-bold text-brand-950 sm:text-2xl">
           <Stethoscope className="h-6 w-6 shrink-0 text-brand-600" />
           Assessment
         </h1>
-        <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-brand-700/85">
-          Five short steps. We read your words, safety limits, and goals—then build a realistic
-          home-capable stretch and exercise plan.
+        <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-brand-600 sm:mx-0">
+          One step at a time. Finish when you are ready—most fields are optional.
         </p>
       </header>
 
@@ -573,119 +612,128 @@ export default function AssessmentPage() {
 
       {/* ─── Step 1: Story ─── */}
       {step === 1 && (
-        <section className="card space-y-4 p-5 sm:p-6">
-          <div>
-            <h2 className="text-lg font-semibold text-brand-950">Describe your issue</h2>
-            <p className="mt-1 text-sm text-brand-600">
-              How it feels, where, what makes it worse or better, and any diagnoses or surgeries.
-            </p>
-          </div>
-          <textarea
-            className="input min-h-[140px] text-base leading-relaxed"
-            value={paragraph}
-            onChange={(e) => setParagraph(e.target.value)}
-            placeholder="Example: Dull low-back ache, worse sitting at my desk, stiff in the morning. Sharp pain when I bend. Pain about 4/10. Want to move easier at work."
-            aria-label="Describe your issue"
-          />
-          <label className="flex items-center gap-2 text-sm text-brand-700">
-            <input
-              type="checkbox"
-              className="accent-brand-600"
-              checked={autoApplyDesc}
-              onChange={(e) => setAutoApplyDesc(e.target.checked)}
+        <section className="card space-y-0 p-5 sm:p-6">
+          <SubSection
+            title="Describe your issue"
+            hint="Feel free to write naturally. Include location, sensations, and any surgeries if you know them."
+          >
+            <textarea
+              className="input min-h-[150px] resize-y text-base leading-relaxed"
+              value={paragraph}
+              onChange={(e) => setParagraph(e.target.value)}
+              placeholder="Example: Dull low-back ache, worse sitting at my desk, stiff in the morning. Sharp pain when I bend. Pain about 4/10. Want to move easier at work."
+              aria-label="Describe your issue"
             />
-            Auto-detect clinical details from my text
-          </label>
+            <label className="mt-3 flex items-center gap-2.5 text-sm text-brand-700">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-brand-600"
+                checked={autoApplyDesc}
+                onChange={(e) => setAutoApplyDesc(e.target.checked)}
+              />
+              Auto-detect clinical details from my text
+            </label>
+          </SubSection>
 
           {paragraph.trim().length >= 12 && (
-            <details className="rounded-xl border border-brand-100 bg-brand-50/50 open:bg-brand-50/80 dark:border-brand-800 dark:bg-brand-950/40">
-              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-brand-900 marker:content-none [&::-webkit-details-marker]:hidden">
-                <span className="flex items-center justify-between gap-2">
+            <SubSection
+              title="What we noticed"
+              hint="Expand only if you want to review or apply detections."
+              action={
+                insightCount > 0 ? (
+                  <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-semibold text-brand-800 dark:bg-brand-900">
+                    {descriptorIds.length + paragraphConditions.length} matches
+                  </span>
+                ) : null
+              }
+            >
+              <details className="group rounded-xl border border-brand-100 bg-brand-50/40 dark:border-brand-800 dark:bg-brand-950/30">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-medium text-brand-900 marker:content-none [&::-webkit-details-marker]:hidden">
                   <span className="flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-brand-600" />
-                    Detected insights
-                    {insightCount > 0 && (
-                      <span className="rounded-full bg-brand-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                        {descriptorIds.length + paragraphConditions.length}
-                      </span>
-                    )}
+                    View detected insights
                   </span>
-                  <span className="text-xs font-normal text-brand-500">Tap to expand</span>
-                </span>
-              </summary>
-              <div className="space-y-3 border-t border-brand-100 px-4 py-3 text-sm dark:border-brand-800">
-                {paragraphDescDetails.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">
-                      Pain descriptors
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {paragraphDescDetails.slice(0, 10).map((d) => (
-                        <span key={d.id} className="chip text-xs">
-                          {d.label}
-                        </span>
-                      ))}
+                  <ChevronRight className="h-4 w-4 text-brand-400 transition group-open:rotate-90" />
+                </summary>
+                <div className="space-y-4 border-t border-brand-100 px-4 py-3 dark:border-brand-800">
+                  {paragraphDescDetails.length > 0 && (
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                        Pain descriptors
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {paragraphDescDetails.slice(0, 8).map((d) => (
+                          <span key={d.id} className="chip text-xs">
+                            {d.label}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-                {paragraphConditions.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">
-                      Conditions
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {paragraphConditions.slice(0, 8).map((id) => (
-                        <span key={id} className="chip text-xs">
-                          {getConditionById(id)?.label || id}
-                        </span>
-                      ))}
+                  )}
+                  {paragraphConditions.length > 0 && (
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                        Conditions
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {paragraphConditions.slice(0, 6).map((id) => (
+                          <span key={id} className="chip text-xs">
+                            {getConditionById(id)?.label || id}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-                {adjectivePreview && adjectivePreview.summaryLines.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">
-                      Language cues
+                  )}
+                  {adjectivePreview && adjectivePreview.summaryLines.length > 0 && (
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                        Language cues
+                      </p>
+                      <ul className="mt-1.5 space-y-1 text-xs text-brand-700">
+                        {adjectivePreview.summaryLines.slice(0, 3).map((line) => (
+                          <li key={line} className="leading-snug">
+                            {line}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {parsedPreview && (
+                    <button
+                      type="button"
+                      className="btn-secondary w-full text-xs sm:w-auto"
+                      onClick={applyParagraphParse}
+                    >
+                      Apply detected areas, symptoms & goals
+                    </button>
+                  )}
+                  {conditionHints.redFlags[0] && (
+                    <p className="rounded-lg bg-rose-50 p-2.5 text-xs leading-relaxed text-rose-900 dark:bg-rose-950/40 dark:text-rose-100">
+                      {conditionHints.redFlags[0]}
                     </p>
-                    <ul className="mt-1 space-y-0.5 text-xs text-brand-700">
-                      {adjectivePreview.summaryLines.slice(0, 4).map((line) => (
-                        <li key={line}>{line}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {parsedPreview && (
-                  <button
-                    type="button"
-                    className="btn-secondary text-xs"
-                    onClick={applyParagraphParse}
-                  >
-                    Apply detected areas, symptoms & goals
-                  </button>
-                )}
-                {conditionHints.redFlags[0] && (
-                  <p className="rounded-lg bg-rose-50 p-2 text-xs text-rose-900 dark:bg-rose-950/40 dark:text-rose-100">
-                    {conditionHints.redFlags[0]}
-                  </p>
-                )}
-              </div>
-            </details>
+                  )}
+                </div>
+              </details>
+            </SubSection>
           )}
 
-          <details className="rounded-xl border border-brand-100 dark:border-brand-800">
-            <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-brand-800">
-              Optional: browse full descriptor library
-            </summary>
-            <div className="border-t border-brand-100 px-3 pb-3 pt-2 dark:border-brand-800">
-              <PainDescriptorPicker
-                value={descriptorIds}
-                onChange={(ids) => {
-                  setAutoApplyDesc(false);
-                  setDescriptorIds(ids);
-                }}
-              />
-            </div>
-          </details>
+          <SubSection title="Optional" hint="Only if you want more control over pain descriptors.">
+            <details className="group rounded-xl border border-brand-100 dark:border-brand-800">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-medium text-brand-800 marker:content-none [&::-webkit-details-marker]:hidden">
+                Browse full descriptor library
+                <ChevronRight className="h-4 w-4 text-brand-400 transition group-open:rotate-90" />
+              </summary>
+              <div className="border-t border-brand-100 px-3 pb-3 pt-2 dark:border-brand-800">
+                <PainDescriptorPicker
+                  value={descriptorIds}
+                  onChange={(ids) => {
+                    setAutoApplyDesc(false);
+                    setDescriptorIds(ids);
+                  }}
+                />
+              </div>
+            </details>
+          </SubSection>
 
           <FooterNav onNext={() => setStep(2)} />
         </section>
@@ -693,98 +741,139 @@ export default function AssessmentPage() {
 
       {/* ─── Step 2: Body & pain ─── */}
       {step === 2 && (
-        <section className="card space-y-5 p-5 sm:p-6">
-          <div>
-            <h2 className="text-lg font-semibold text-brand-950">Body areas & symptoms</h2>
-            <p className="mt-1 text-sm text-brand-600">
-              Select regions, rate pain, and add goals. Skip anything that does not apply.
-            </p>
-          </div>
-
-          <div>
-            <p className="mb-2 text-sm font-medium text-brand-900">Areas</p>
-            <div className="flex flex-wrap gap-2">
-              {AREAS.map((area) => {
-                const on = areas.includes(area);
+        <section className="card space-y-0 p-5 sm:p-6">
+          <SubSection
+            title="Body regions"
+            hint="Open a category, then tap areas that apply. Selected count updates as you go."
+            action={
+              areas.length > 0 ? (
+                <span className="text-xs font-semibold text-brand-600">{areas.length} selected</span>
+              ) : null
+            }
+          >
+            <div className="space-y-2">
+              {BODY_AREA_GROUPS.map((group) => {
+                const selectedInGroup = group.parts.filter((p) => areas.includes(p)).length;
+                const open = bodyGroupOpen === group.id;
                 return (
-                  <button
-                    key={area}
-                    type="button"
-                    onClick={() => {
-                      setAreas(toggle(areas, area));
-                      if (!painLevels[area]) setPainLevels((p) => ({ ...p, [area]: 3 }));
-                    }}
-                    className={`rounded-full px-3 py-1.5 text-sm font-medium ring-1 transition ${chipClass(on)}`}
+                  <div
+                    key={group.id}
+                    className="overflow-hidden rounded-xl border border-brand-100 dark:border-brand-800"
                   >
-                    {BODY_PART_LABELS[area]}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setBodyGroupOpen(open ? "" : group.id)}
+                      className="flex w-full items-center justify-between gap-2 bg-brand-50/60 px-3.5 py-3 text-left dark:bg-brand-950/50"
+                    >
+                      <span className="text-sm font-semibold text-brand-900">{group.label}</span>
+                      <span className="flex items-center gap-2">
+                        {selectedInGroup > 0 && (
+                          <span className="rounded-full bg-brand-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                            {selectedInGroup}
+                          </span>
+                        )}
+                        <ChevronRight
+                          className={`h-4 w-4 text-brand-400 transition ${open ? "rotate-90" : ""}`}
+                        />
+                      </span>
+                    </button>
+                    {open && (
+                      <div className="flex flex-wrap gap-2 border-t border-brand-100 bg-white p-3 dark:border-brand-800 dark:bg-brand-950">
+                        {group.parts.map((area) => {
+                          const on = areas.includes(area);
+                          return (
+                            <button
+                              key={area}
+                              type="button"
+                              onClick={() => {
+                                setAreas(toggle(areas, area));
+                                if (!painLevels[area])
+                                  setPainLevels((p) => ({ ...p, [area]: 3 }));
+                              }}
+                              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${chipClass(on)}`}
+                            >
+                              {BODY_PART_LABELS[area]}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
-          </div>
+          </SubSection>
 
           {areas.length > 0 && (
-            <div className="space-y-4 rounded-xl border border-brand-100 bg-brand-50/40 p-4 dark:border-brand-800 dark:bg-brand-950/40">
-              <p className="text-sm font-medium text-brand-900">Pain by area (0–10)</p>
-              {areas.map((area) => (
-                <PainScale
-                  key={area}
-                  id={`pain-${area}`}
-                  label={BODY_PART_LABELS[area]}
-                  value={painLevels[area] ?? 0}
-                  onChange={(n) => setPainLevels((p) => ({ ...p, [area]: n }))}
-                />
-              ))}
-            </div>
+            <SubSection title="Pain levels" hint="Rate each selected area from 0 (none) to 10 (worst).">
+              <div className="space-y-4 rounded-xl bg-brand-50/50 p-3.5 dark:bg-brand-950/40">
+                {areas.map((area) => (
+                  <PainScale
+                    key={area}
+                    id={`pain-${area}`}
+                    label={BODY_PART_LABELS[area]}
+                    value={painLevels[area] ?? 0}
+                    onChange={(n) => setPainLevels((p) => ({ ...p, [area]: n }))}
+                  />
+                ))}
+              </div>
+            </SubSection>
           )}
 
-          <div>
-            <p className="mb-2 text-sm font-medium text-brand-900">Symptoms</p>
-            <div className="flex flex-wrap gap-2">
-              {SYMPTOM_CHIPS.map((s) => {
-                const on = symptoms.includes(s);
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setSymptoms(toggle(symptoms, s))}
-                    className={`rounded-full px-3 py-1.5 text-sm ring-1 ${chipClass(on, "accent")}`}
-                  >
-                    {s}
-                  </button>
-                );
-              })}
+          <SubSection title="Symptoms" hint="How it shows up day to day.">
+            <div className="space-y-3">
+              {SYMPTOM_GROUPS.map((group) => (
+                <div key={group.id}>
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                    {group.label}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {group.items.map((s) => {
+                      const on = symptoms.includes(s);
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setSymptoms(toggle(symptoms, s))}
+                          className={`rounded-full border px-3 py-1.5 text-sm transition ${chipClass(on)}`}
+                        >
+                          {s}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              <div className="flex gap-2 pt-1">
+                <input
+                  className="input"
+                  placeholder="Other symptom…"
+                  value={customSymptom}
+                  onChange={(e) => setCustomSymptom(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && customSymptom.trim()) {
+                      setSymptoms((s) => [...s, customSymptom.trim()]);
+                      setCustomSymptom("");
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn-secondary shrink-0"
+                  onClick={() => {
+                    if (customSymptom.trim()) {
+                      setSymptoms((s) => [...s, customSymptom.trim()]);
+                      setCustomSymptom("");
+                    }
+                  }}
+                >
+                  Add
+                </button>
+              </div>
             </div>
-            <div className="mt-2 flex gap-2">
-              <input
-                className="input"
-                placeholder="Other symptom…"
-                value={customSymptom}
-                onChange={(e) => setCustomSymptom(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && customSymptom.trim()) {
-                    setSymptoms((s) => [...s, customSymptom.trim()]);
-                    setCustomSymptom("");
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="btn-secondary shrink-0"
-                onClick={() => {
-                  if (customSymptom.trim()) {
-                    setSymptoms((s) => [...s, customSymptom.trim()]);
-                    setCustomSymptom("");
-                  }
-                }}
-              >
-                Add
-              </button>
-            </div>
-          </div>
+          </SubSection>
 
-          <div>
-            <p className="mb-2 text-sm font-medium text-brand-900">Goals</p>
+          <SubSection title="Goals" hint="What you want this plan to help with.">
             <div className="flex flex-wrap gap-2">
               {GOAL_CHIPS.map((g) => {
                 const on = goals.includes(g);
@@ -793,14 +882,14 @@ export default function AssessmentPage() {
                     key={g}
                     type="button"
                     onClick={() => setGoals(toggle(goals, g))}
-                    className={`rounded-full px-3 py-1.5 text-sm ring-1 ${chipClass(on)}`}
+                    className={`rounded-full border px-3 py-1.5 text-sm transition ${chipClass(on)}`}
                   >
                     {g}
                   </button>
                 );
               })}
             </div>
-          </div>
+          </SubSection>
 
           <FooterNav onBack={() => setStep(1)} onNext={() => setStep(3)} />
         </section>
@@ -808,81 +897,89 @@ export default function AssessmentPage() {
 
       {/* ─── Step 3: Safety ─── */}
       {step === 3 && (
-        <section className="card space-y-5 p-5 sm:p-6">
-          <div>
-            <h2 className="text-lg font-semibold text-brand-950">Safety & devices</h2>
-            <p className="mt-1 text-sm text-brand-600">
-              Age and effort set intensity. Precautions and devices keep the plan within clinical
-              limits.
-            </p>
-          </div>
+        <section className="card space-y-0 p-5 sm:p-6">
+          <SubSection
+            title="Effort & heart rate"
+            hint="Age estimates max HR. Borg sets how hard the plan should feel."
+          >
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="block text-sm">
+                <span className="label">Age</span>
+                <input
+                  type="number"
+                  min={5}
+                  max={110}
+                  className="input"
+                  value={ageYears}
+                  onChange={(e) =>
+                    setAgeYears(
+                      e.target.value === ""
+                        ? ""
+                        : Math.min(110, Math.max(5, Number(e.target.value)))
+                    )
+                  }
+                  placeholder="Years"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="label">Resting HR</span>
+                <input
+                  type="number"
+                  min={30}
+                  max={200}
+                  className="input"
+                  value={restingHr}
+                  onChange={(e) =>
+                    setRestingHr(e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                  placeholder="Optional"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="label">Borg effort</span>
+                <select
+                  className="input"
+                  value={borgTargetId}
+                  onChange={(e) => setBorgTargetId(e.target.value)}
+                >
+                  {BORG_TARGETS.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {ageYears !== "" && (
+              <p className="mt-3 rounded-lg bg-brand-50 px-3 py-2 text-xs leading-relaxed text-brand-800 dark:bg-brand-900/50">
+                {(() => {
+                  const max = estimateMaxHr(Number(ageYears));
+                  const borg = getBorgTarget(borgTargetId);
+                  const cap = Math.round(max * borg.hrMaxFractionCap);
+                  return (
+                    <>
+                      Est. HRmax ≈ <strong>{max}</strong> bpm · this Borg band caps ~{" "}
+                      <strong>{cap}</strong> bpm. Educational only.
+                    </>
+                  );
+                })()}
+              </p>
+            )}
+          </SubSection>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <label className="block text-sm">
-              <span className="label">Age</span>
-              <input
-                type="number"
-                min={5}
-                max={110}
-                className="input"
-                value={ageYears}
-                onChange={(e) =>
-                  setAgeYears(
-                    e.target.value === ""
-                      ? ""
-                      : Math.min(110, Math.max(5, Number(e.target.value)))
-                  )
-                }
-                placeholder="Years"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="label">Resting HR</span>
-              <input
-                type="number"
-                min={30}
-                max={200}
-                className="input"
-                value={restingHr}
-                onChange={(e) =>
-                  setRestingHr(e.target.value === "" ? "" : Number(e.target.value))
-                }
-                placeholder="Optional"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="label">Borg effort</span>
-              <select
-                className="input"
-                value={borgTargetId}
-                onChange={(e) => setBorgTargetId(e.target.value)}
-              >
-                {BORG_TARGETS.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {ageYears !== "" && (
-            <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800 dark:bg-brand-900/50">
-              {(() => {
-                const max = estimateMaxHr(Number(ageYears));
-                const borg = getBorgTarget(borgTargetId);
-                const cap = Math.round(max * borg.hrMaxFractionCap);
-                return (
-                  <>
-                    Est. HRmax ≈ <strong>{max}</strong> bpm · this Borg band caps ~{" "}
-                    <strong>{cap}</strong> bpm. Educational estimate only.
-                  </>
-                );
-              })()}
-            </p>
-          )}
-
-          <div>
-            <div className="mb-3 flex flex-wrap gap-1 rounded-xl bg-brand-50 p-1 dark:bg-brand-950">
+          <SubSection
+            title="Precautions & devices"
+            hint="Pick a category tab. Only select what your care team has told you."
+            action={
+              precautionIds.length + implantIds.length + orthoticIds.length > 0 ? (
+                <span className="text-xs font-semibold text-brand-600">
+                  {precautionIds.length + implantIds.length + orthoticIds.length + prostheticIds.length + assistiveDeviceIds.length}{" "}
+                  selected
+                </span>
+              ) : null
+            }
+          >
+            <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl bg-brand-50 p-1 dark:bg-brand-950">
               {(
                 [
                   ["precautions", "Precautions"],
@@ -894,7 +991,7 @@ export default function AssessmentPage() {
                   key={id}
                   type="button"
                   onClick={() => setDeviceTab(id)}
-                  className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition sm:text-sm ${
+                  className={`rounded-lg px-2 py-2 text-xs font-semibold transition sm:text-sm ${
                     deviceTab === id
                       ? "bg-white text-brand-900 shadow-sm dark:bg-brand-800 dark:text-white"
                       : "text-brand-600 hover:text-brand-900"
@@ -906,7 +1003,7 @@ export default function AssessmentPage() {
             </div>
 
             {deviceTab === "precautions" && (
-              <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
+              <div className="max-h-72 space-y-2 overflow-y-auto pr-0.5">
                 {(
                   Object.keys(PRECAUTION_CATEGORY_LABELS) as Array<
                     keyof typeof PRECAUTION_CATEGORY_LABELS
@@ -914,22 +1011,31 @@ export default function AssessmentPage() {
                 ).map((cat) => {
                   const items = CLINICAL_PRECAUTIONS.filter((p) => p.category === cat);
                   if (!items.length) return null;
+                  const selected = items.filter((p) => precautionIds.includes(p.id)).length;
                   return (
-                    <div key={cat}>
-                      <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-brand-500">
-                        {PRECAUTION_CATEGORY_LABELS[cat]}
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
+                    <details
+                      key={cat}
+                      className="group rounded-xl border border-brand-100 dark:border-brand-800"
+                      open={selected > 0}
+                    >
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-sm font-medium text-brand-900 marker:content-none [&::-webkit-details-marker]:hidden">
+                        <span>{PRECAUTION_CATEGORY_LABELS[cat]}</span>
+                        <span className="flex items-center gap-2">
+                          {selected > 0 && (
+                            <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                              {selected}
+                            </span>
+                          )}
+                          <ChevronRight className="h-4 w-4 text-brand-400 transition group-open:rotate-90" />
+                        </span>
+                      </summary>
+                      <div className="flex flex-wrap gap-1.5 border-t border-brand-100 px-3 py-2.5 dark:border-brand-800">
                         {items.map((p) => {
                           const on = precautionIds.includes(p.id);
                           return (
                             <label
                               key={p.id}
-                              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
-                                on
-                                  ? "border-brand-500 bg-brand-100 font-semibold text-brand-950"
-                                  : "border-brand-200 bg-white text-brand-700 dark:border-brand-700 dark:bg-brand-950"
-                              }`}
+                              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${chipClass(on)}`}
                               title={p.label}
                             >
                               <input
@@ -943,23 +1049,23 @@ export default function AssessmentPage() {
                           );
                         })}
                       </div>
-                    </div>
+                    </details>
                   );
                 })}
                 {precautionIds.length > 0 && (
-                  <details className="rounded-lg border border-brand-100 dark:border-brand-800">
-                    <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-brand-800">
+                  <details className="rounded-xl border border-brand-200 bg-brand-50/50 dark:border-brand-700 dark:bg-brand-950/40">
+                    <summary className="cursor-pointer px-3 py-2.5 text-xs font-semibold text-brand-800">
                       How to follow selected precautions ({precautionIds.length})
                     </summary>
-                    <div className="space-y-2 border-t border-brand-100 px-3 py-2 dark:border-brand-800">
+                    <div className="space-y-2.5 border-t border-brand-100 px-3 py-2.5 dark:border-brand-800">
                       {precautionIds.map((id) => {
                         const p = CLINICAL_PRECAUTIONS.find((x) => x.id === id);
                         if (!p) return null;
                         return (
-                          <div key={id} className="text-xs text-brand-800">
+                          <div key={id} className="text-xs leading-relaxed text-brand-800">
                             <p className="font-semibold">{p.label}</p>
-                            <p className="text-brand-600">{p.definition}</p>
-                            <ul className="mt-1 list-disc pl-4">
+                            <p className="mt-0.5 text-brand-600">{p.definition}</p>
+                            <ul className="mt-1 list-disc pl-4 text-brand-700">
                               {p.adherence.slice(0, 3).map((a) => (
                                 <li key={a}>{a}</li>
                               ))}
@@ -974,13 +1080,13 @@ export default function AssessmentPage() {
             )}
 
             {deviceTab === "implants" && (
-              <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
+              <div className="max-h-72 space-y-1.5 overflow-y-auto">
                 {IMPLANTED_DEVICES.map((d) => {
                   const on = implantIds.includes(d.id);
                   return (
                     <label
                       key={d.id}
-                      className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
+                      className={`flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 text-xs transition ${
                         on
                           ? "border-brand-500 bg-brand-50 dark:bg-brand-900/40"
                           : "border-brand-100 dark:border-brand-800"
@@ -994,7 +1100,9 @@ export default function AssessmentPage() {
                       />
                       <span>
                         <span className="font-semibold text-brand-900">{d.label}</span>
-                        <span className="mt-0.5 block text-brand-600">{d.plainLanguage}</span>
+                        <span className="mt-0.5 block leading-snug text-brand-600">
+                          {d.plainLanguage}
+                        </span>
                       </span>
                     </label>
                   );
@@ -1003,101 +1111,61 @@ export default function AssessmentPage() {
             )}
 
             {deviceTab === "supports" && (
-              <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
-                <div>
-                  <p className="mb-1 text-[11px] font-bold uppercase text-brand-500">Orthotics</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {ORTHOTIC_DEVICES.map((o) => (
-                      <label
-                        key={o.id}
-                        className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${
-                          orthoticIds.includes(o.id)
-                            ? "border-brand-500 bg-brand-100"
-                            : "border-brand-200 dark:border-brand-700"
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="accent-brand-600"
-                          checked={orthoticIds.includes(o.id)}
-                          onChange={() => setOrthoticIds((prev) => toggle(prev, o.id))}
-                        />
-                        {o.label}
-                      </label>
-                    ))}
+              <div className="max-h-72 space-y-4 overflow-y-auto">
+                {(
+                  [
+                    ["Orthotics", ORTHOTIC_DEVICES, orthoticIds, setOrthoticIds],
+                    ["Prosthetics", PROSTHETIC_DEVICES, prostheticIds, setProstheticIds],
+                    ["Assistive devices", ASSISTIVE_DEVICES, assistiveDeviceIds, setAssistiveDeviceIds],
+                  ] as const
+                ).map(([label, list, selected, setter]) => (
+                  <div key={label}>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                      {label}
+                      {label === "Assistive devices" &&
+                        safetyPreview.suggestedAssistiveDeviceIds.length > 0 && (
+                          <span className="ml-1 font-normal normal-case text-brand-500">
+                            · suggested available
+                          </span>
+                        )}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {list.map((item) => {
+                        const on = selected.includes(item.id);
+                        return (
+                          <label
+                            key={item.id}
+                            className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${chipClass(on)}`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="accent-brand-600"
+                              checked={on}
+                              onChange={() =>
+                                (setter as (fn: (prev: string[]) => string[]) => void)((prev) =>
+                                  toggle(prev, item.id)
+                                )
+                              }
+                            />
+                            {item.label}
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <p className="mb-1 text-[11px] font-bold uppercase text-brand-500">Prosthetics</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {PROSTHETIC_DEVICES.map((p) => (
-                      <label
-                        key={p.id}
-                        className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${
-                          prostheticIds.includes(p.id)
-                            ? "border-brand-500 bg-brand-100"
-                            : "border-brand-200 dark:border-brand-700"
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="accent-brand-600"
-                          checked={prostheticIds.includes(p.id)}
-                          onChange={() => setProstheticIds((prev) => toggle(prev, p.id))}
-                        />
-                        {p.label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="mb-1 text-[11px] font-bold uppercase text-brand-500">
-                    Assistive devices
-                    {safetyPreview.suggestedAssistiveDeviceIds.length > 0 && (
-                      <span className="ml-1 font-normal normal-case text-brand-500">
-                        · suggested:{" "}
-                        {safetyPreview.suggestedAssistiveDeviceIds
-                          .slice(0, 2)
-                          .map((id) => ASSISTIVE_DEVICES.find((a) => a.id === id)?.label)
-                          .filter(Boolean)
-                          .join(", ")}
-                      </span>
-                    )}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {ASSISTIVE_DEVICES.map((a) => (
-                      <label
-                        key={a.id}
-                        className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${
-                          assistiveDeviceIds.includes(a.id)
-                            ? "border-brand-500 bg-brand-100"
-                            : "border-brand-200 dark:border-brand-700"
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="accent-brand-600"
-                          checked={assistiveDeviceIds.includes(a.id)}
-                          onChange={() => setAssistiveDeviceIds((prev) => toggle(prev, a.id))}
-                        />
-                        {a.label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
+                ))}
               </div>
             )}
-          </div>
+          </SubSection>
 
-          <label className="block text-sm">
-            <span className="label">Surgeon / protocol notes (optional)</span>
+          <SubSection title="Protocol notes" hint="Optional free text from your surgeon or PT.">
             <textarea
-              className="input min-h-[64px]"
+              className="input min-h-[72px]"
               value={protocolNotes}
               onChange={(e) => setProtocolNotes(e.target.value)}
               placeholder="e.g. NWB right leg 4 weeks; 10 lb lift limit…"
             />
-          </label>
+          </SubSection>
 
           <FooterNav onBack={() => setStep(2)} onNext={() => setStep(4)} />
         </section>
@@ -1105,48 +1173,45 @@ export default function AssessmentPage() {
 
       {/* ─── Step 4: Preferences ─── */}
       {step === 4 && (
-        <section className="card space-y-5 p-5 sm:p-6">
-          <div>
-            <h2 className="text-lg font-semibold text-brand-950">Session preferences</h2>
-            <p className="mt-1 text-sm text-brand-600">
-              How long, how hard, what mix—and whether this is a home program.
-            </p>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="label" htmlFor="minutes">
-                Minutes available
-              </label>
-              <input
-                id="minutes"
-                type="number"
-                min={5}
-                max={45}
-                className="input"
-                value={minutes}
-                onChange={(e) => setMinutes(Number(e.target.value))}
-              />
+        <section className="card space-y-0 p-5 sm:p-6">
+          <SubSection
+            title="Session length & difficulty"
+            hint="We may still cap intensity based on safety and pain."
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="label" htmlFor="minutes">
+                  Minutes available
+                </label>
+                <input
+                  id="minutes"
+                  type="number"
+                  min={5}
+                  max={45}
+                  className="input"
+                  value={minutes}
+                  onChange={(e) => setMinutes(Number(e.target.value))}
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="difficulty">
+                  Preferred difficulty
+                </label>
+                <select
+                  id="difficulty"
+                  className="input"
+                  value={difficulty}
+                  onChange={(e) => setDifficulty(e.target.value as Difficulty)}
+                >
+                  <option value="beginner">Beginner</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="advanced">Advanced</option>
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="label" htmlFor="difficulty">
-                Preferred difficulty
-              </label>
-              <select
-                id="difficulty"
-                className="input"
-                value={difficulty}
-                onChange={(e) => setDifficulty(e.target.value as Difficulty)}
-              >
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="advanced">Advanced</option>
-              </select>
-            </div>
-          </div>
+          </SubSection>
 
-          <div>
-            <p className="mb-2 text-sm font-medium text-brand-900">Movement mix</p>
+          <SubSection title="Movement mix" hint="Auto is fine for most people.">
             <div className="flex flex-wrap gap-2">
               {(
                 [
@@ -1168,7 +1233,7 @@ export default function AssessmentPage() {
                   <button
                     key={key}
                     type="button"
-                    className={`rounded-full px-3 py-1.5 text-sm ring-1 ${chipClass(active)}`}
+                    className={`rounded-full border px-3 py-1.5 text-sm transition ${chipClass(active)}`}
                     onClick={() => {
                       if (key === "auto") setPreferKinds("auto");
                       else if (key === "stretch") setPreferKinds(["stretch", "exercise"]);
@@ -1181,49 +1246,57 @@ export default function AssessmentPage() {
                 );
               })}
             </div>
-          </div>
+          </SubSection>
 
-          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-brand-200 bg-brand-50/50 p-4 dark:border-brand-700 dark:bg-brand-950/50">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-5 w-5 accent-brand-600"
-              checked={homeBasedProgram}
-              onChange={(e) => setHomeBasedProgram(e.target.checked)}
-            />
-            <span>
-              <span className="flex items-center gap-2 font-semibold text-brand-950">
-                <Home className="h-4 w-4 text-brand-600" />
-                Home-based program
+          <SubSection title="Home setup">
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-brand-200 bg-brand-50/40 p-4 dark:border-brand-700 dark:bg-brand-950/40">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-5 w-5 accent-brand-600"
+                checked={homeBasedProgram}
+                onChange={(e) => setHomeBasedProgram(e.target.checked)}
+              />
+              <span>
+                <span className="flex items-center gap-2 font-semibold text-brand-950">
+                  <Home className="h-4 w-4 text-brand-600" />
+                  Home-based program
+                </span>
+                <span className="mt-1 block text-sm leading-relaxed text-brand-700">
+                  Prefer chair, wall, floor, and minimal-equipment variations.
+                </span>
               </span>
-              <span className="mt-1 block text-sm text-brand-700">
-                Prefer chair, wall, floor, and minimal-equipment variations for every movement.
-              </span>
-            </span>
-          </label>
+            </label>
+          </SubSection>
 
-          <div className="rounded-xl bg-brand-50/80 p-3 text-xs text-brand-700 dark:bg-brand-900/40">
-            <p className="font-semibold text-brand-900">Quick summary</p>
-            <ul className="mt-1.5 space-y-0.5">
-              <li>
-                {areas.length
-                  ? `Areas: ${areas.map((a) => BODY_PART_LABELS[a]).join(", ")}`
-                  : "Areas: auto from story"}
+          <SubSection title="Before you generate">
+            <ul className="space-y-1.5 text-sm text-brand-700">
+              <li className="flex gap-2">
+                <span className="font-medium text-brand-500">Areas</span>
+                <span>
+                  {areas.length
+                    ? areas.map((a) => BODY_PART_LABELS[a]).join(", ")
+                    : "From your story (or none yet)"}
+                </span>
               </li>
-              <li>
-                {precautionIds.length || implantIds.length
-                  ? `Safety: ${precautionIds.length} precautions · ${implantIds.length} implants`
-                  : "Safety: none selected"}
+              <li className="flex gap-2">
+                <span className="font-medium text-brand-500">Safety</span>
+                <span>
+                  {precautionIds.length || implantIds.length
+                    ? `${precautionIds.length} precautions · ${implantIds.length} implants`
+                    : "None selected"}
+                </span>
               </li>
-              <li>
-                {minutes} min · {difficulty} · {homeBasedProgram ? "home HEP" : "general"}
+              <li className="flex gap-2">
+                <span className="font-medium text-brand-500">Session</span>
+                <span>
+                  {minutes} min · {difficulty}
+                  {homeBasedProgram ? " · home HEP" : ""}
+                </span>
               </li>
             </ul>
-          </div>
+          </SubSection>
 
-          <FooterNav
-            onBack={() => setStep(3)}
-            showGenerate
-          />
+          <FooterNav onBack={() => setStep(3)} showGenerate />
         </section>
       )}
 
