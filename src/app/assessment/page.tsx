@@ -658,7 +658,45 @@ export default function AssessmentPage() {
   function askCoach(question?: string) {
     const q = (question ?? coachQuestion).trim();
     if (!q) return;
-    const answer = answerAssessmentQuestion(q, coachContext);
+
+    // Free-text replies can carry history/sex — parse and fold into profile fields
+    const fromAnswerSex = parseSexFromText(q);
+    if (fromAnswerSex) setSex((prev) => prev || fromAnswerSex);
+    const fromAnswerHist = parseMedicalHistoryFromText(q);
+    if (fromAnswerHist.pastMedicalHistory) {
+      setPastMedicalHistory((prev) =>
+        mergeHistoryText(prev, fromAnswerHist.pastMedicalHistory)
+      );
+    }
+    if (fromAnswerHist.currentMedicalHistory) {
+      setCurrentMedicalHistory((prev) =>
+        mergeHistoryText(prev, fromAnswerHist.currentMedicalHistory)
+      );
+    }
+    // If the user typed a clarifying detail (not a short canned chip), fold into story
+    const isChip = suggestedAssessmentQuestions(sex || undefined, {
+      pastMedicalHistory,
+      currentMedicalHistory,
+      paragraph,
+    }).includes(q);
+    if (!isChip && q.length >= 24 && !paragraph.toLowerCase().includes(q.toLowerCase().slice(0, 40))) {
+      setParagraph((p) => (p.trim() ? `${p.trim()}\n\n${q.trim()}` : q.trim()));
+    }
+
+    const answer = answerAssessmentQuestion(q, {
+      ...coachContext,
+      sex: fromAnswerSex || coachContext.sex,
+      pastMedicalHistory:
+        mergeHistoryText(
+          coachContext.pastMedicalHistory || "",
+          fromAnswerHist.pastMedicalHistory
+        ) || coachContext.pastMedicalHistory,
+      currentMedicalHistory:
+        mergeHistoryText(
+          coachContext.currentMedicalHistory || "",
+          fromAnswerHist.currentMedicalHistory
+        ) || coachContext.currentMedicalHistory,
+    });
     const entry: CoachExchange = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       question: q,
@@ -863,7 +901,7 @@ export default function AssessmentPage() {
               className="input min-h-[150px] resize-y text-base leading-relaxed"
               value={paragraph}
               onChange={(e) => setParagraph(e.target.value)}
-              placeholder="Example: Dull low-back ache, worse sitting at my desk. I take metformin 500 mg twice daily and naproxen 220 mg as needed. Pain about 4/10. Want to move easier at work."
+              placeholder="Example: I’m a woman with dull low-back ache worse at my desk. Past: right knee arthroscopy 2019, childhood asthma. Currently manage hypertension and take metformin 500 mg twice daily and naproxen 220 mg as needed. Pain about 4/10. Want to move easier at work."
               aria-label="Describe your issue"
               autoComplete="off"
               spellCheck
@@ -875,97 +913,81 @@ export default function AssessmentPage() {
                 checked={autoApplyDesc}
                 onChange={(e) => setAutoApplyDesc(e.target.checked)}
               />
-              Auto-detect clinical details from my text (including medication names)
+              Auto-detect clinical details from my text (meds, conditions, pain language)
+            </label>
+            <label className="mt-2 flex items-center gap-2.5 text-sm text-brand-700">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-brand-600"
+                checked={autoApplyHistory}
+                onChange={(e) => setAutoApplyHistory(e.target.checked)}
+              />
+              Auto-detect sex and past/current medical history from this paragraph
             </label>
             <p className="mt-2 text-xs text-brand-500">
-              Tip: you can write meds, sex (e.g. “I am a woman”), and history (e.g. “PMH:
-              hypertension; history of knee surgery”) in the story—we parse and correlate them.
+              One story box is enough — include past surgeries/diagnoses and current conditions in
+              plain language. The app parses PMH/CMH, meds, and sex cues for Plan, Q&amp;A, and
+              Jeffery.
             </p>
+            {(pastMedicalHistory || currentMedicalHistory || sex) && (
+              <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/50 px-3 py-2.5 text-xs text-brand-800 dark:border-brand-800 dark:bg-brand-950/40 dark:text-brand-100">
+                <p className="font-semibold text-brand-900 dark:text-brand-50">
+                  Detected from your story
+                </p>
+                {sex ? (
+                  <p className="mt-1">
+                    Sex: {SEX_OPTIONS.find((o) => o.id === sex)?.label || sex}
+                  </p>
+                ) : null}
+                {pastMedicalHistory ? (
+                  <p className="mt-1">Past medical history: {pastMedicalHistory}</p>
+                ) : null}
+                {currentMedicalHistory ? (
+                  <p className="mt-1">Current medical history: {currentMedicalHistory}</p>
+                ) : null}
+              </div>
+            )}
           </SubSection>
 
           <SubSection
-            title="Sex & medical history"
-            hint="Optional. Adjust sex for tailored Q&A. Past/current history is stored on your profile and used in Plan, Journal, and Jeffery."
+            title="Sex (optional)"
+            hint="Adjust if the parser missed it — changes clarifying Q&A. You can also write it in your story."
           >
-            <div className="space-y-4">
-              <div>
-                <label className="label" htmlFor="sex">
-                  Sex
-                </label>
-                <select
-                  id="sex"
-                  className="input"
-                  value={sex}
-                  onChange={(e) => {
-                    setAutoApplyHistory(false);
-                    setSex((e.target.value || "") as SexSelection | "");
-                  }}
-                >
-                  <option value="">Not set — parse from story or choose</option>
-                  {SEX_OPTIONS.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-brand-500">
-                  {SEX_OPTIONS.find((o) => o.id === sex)?.hint ||
-                    "You can also write “I am male/female…” in your paragraph."}
-                </p>
-              </div>
-              <div>
-                <label className="label" htmlFor="pmh">
-                  Past medical history
-                </label>
-                <textarea
-                  id="pmh"
-                  className="input min-h-[72px]"
-                  value={pastMedicalHistory}
-                  onChange={(e) => {
-                    setAutoApplyHistory(false);
-                    setPastMedicalHistory(e.target.value);
-                  }}
-                  placeholder="e.g. s/p right knee arthroscopy 2019; childhood asthma; remote ankle fracture…"
-                  autoComplete="off"
-                />
-              </div>
-              <div>
-                <label className="label" htmlFor="cmh">
-                  Current medical history
-                </label>
-                <textarea
-                  id="cmh"
-                  className="input min-h-[72px]"
-                  value={currentMedicalHistory}
-                  onChange={(e) => {
-                    setAutoApplyHistory(false);
-                    setCurrentMedicalHistory(e.target.value);
-                  }}
-                  placeholder="e.g. hypertension, type 2 diabetes, ongoing low-back pain, anxiety…"
-                  autoComplete="off"
-                />
-              </div>
-              <label className="flex items-center gap-2.5 text-sm text-brand-700">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-brand-600"
-                  checked={autoApplyHistory}
-                  onChange={(e) => setAutoApplyHistory(e.target.checked)}
-                />
-                Auto-detect sex & medical history from my story paragraph
-              </label>
-            </div>
+            <select
+              id="sex"
+              className="input"
+              value={sex}
+              onChange={(e) => {
+                setAutoApplyHistory(false);
+                setSex((e.target.value || "") as SexSelection | "");
+              }}
+            >
+              <option value="">Not set — parse from story or choose</option>
+              {SEX_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-brand-500">
+              {SEX_OPTIONS.find((o) => o.id === sex)?.hint ||
+                "Example in story: “I am a woman…” or “sex: male”."}
+            </p>
           </SubSection>
 
           <SubSection
             title={`Ask a question${
               preferredName ? `, ${displayPreferredName(preferredName)}` : ""
             }`}
-            hint="Ask about your story, medical history, pain, or plan priorities. Sex changes suggested questions."
+            hint="Clarifying questions appear when history is incomplete. Answers use your full story."
           >
             <div className="space-y-3">
               <div className="flex flex-wrap gap-1.5">
-                {suggestedAssessmentQuestions(sex || undefined).map((q) => (
+                {suggestedAssessmentQuestions(sex || undefined, {
+                  pastMedicalHistory,
+                  currentMedicalHistory,
+                  paragraph,
+                }).map((q) => (
                   <button
                     key={q}
                     type="button"

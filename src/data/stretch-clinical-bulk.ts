@@ -172,7 +172,8 @@ function expandCompact(c: CompactSeed): Omit<Stretch, "durationBucket" | "slug" 
     video: videoForMovement({
       technique,
       region: vRegion,
-      title: `${c.name} — institutional technique demonstration`,
+      name: c.name,
+      bodyParts,
     }),
     evidenceNotes: c.evidence,
     clinical: {

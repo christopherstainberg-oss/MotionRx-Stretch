@@ -54,10 +54,13 @@ export function InstitutionalVideoEmbed({
     const params = new URLSearchParams();
     params.set("youtubeId", video.youtubeId);
     if (region) params.set("region", region);
-    if (video.title) params.set("title", video.title);
+    // Prefer movement name from attribution for content-matched fallbacks
+    const matchFor = video.source?.match(/Educational match for:\s*(.+)$/i)?.[1]?.trim();
+    const scoreName = matchFor || video.title;
+    if (scoreName) params.set("title", scoreName);
     if (bodyPartsKey) params.set("bodyParts", bodyPartsKey);
     return params.toString();
-  }, [video.youtubeId, video.title, region, bodyPartsKey]);
+  }, [video.youtubeId, video.title, video.source, region, bodyPartsKey]);
 
   const resolve = useCallback(async () => {
     setLoading(true);
@@ -128,10 +131,15 @@ export function InstitutionalVideoEmbed({
               {" · "}
               {active.source}
             </p>
+            <p className="mt-1 text-xs leading-relaxed text-brand-500">
+              Institutional education is matched to this movement by technique and body region.
+              Follow the written steps above for the exact MotionRx cues — the video demonstrates
+              related clinical form from a vetted healthcare source.
+            </p>
             {live?.swapped && (
               <p className="mt-1 text-xs text-amber-700">
-                Preferred video was unavailable — auto-refreshed to another vetted institutional
-                source so this link keeps working.
+                Preferred technique video was unavailable — auto-refreshed to the closest live
+                institutional match (same technique/region when possible).
               </p>
             )}
             {error && (

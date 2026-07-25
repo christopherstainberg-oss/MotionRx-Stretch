@@ -44,8 +44,15 @@ export type CoachExchange = {
   at: string;
 };
 
-export function suggestedAssessmentQuestions(sex?: SexSelection | null): string[] {
-  return suggestedQuestionsForSex(sex);
+export function suggestedAssessmentQuestions(
+  sex?: SexSelection | null,
+  opts?: {
+    pastMedicalHistory?: string;
+    currentMedicalHistory?: string;
+    paragraph?: string;
+  }
+): string[] {
+  return suggestedQuestionsForSex(sex, opts);
 }
 
 export function displayPreferredName(

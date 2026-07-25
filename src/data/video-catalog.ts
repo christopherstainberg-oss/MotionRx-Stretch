@@ -379,12 +379,14 @@ export const VIDEO_IDS: Record<VideoRegion, string> = {
 };
 
 /** Build a Stretch/Exercise video field from a region key */
-export function videoForRegion(region: VideoRegion, titleOverride?: string) {
+export function videoForRegion(region: VideoRegion, movementName?: string) {
   const v = VIDEO_BY_REGION[region];
   return {
     youtubeId: v.youtubeId,
-    title: titleOverride ?? v.title,
-    source: v.source,
+    title: v.title,
+    source: movementName
+      ? `${v.source} · Educational match for: ${movementName}`
+      : v.source,
     institution: v.institution,
   };
 }
@@ -441,11 +443,15 @@ export type TechniqueKey =
 
 type VideoCatalogKey = keyof typeof INSTITUTIONAL_VIDEOS;
 
-/** Best institutional demo per technique (form + safety focused) */
+/**
+ * Best institutional demo per technique (form + safety focused).
+ * Maps to the closest *content-accurate* catalog entry — not a generic filler.
+ * Catalog titles are shown honestly (never relabeled as a different exercise).
+ */
 export const VIDEO_BY_TECHNIQUE: Record<TechniqueKey, VideoCatalogKey> = {
-  "chin-tuck": "mayo_workday",
+  "chin-tuck": "mayo_shoulders",
   "neck-side": "mayo_shoulders",
-  cervical: "mayo_workday",
+  cervical: "mayo_shoulders",
   "chest-open": "cleveland_chest",
   "cat-cow": "cleveland_cat_cow",
   "spinal-flex": "nia_back",
@@ -460,16 +466,16 @@ export const VIDEO_BY_TECHNIQUE: Record<TechniqueKey, VideoCatalogKey> = {
   "thoracic-rotation": "cleveland_side_bend",
   scapular: "mayo_shoulders",
   "glute-bridge": "nia_lower_strength",
-  "bird-dog": "mayo_low_back",
+  "bird-dog": "cleveland_superman",
   "sit-to-stand": "dartmouth_standing",
   "wall-push": "nia_wall_pushups",
   "dead-bug": "vha_seated_core",
   step: "nia_lower_strength",
   "row-pull": "nia_upper_strength",
   balance: "nia_balance_one_foot",
-  "calf-raise": "mayo_desk_five",
+  "calf-raise": "nia_ankle",
   "carry-walk": "hopkins_move_more",
-  "rotator-cuff": "mayo_stretching_pt",
+  "rotator-cuff": "mayo_band_strength",
   serratus: "mayo_band_strength",
   "core-lateral": "vha_seated_core",
   "hip-hinge": "mayo_low_back",
@@ -477,7 +483,7 @@ export const VIDEO_BY_TECHNIQUE: Record<TechniqueKey, VideoCatalogKey> = {
   slr: "nia_lower_strength",
   tke: "nia_lower_strength",
   "foot-intrinsic": "nia_ankle",
-  "wrist-load": "mayo_band_strength",
+  "wrist-load": "mayo_or_stretch",
   "wall-sit": "nia_lower_strength",
   adductor: "vha_lower_yoga",
   "cervical-iso": "mayo_shoulders",
@@ -486,46 +492,196 @@ export const VIDEO_BY_TECHNIQUE: Record<TechniqueKey, VideoCatalogKey> = {
   general: "nia_flexibility_6",
   "leg-strength": "nia_lower_strength",
   "hip-strength": "nia_lower_strength",
-  posture: "mayo_workday",
+  posture: "mayo_shoulders",
 };
+
+function normalizeMatchText(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s/+-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Score how well a catalog video matches a movement name / technique / region.
+ * Higher = better content alignment (used so we don't show a calf video for chin tuck).
+ */
+export function scoreCatalogVideoMatch(
+  video: InstitutionalVideo,
+  opts: {
+    name?: string;
+    technique?: string;
+    region?: string;
+    bodyParts?: string[];
+  }
+): number {
+  let score = 0;
+  const title = normalizeMatchText(video.title);
+  const hay = normalizeMatchText(
+    [video.title, video.source, ...(video.techniques || []), ...video.regions].join(" ")
+  );
+  const name = normalizeMatchText(opts.name || "");
+  const technique = (opts.technique || "").toLowerCase();
+
+  // Technique key listed on catalog entry
+  if (technique && video.techniques?.some((t) => t.toLowerCase() === technique)) {
+    score += 40;
+  }
+  if (technique && video.techniques?.some((t) => t.toLowerCase().includes(technique) || technique.includes(t.toLowerCase()))) {
+    score += 18;
+  }
+
+  // Region tags
+  const region = (opts.region || "").toString();
+  if (region && video.regions.includes(region)) score += 14;
+  for (const bp of opts.bodyParts || []) {
+    const r = inferRegionFromBodyParts([bp]);
+    if (video.regions.includes(r) || video.regions.includes(bp)) score += 6;
+  }
+
+  // Name tokens vs video title (most important for specificity)
+  const tokens = name.split(" ").filter((t) => t.length >= 4);
+  const strongTokens = [
+    "hamstring",
+    "quad",
+    "calf",
+    "ankle",
+    "shoulder",
+    "neck",
+    "chin",
+    "tuck",
+    "chest",
+    "hip",
+    "glute",
+    "bridge",
+    "balance",
+    "push",
+    "wall",
+    "cat",
+    "cow",
+    "bird",
+    "dog",
+    "superman",
+    "row",
+    "step",
+    "sit",
+    "stand",
+    "flexor",
+    "piriformis",
+    "thoracic",
+    "wrist",
+    "core",
+    "dead",
+    "bug",
+    "side",
+    "bend",
+  ];
+  for (const t of tokens) {
+    if (title.includes(t)) score += 12;
+    else if (hay.includes(t)) score += 5;
+  }
+  for (const t of strongTokens) {
+    if (name.includes(t) && (title.includes(t) || hay.includes(t))) score += 16;
+  }
+
+  // Prefer technique-specific demos over generic "minute" / full workouts when name is specific
+  if (tokens.length >= 2 && /minute|importance|move more|full workout|15-minute/i.test(video.title)) {
+    score -= 12;
+  }
+  if (video.techniques && video.techniques.length > 0) score += 4;
+
+  return score;
+}
+
+/** Best catalog video for free-text movement name (+ optional technique/region). */
+export function bestCatalogVideoForMovement(opts: {
+  name?: string;
+  technique?: TechniqueKey | string;
+  region?: VideoRegion | string;
+  bodyParts?: string[];
+}): InstitutionalVideo {
+  const region =
+    (opts.region as VideoRegion) ||
+    inferRegionFromBodyParts(opts.bodyParts) ||
+    "general";
+
+  let best: InstitutionalVideo | undefined;
+  let bestScore = -1;
+
+  // Prefer technique map first as a strong candidate
+  if (opts.technique && opts.technique in VIDEO_BY_TECHNIQUE) {
+    const key = VIDEO_BY_TECHNIQUE[opts.technique as TechniqueKey];
+    const v = INSTITUTIONAL_VIDEOS[key];
+    const s = scoreCatalogVideoMatch(v, { ...opts, region }) + 30;
+    best = v;
+    bestScore = s;
+  }
+
+  for (const v of Object.values(INSTITUTIONAL_VIDEOS)) {
+    const s = scoreCatalogVideoMatch(v, { ...opts, region });
+    if (s > bestScore) {
+      bestScore = s;
+      best = v;
+    }
+  }
+
+  if (best && bestScore >= 12) return best;
+
+  // Fall back to region primary when score is weak
+  return VIDEO_BY_REGION[region] || INSTITUTIONAL_VIDEOS.nia_flexibility_6;
+}
 
 /**
  * Technique-specific video for proper demonstration.
- * Falls back to region mapping if technique key is unknown.
+ * Title is ALWAYS the real institutional video title (never a fake stretch name).
+ * Optional movementName is stored only in source attribution.
  */
 export function videoForTechnique(
   technique: TechniqueKey | string,
-  titleOverride?: string
+  movementName?: string
 ) {
-  const key =
-    technique in VIDEO_BY_TECHNIQUE
-      ? VIDEO_BY_TECHNIQUE[technique as TechniqueKey]
-      : "nia_flexibility_6";
-  const v = INSTITUTIONAL_VIDEOS[key];
+  const v = bestCatalogVideoForMovement({
+    technique,
+    name: movementName,
+  });
   return {
     youtubeId: v.youtubeId,
-    title: titleOverride ?? v.title,
-    source: v.source,
+    title: v.title,
+    source: movementName
+      ? `${v.source} · Educational match for: ${movementName}`
+      : v.source,
     institution: v.institution,
   };
 }
 
 /**
  * Resolve the most specific institutional video for a library item.
- * Order: explicit technique → region → general flexibility.
+ * Scores catalog by technique + movement name so videos track written content.
  */
 export function videoForMovement(opts: {
   technique?: TechniqueKey | string;
   region?: VideoRegion | string;
+  /** Written stretch/exercise name — used for content matching */
   title?: string;
+  name?: string;
+  bodyParts?: string[];
 }) {
-  if (opts.technique && opts.technique in VIDEO_BY_TECHNIQUE) {
-    return videoForTechnique(opts.technique, opts.title);
-  }
-  if (opts.region && opts.region in VIDEO_BY_REGION) {
-    return videoForRegion(opts.region as VideoRegion, opts.title);
-  }
-  return videoForTechnique("general", opts.title);
+  const movementName = opts.name || opts.title;
+  const v = bestCatalogVideoForMovement({
+    technique: opts.technique,
+    region: opts.region,
+    name: movementName,
+    bodyParts: opts.bodyParts,
+  });
+  return {
+    youtubeId: v.youtubeId,
+    title: v.title,
+    source: movementName
+      ? `${v.source} · Educational match for: ${movementName}`
+      : v.source,
+    institution: v.institution,
+  };
 }
 
 /** Flat list of every catalog youtubeId (for audits / oEmbed re-checks) */

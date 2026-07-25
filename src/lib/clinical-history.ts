@@ -231,8 +231,15 @@ export function mergeHistoryText(manual: string, parsed: string): string {
   return Array.from(parts).join("; ");
 }
 
-/** Sex-aware suggested Q&A prompts for Assessment */
-export function suggestedQuestionsForSex(sex?: SexSelection | null): string[] {
+/** Sex-aware + history-gap clarifying Q&A prompts for Assessment */
+export function suggestedQuestionsForSex(
+  sex?: SexSelection | null,
+  opts?: {
+    pastMedicalHistory?: string;
+    currentMedicalHistory?: string;
+    paragraph?: string;
+  }
+): string[] {
   const base = [
     "What should I focus on first?",
     "Is it okay to exercise with this pain?",
@@ -243,30 +250,46 @@ export function suggestedQuestionsForSex(sex?: SexSelection | null): string[] {
     "What does my story suggest clinically?",
   ];
 
+  const clarifying: string[] = [];
+  const hasPmh = Boolean(opts?.pastMedicalHistory?.trim());
+  const hasCmh = Boolean(opts?.currentMedicalHistory?.trim());
+  const storyLen = (opts?.paragraph || "").trim().length;
+
+  if (!hasPmh && storyLen >= 20) {
+    clarifying.push("Have you had any past surgeries, fractures, or major diagnoses?");
+  }
+  if (!hasCmh && storyLen >= 20) {
+    clarifying.push("What medical conditions are you currently managing?");
+  }
+  if (!sex || sex === "prefer-not-to-say") {
+    clarifying.push("Should I factor sex-specific precautions into my plan?");
+  }
+  if (storyLen < 40) {
+    clarifying.push("What else should I add to my story for a safer plan?");
+  }
+
+  let sexQs: string[] = [];
   if (sex === "female") {
-    return [
-      ...base,
+    sexQs = [
       "Any pelvic floor or pregnancy-related precautions?",
       "How should bone health or menopause affect loading?",
       "Is core work safe with my history?",
     ];
-  }
-  if (sex === "male") {
-    return [
-      ...base,
+  } else if (sex === "male") {
+    sexQs = [
       "Any pelvic or prostate-related movement tips?",
       "How should cardiac history change intensity?",
       "What about heavy lifting and blood pressure?",
     ];
-  }
-  if (sex === "intersex" || sex === "unspecified") {
-    return [
-      ...base,
+  } else if (sex === "intersex" || sex === "unspecified") {
+    sexQs = [
       "How do you keep recommendations inclusive of my body?",
       "What universal safety rules still apply to me?",
     ];
   }
-  return base;
+
+  // Clarifying questions first so gaps get filled; then sex-specific; then base
+  return Array.from(new Set([...clarifying, ...sexQs, ...base])).slice(0, 12);
 }
 
 /** Short coaching blurb for plan / Jeffery */

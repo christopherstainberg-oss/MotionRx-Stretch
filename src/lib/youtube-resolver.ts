@@ -11,6 +11,7 @@ import {
   candidatesForRegion,
   getCatalogVideoById,
   inferRegionFromBodyParts,
+  scoreCatalogVideoMatch,
   videoForRegion,
 } from "@/data/video-catalog";
 import {
@@ -71,6 +72,7 @@ export async function resolveLiveVideo(opts: {
   preferredId?: string;
   region?: VideoRegion | string;
   bodyParts?: string[];
+  /** Movement name / library title — used only for match scoring of fallbacks */
   titleOverride?: string;
   /** Skip background catalog refresh (e.g. during bulk resolve) */
   skipBackgroundRefresh?: boolean;
@@ -90,7 +92,8 @@ export async function resolveLiveVideo(opts: {
     VIDEO_BY_REGION[region]?.youtubeId ||
     VIDEO_BY_REGION.general.youtubeId;
 
-  const titleOverride = opts.titleOverride;
+  // Never relabel a different YouTube video with the stretch name — use real catalog title
+  const movementHint = opts.titleOverride;
 
   const ordered: InstitutionalVideo[] = [];
   const seen = new Set<string>();
@@ -107,16 +110,23 @@ export async function resolveLiveVideo(opts: {
     push(preferredMeta);
   }
 
-  for (const v of candidatesForRegion(region)) push(v);
-  // Prefer technique-tagged catalog peers when preferred meta has techniques
-  if (preferredMeta?.techniques?.length) {
-    for (const v of allCatalogVideos()) {
-      if (v.techniques?.some((t) => preferredMeta.techniques!.includes(t))) push(v);
-    }
-  }
-  for (const v of allCatalogVideos()) push(v);
+  // Rank remaining catalog by content match so swaps stay on-topic
+  const ranked = allCatalogVideos()
+    .map((v) => ({
+      v,
+      score: scoreCatalogVideoMatch(v, {
+        name: movementHint || preferredMeta?.title,
+        region,
+        bodyParts: opts.bodyParts,
+        technique: preferredMeta?.techniques?.[0],
+      }),
+    }))
+    .sort((a, b) => b.score - a.score);
 
-  // Pass 1: prefer confirmed-live
+  for (const { v } of ranked) push(v);
+  for (const v of candidatesForRegion(region)) push(v);
+
+  // Pass 1: prefer confirmed-live, in relevance order
   let firstUnknown: { video: InstitutionalVideo; author?: string } | null = null;
   for (const candidate of ordered) {
     const entry = await checkYoutubeId(candidate.youtubeId);
@@ -124,7 +134,8 @@ export async function resolveLiveVideo(opts: {
       return toResolved(candidate, {
         preferredId,
         region,
-        titleOverride,
+        // Always serve the real institutional title
+        titleOverride: candidate.title,
         author: entry.author,
       });
     }
@@ -138,7 +149,7 @@ export async function resolveLiveVideo(opts: {
     return toResolved(firstUnknown.video, {
       preferredId,
       region,
-      titleOverride,
+      titleOverride: firstUnknown.video.title,
       author: firstUnknown.author,
     });
   }
@@ -146,12 +157,16 @@ export async function resolveLiveVideo(opts: {
   // Skip confirmed-dead only; still prefer preferred if somehow not dead-checked
   for (const candidate of ordered) {
     if (!(await isYoutubeIdDead(candidate.youtubeId))) {
-      return toResolved(candidate, { preferredId, region, titleOverride });
+      return toResolved(candidate, {
+        preferredId,
+        region,
+        titleOverride: candidate.title,
+      });
     }
   }
 
   // Absolute last resort: static primary for region (never invent non-catalog IDs)
-  const fallback = videoForRegion(region, titleOverride);
+  const fallback = videoForRegion(region);
   return {
     ...fallback,
     swapped: fallback.youtubeId !== preferredId,
@@ -170,12 +185,15 @@ export async function ensureLiveVideoField(
     preferredId: video.youtubeId,
     region: opts?.region,
     bodyParts: opts?.bodyParts,
-    titleOverride: video.title,
+    // Pass movement attribution string for scoring only
+    titleOverride: video.source?.includes("Educational match for:")
+      ? video.source.split("Educational match for:")[1]?.trim()
+      : video.title,
   });
   return {
     youtubeId: live.youtubeId,
     title: live.title,
-    source: live.source,
+    source: video.source || live.source,
     institution: live.institution,
     swapped: live.swapped,
     preferredId: live.preferredId,
