@@ -33,11 +33,16 @@ export async function POST(req: Request) {
     ? body.descriptorIds.map(String).slice(0, 24)
     : [];
 
+  const conditionIds = Array.isArray(body.conditionIds)
+    ? body.conditionIds.map(String).slice(0, 24)
+    : [];
+
   const profile: PainProfile = {
     id: String(body.id || uuid()),
     userId,
     updatedAt: new Date().toISOString(),
     descriptorIds,
+    conditionIds,
     freeText: body.freeText ? sanitizeText(String(body.freeText), 2000) : undefined,
     overallPain: clampInt(Number(body.overallPain), 0, 10, 0),
     areas: (Array.isArray(body.areas) ? body.areas.slice(0, 15) : []) as BodyPart[],

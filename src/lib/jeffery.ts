@@ -16,6 +16,10 @@ import {
   summarizeDescriptors,
 } from "@/data/pain-descriptors";
 import {
+  matchConditionsFromText,
+  summarizeConditions,
+} from "@/data/clinical-conditions";
+import {
   buildVisitModalityPlan,
   modalityCoachBlurb,
 } from "@/lib/modality-engine";
@@ -103,6 +107,11 @@ export function jefferyLocalReply(
   const descLabels = getDescriptorsByIds(descIds)
     .map((d) => d.label)
     .slice(0, 8);
+
+  const chatCond = matchConditionsFromText(userText, 8);
+  const routineCond = ctx.routines.flatMap((r) => r.generatedFrom?.conditionIds || []);
+  const condIds = Array.from(new Set([...chatCond, ...routineCond])).slice(0, 12);
+  const condHints = summarizeConditions(condIds);
 
   const adjustments = ctx.routines.flatMap((r) =>
     r.selfAdjustHistory.map(
@@ -241,8 +250,11 @@ export function jefferyLocalReply(
     descLabels.length
       ? `\n**Descriptor-driven dosing hints:** stretch bias ${descHints.stretchBias.toFixed(2)}, exercise bias ${descHints.exerciseBias.toFixed(2)}, irritability boost +${descHints.effectivePainBoost.toFixed(1)}.${descHints.biases.length ? ` Biases: ${descHints.biases.slice(0, 5).join(", ")}.` : ""}`
       : "",
-    descHints.redFlags.length
-      ? `\n**Safety notes:** ${descHints.redFlags[0]}`
+    condIds.length
+      ? `\n**Clinical conditions detected:** ${condHints.summaryLines.slice(0, 6).join("; ")}.${condHints.clearanceRequired ? " Clearance-sensitive: keep volume conservative and follow licensed clinician guidance." : ""}`
+      : "",
+    descHints.redFlags.length || condHints.redFlags.length
+      ? `\n**Safety notes:** ${[...descHints.redFlags, ...condHints.redFlags][0]}`
       : "",
     ``,
     `**Clinical education:**\n${edu}`,

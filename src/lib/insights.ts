@@ -10,6 +10,10 @@ import type {
   ModalityPlan,
 } from "@/lib/types";
 import { getDescriptorsByIds, summarizeDescriptors } from "@/data/pain-descriptors";
+import {
+  getConditionsByIds,
+  summarizeConditions,
+} from "@/data/clinical-conditions";
 import { getModalityById } from "@/data/modalities";
 import { buildVisitModalityPlan } from "@/lib/modality-engine";
 import { v4 as uuid } from "uuid";
@@ -76,6 +80,34 @@ export function correlateInsights(input: {
         at: now,
       });
     }
+  }
+
+  // Clinical conditions from routines / profile
+  const fromConditions = input.routines.flatMap((r) => r.generatedFrom?.conditionIds || []);
+  const fromProfileConditions = input.painProfile?.conditionIds || [];
+  const allCond = [...fromConditions, ...fromProfileConditions];
+  const condFreq = new Map<string, number>();
+  for (const id of allCond) condFreq.set(id, (condFreq.get(id) || 0) + 1);
+  const topCond = Array.from(condFreq.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([id]) => id);
+  if (topCond.length) {
+    const clabels = getConditionsByIds(topCond).map((c) => c.label);
+    const ch = summarizeConditions(topCond);
+    insights.push({
+      id: uuid(),
+      title: "Clinical conditions shaping your programs",
+      summary: `Matched conditions: ${clabels.join(", ")}. Categories: ${ch.categories.slice(0, 4).join(", ")}. Irritability contribution ~${ch.effectivePainBoost.toFixed(1)}.`,
+      severity: ch.clearanceRequired || ch.redFlags.length ? "caution" : "info",
+      sources: ["routines", "pain", "descriptors"],
+      recommendation: ch.clearanceRequired
+        ? "Clearance-sensitive conditions detected—keep dosing conservative and follow your clinician protocol."
+        : ch.biases.includes("neural-caution")
+          ? "Neural caution is active—avoid aggressive end-range and favor controlled volume."
+          : "Condition-matched biases are already influencing stretch/exercise mix and volume.",
+      at: now,
+    });
   }
 
   // Descriptor drift: profile vs latest session

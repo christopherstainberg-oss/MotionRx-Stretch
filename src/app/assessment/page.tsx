@@ -13,6 +13,13 @@ import {
   matchDescriptorsFromText,
   summarizeDescriptors,
 } from "@/data/pain-descriptors";
+import {
+  CLINICAL_CONDITION_STATS,
+  CLINICAL_CATEGORY_LABELS,
+  getConditionById,
+  matchConditionsFromText,
+  summarizeConditions,
+} from "@/data/clinical-conditions";
 import { generateHybridPlan, parseConcernParagraph } from "@/lib/routine-engine";
 import { planFromSymptomInput } from "@/lib/modality-engine";
 import type {
@@ -131,6 +138,16 @@ export default function AssessmentPage() {
 
   const descHints = useMemo(() => summarizeDescriptors(descriptorIds), [descriptorIds]);
 
+  const paragraphConditions = useMemo(() => {
+    if (paragraph.trim().length < 12) return [] as string[];
+    return matchConditionsFromText(paragraph, 12);
+  }, [paragraph]);
+
+  const conditionHints = useMemo(
+    () => summarizeConditions(paragraphConditions),
+    [paragraphConditions]
+  );
+
   function applyParagraphParse() {
     if (!parsedPreview) return;
     setAreas(parsedPreview.areas);
@@ -152,6 +169,7 @@ export default function AssessmentPage() {
     // Always re-merge latest paragraph matches for plan generation
     const fromParagraph = matchDescriptorsFromText(paragraph, 14);
     const mergedDesc = Array.from(new Set([...descriptorIds, ...fromParagraph]));
+    const fromConditions = matchConditionsFromText(paragraph, 12);
     return {
       areas,
       symptoms,
@@ -162,6 +180,7 @@ export default function AssessmentPage() {
       concernParagraph: paragraph,
       preferKinds,
       painDescriptorIds: mergedDesc,
+      conditionIds: fromConditions,
     };
   }, [
     areas,
@@ -207,6 +226,8 @@ export default function AssessmentPage() {
       painLevels,
       areas.length ? areas : (["full-body"] as BodyPart[])
     );
+    const finalConditions =
+      routine.generatedFrom?.conditionIds || input.conditionIds || paragraphConditions;
     const profile = saveLocalPainProfile({
       userId: "local",
       descriptorIds: finalDesc,
@@ -219,10 +240,18 @@ export default function AssessmentPage() {
       localStorage.setItem(`routine:${routine.id}`, JSON.stringify(routine));
       localStorage.setItem("active-routine", JSON.stringify(routine));
       localStorage.setItem("modality-plan", JSON.stringify(modPlan));
+      localStorage.setItem(
+        "clinical-conditions",
+        JSON.stringify({ ids: finalConditions, at: new Date().toISOString() })
+      );
       await fetch("/api/pain-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...profile, source: "assess" }),
+        body: JSON.stringify({
+          ...profile,
+          conditionIds: finalConditions,
+          source: "assess",
+        }),
       }).catch(() => {});
       await fetch("/api/modalities", {
         method: "POST",
@@ -269,18 +298,22 @@ export default function AssessmentPage() {
         </h1>
         <p className="mt-1.5 text-sm leading-relaxed text-brand-700/85">
           Start with a short paragraph about your issue. We extract{" "}
-          <strong>clinical pain descriptors</strong> from your words and build stretch/exercise plans
-          around themΓÇöthen you can fine-tune.
+          <strong>clinical pain descriptors</strong> and{" "}
+          <strong>musculoskeletal injuries, surgeries, and complex medical conditions</strong>{" "}
+          from your words ({CLINICAL_CONDITION_STATS.capacity.toLocaleString()}+ catalog capacity)
+          and build stretch and exercise plans around them—then you can fine-tune.
         </p>
       </div>
 
-      {/* Primary: paragraph intake with live descriptor extraction */}
+      {/* Primary: paragraph intake with live descriptor + condition extraction */}
       <section className="card space-y-4 p-5">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <h2 className="font-semibold text-brand-900">Describe your issue (paragraph)</h2>
             <p className="text-sm text-brand-700/85">
-              Write freelyΓÇöhow it feels, when it&apos;s worse, what helps, and where it is.
+              Write freely—how it feels, when it is worse, what helps, where it is, and any
+              diagnoses, surgeries, or medical conditions (for example ACL, knee replacement, stroke,
+              COPD, diabetes).
             </p>
           </div>
           <label className="flex items-center gap-2 text-xs font-medium text-brand-700">
@@ -387,7 +420,7 @@ export default function AssessmentPage() {
         )}
 
         {descriptorIds.length > 0 && (
-          <div className="rounded-xl bg-brand-50/80 p-3 text-sm text-brand-800">
+          <div className="rounded-xl bg-brand-50/80 p-3 text-sm text-brand-800 dark:bg-brand-900/50">
             <p className="font-medium">
               Active descriptors shaping your program ({descriptorIds.length})
             </p>
@@ -399,13 +432,51 @@ export default function AssessmentPage() {
               ))}
             </div>
             <p className="mt-2 text-xs">
-              Stretch bias {(descHints.stretchBias * 100).toFixed(0)}% ┬╖ Exercise bias{" "}
-              {(descHints.exerciseBias * 100).toFixed(0)}% ┬╖ Irritability +
+              Stretch bias {(descHints.stretchBias * 100).toFixed(0)}% · Exercise bias{" "}
+              {(descHints.exerciseBias * 100).toFixed(0)}% · Irritability +
               {descHints.effectivePainBoost.toFixed(1)}
               {descHints.biases.length
-                ? ` ┬╖ ${descHints.biases.slice(0, 5).join(", ")}`
+                ? ` · ${descHints.biases.slice(0, 5).join(", ")}`
                 : ""}
             </p>
+          </div>
+        )}
+
+        {paragraphConditions.length > 0 && (
+          <div className="rounded-xl border border-brand-200 bg-white p-3 text-sm text-brand-800 dark:border-brand-700 dark:bg-brand-950">
+            <p className="flex items-center gap-2 font-medium text-brand-900">
+              <Sparkles className="h-4 w-4 text-brand-600" />
+              Clinical conditions matched from your paragraph ({paragraphConditions.length})
+            </p>
+            <p className="mt-1 text-xs text-brand-600">
+              Categories:{" "}
+              {conditionHints.categories
+                .map((c) => CLINICAL_CATEGORY_LABELS[c] || c)
+                .slice(0, 6)
+                .join(", ")}
+              {conditionHints.clearanceRequired
+                ? " · Clearance-sensitive: volume and intensity will be capped"
+                : ""}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {paragraphConditions.map((id) => {
+                const c = getConditionById(id);
+                return (
+                  <span
+                    key={id}
+                    className="chip"
+                    title={c?.plainLanguage || id}
+                  >
+                    {c?.label || id}
+                  </span>
+                );
+              })}
+            </div>
+            {conditionHints.redFlags.length > 0 && (
+              <p className="mt-2 rounded-lg bg-rose-50 p-2 text-xs text-rose-900 dark:bg-rose-950/40 dark:text-rose-100">
+                {conditionHints.redFlags[0]}
+              </p>
+            )}
           </div>
         )}
       </section>
@@ -599,7 +670,7 @@ export default function AssessmentPage() {
         onClick={createPlan}
         disabled={saving || (!paragraph.trim() && areas.length === 0 && descriptorIds.length === 0)}
       >
-        {saving ? "Building planΓÇª" : "Generate clinical stretch + exercise plan"}
+        {saving ? "Building plan…" : "Generate clinical stretch + exercise plan"}
       </button>
 
       {generated && (
@@ -607,14 +678,28 @@ export default function AssessmentPage() {
           <h2 className="text-lg font-bold text-brand-950">{generated.name}</h2>
           <p className="text-sm text-brand-700">{generated.description}</p>
           <p className="text-sm">
-            ~{generated.estimatedMinutes} min ┬╖ {generated.difficulty} ┬╖{" "}
+            ~{generated.estimatedMinutes} min · {generated.difficulty} ·{" "}
             {generated.items.length} movements (
-            {generated.stretchIds.length} stretches ┬╖ {generated.exerciseIds?.length || 0} exercises)
+            {generated.stretchIds.length} stretches · {generated.exerciseIds?.length || 0} exercises)
           </p>
           {generated.selfAdjustHistory[0] && (
             <p className="rounded-xl bg-brand-50 p-3 text-sm text-brand-800">
               <strong>Dosing note:</strong> {generated.selfAdjustHistory[0].details}
             </p>
+          )}
+          {(generated.generatedFrom?.conditionSummary || []).length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">
+                Condition-driven adjustments
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {generated.generatedFrom!.conditionSummary!.map((label) => (
+                  <span key={label} className="chip">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
           {(generated.generatedFrom?.descriptorSummary || []).length > 0 && (
             <div>
@@ -643,7 +728,7 @@ export default function AssessmentPage() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span>
-                      {i + 1}. <span className="capitalize text-brand-500">{item.kind}</span> ΓÇö{" "}
+                      {i + 1}. <span className="capitalize text-brand-500">{item.kind}</span> —{" "}
                       {m?.name ?? item.movementId}
                     </span>
                     {m && (

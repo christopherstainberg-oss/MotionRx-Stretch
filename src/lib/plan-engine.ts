@@ -4,6 +4,10 @@ import {
   matchDescriptorsFromText,
   summarizeDescriptors,
 } from "@/data/pain-descriptors";
+import {
+  matchConditionsFromText,
+  summarizeConditions,
+} from "@/data/clinical-conditions";
 import type {
   BodyPart,
   Difficulty,
@@ -17,6 +21,7 @@ import type {
 import { v4 as uuid } from "uuid";
 
 export { matchDescriptorsFromText, analyzeParagraphDescriptors } from "@/data/pain-descriptors";
+export { matchConditionsFromText, summarizeConditions } from "@/data/clinical-conditions";
 
 const DIFFICULTY_RANK: Record<Difficulty, number> = {
   beginner: 1,
@@ -112,6 +117,9 @@ export function parseConcernParagraph(paragraph: string): {
   /** Clinical pain descriptors extracted from the paragraph */
   painDescriptorIds: string[];
   descriptorLabels: string[];
+  /** Injuries, surgeries, and complex medical conditions from paragraph */
+  conditionIds: string[];
+  conditionLabels: string[];
 } {
   const text = paragraph.toLowerCase();
   const areas = new Set<BodyPart>();
@@ -157,13 +165,28 @@ export function parseConcernParagraph(paragraph: string): {
 
   const painDescriptorIds = matchDescriptorsFromText(paragraph, 14);
   const descHints = summarizeDescriptors(painDescriptorIds);
-  // Adjust estimated pain with descriptor irritability
-  pain = Math.min(10, Math.max(0, pain + Math.round(descHints.effectivePainBoost * 0.5)));
+  const conditionIds = matchConditionsFromText(paragraph, 12);
+  const condHints = summarizeConditions(conditionIds);
+
+  // Condition body regions enrich area set
+  condHints.bodyParts.forEach((bp) => areas.add(bp));
+
+  // Adjust estimated pain with descriptor + condition irritability
+  pain = Math.min(
+    10,
+    Math.max(
+      0,
+      pain +
+        Math.round(descHints.effectivePainBoost * 0.5) +
+        Math.round(condHints.effectivePainBoost * 0.4)
+    )
+  );
 
   const exScore = EXERCISE_HINTS.filter((h) => text.includes(h)).length;
   const stScore = STRETCH_HINTS.filter((h) => text.includes(h)).length;
   let preferKinds: MovementKind[] | "auto" = "auto";
-  if (descHints.preferKinds !== "auto") preferKinds = descHints.preferKinds;
+  if (condHints.preferKinds !== "auto") preferKinds = condHints.preferKinds;
+  else if (descHints.preferKinds !== "auto") preferKinds = descHints.preferKinds;
   else if (exScore > stScore + 1) preferKinds = ["exercise", "stretch"];
   else if (stScore > exScore + 1) preferKinds = ["stretch", "exercise"];
   else preferKinds = "auto";
@@ -176,6 +199,8 @@ export function parseConcernParagraph(paragraph: string): {
     estimatedPain: pain,
     painDescriptorIds,
     descriptorLabels: descHints.summaryLines,
+    conditionIds,
+    conditionLabels: condHints.summaryLines,
   };
 }
 
@@ -249,7 +274,7 @@ function toItem(movementId: string, kind: MovementKind): RoutineItem {
   };
 }
 
-/** Clinically styled hybrid plan from chips + free-text + pain descriptors */
+/** Clinically styled hybrid plan from chips + free-text + pain descriptors + conditions */
 export function generateHybridPlan(input: SymptomInput, userId?: string): Routine {
   const parsed = input.concernParagraph
     ? parseConcernParagraph(input.concernParagraph)
@@ -263,24 +288,63 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   );
   const descHints = summarizeDescriptors(painDescriptorIds);
 
-  const areas = input.areas.length
-    ? input.areas
-    : parsed?.areas ?? (["full-body"] as BodyPart[]);
+  const textConditions = input.concernParagraph
+    ? matchConditionsFromText(input.concernParagraph, 10)
+    : [];
+  const conditionIds = Array.from(
+    new Set([...(input.conditionIds || []), ...(parsed?.conditionIds || []), ...textConditions])
+  );
+  const condHints = summarizeConditions(conditionIds);
+
+  // Merge program biases from descriptors + clinical conditions
+  const mergedBiases = Array.from(
+    new Set([...descHints.biases, ...condHints.biases])
+  );
+  const mergedAvoid = Array.from(
+    new Set([...descHints.avoidTags, ...condHints.avoidTags])
+  );
+  const mergedPrefer = Array.from(
+    new Set([...descHints.preferTags, ...condHints.preferTags])
+  );
+  const combinedHints = {
+    ...descHints,
+    effectivePainBoost: descHints.effectivePainBoost + condHints.effectivePainBoost,
+    biases: mergedBiases,
+    avoidTags: mergedAvoid,
+    preferTags: mergedPrefer,
+    stretchBias: (descHints.stretchBias + condHints.stretchBias) / 2,
+    exerciseBias: (descHints.exerciseBias + condHints.exerciseBias) / 2,
+    redFlags: [...descHints.redFlags, ...condHints.redFlags],
+    maxDifficulty: (() => {
+      const rank = { beginner: 1, intermediate: 2, advanced: 3 };
+      const a = descHints.maxDifficulty;
+      const b = condHints.maxDifficulty;
+      if (!a) return b;
+      if (!b) return a;
+      return rank[a] <= rank[b] ? a : b;
+    })(),
+  };
+
+  const areaSet = new Set<BodyPart>(
+    input.areas.length ? input.areas : parsed?.areas ?? ["full-body"]
+  );
+  condHints.bodyParts.forEach((bp) => areaSet.add(bp));
+  const areas = Array.from(areaSet);
   const symptoms = input.symptoms.length ? input.symptoms : parsed?.symptoms ?? [];
   const goals = input.goals.length ? input.goals : parsed?.goals ?? [];
   const rawAvg =
     areas.reduce((sum, a) => sum + (input.painLevels[a] ?? parsed?.estimatedPain ?? 3), 0) /
     Math.max(areas.length, 1);
-  const avgPain = Math.min(10, rawAvg + descHints.effectivePainBoost);
+  const avgPain = Math.min(10, rawAvg + combinedHints.effectivePainBoost);
 
   let difficulty = input.difficulty;
-  if (descHints.maxDifficulty) {
+  if (combinedHints.maxDifficulty) {
     const rank = { beginner: 1, intermediate: 2, advanced: 3 };
-    if (rank[descHints.maxDifficulty] < rank[difficulty]) {
-      difficulty = descHints.maxDifficulty;
+    if (rank[combinedHints.maxDifficulty] < rank[difficulty]) {
+      difficulty = combinedHints.maxDifficulty;
     }
   }
-  if (avgPain >= 6) difficulty = "beginner";
+  if (avgPain >= 6 || condHints.clearanceRequired) difficulty = "beginner";
 
   const merged: SymptomInput = {
     ...input,
@@ -289,6 +353,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     goals,
     difficulty,
     painDescriptorIds,
+    conditionIds,
     painLevels: {
       ...Object.fromEntries(areas.map((a) => [a, input.painLevels[a] ?? parsed?.estimatedPain ?? 3])),
       ...input.painLevels,
@@ -298,11 +363,15 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   const prefer: MovementKind[] =
     input.preferKinds && input.preferKinds !== "auto"
       ? input.preferKinds
-      : descHints.preferKinds !== "auto"
-        ? descHints.preferKinds
-        : parsed?.preferKinds && parsed.preferKinds !== "auto"
-          ? parsed.preferKinds
-          : (["stretch", "exercise"] as MovementKind[]);
+      : combinedHints.preferKinds !== "auto" && Array.isArray(combinedHints.preferKinds)
+        ? combinedHints.preferKinds
+        : condHints.preferKinds !== "auto"
+          ? condHints.preferKinds
+          : descHints.preferKinds !== "auto"
+            ? descHints.preferKinds
+            : parsed?.preferKinds && parsed.preferKinds !== "auto"
+              ? parsed.preferKinds
+              : (["stretch", "exercise"] as MovementKind[]);
 
   const stretchCandidates = BASE_STRETCHES.filter((s) =>
     rankOk(s.difficulty, difficulty, avgPain)
@@ -317,7 +386,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         merged,
         Math.max(...s.bodyParts.map((bp) => merged.painLevels[bp] ?? avgPain), 0),
         "stretch",
-        descHints
+        combinedHints
       ),
     }))
     .sort((a, b) => b.score - a.score);
@@ -335,7 +404,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         merged,
         Math.max(...e.bodyParts.map((bp) => merged.painLevels[bp] ?? avgPain), 0),
         "exercise",
-        descHints
+        combinedHints
       ),
     }))
     .sort((a, b) => b.score - a.score);
@@ -345,10 +414,10 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   const exerciseIds: string[] = [];
   let minutes = 0;
   let target = Math.max(8, Math.min(45, input.availableMinutes));
-  if (descHints.biases.includes("short-volume")) {
+  if (combinedHints.biases.includes("short-volume")) {
     target = Math.min(target, Math.max(8, Math.round(target * 0.7)));
   }
-  if (descHints.biases.includes("defer-to-provider")) {
+  if (combinedHints.biases.includes("defer-to-provider") || condHints.clearanceRequired) {
     target = Math.min(target, 10);
   }
 
@@ -361,7 +430,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   }
 
   // Extra gentle mobility when warm-up-heavy descriptors present
-  if (descHints.biases.includes("warm-up-heavy")) {
+  if (combinedHints.biases.includes("warm-up-heavy")) {
     const extraWarm = BASE_STRETCHES.find((s) => s.id === "pelvic-tilt");
     if (extraWarm && !stretchIds.includes(extraWarm.id)) {
       items.push(toItem(extraWarm.id, "stretch"));
@@ -372,14 +441,16 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
 
   const wantStretch = prefer.includes("stretch");
   const wantExercise =
-    prefer.includes("exercise") && !descHints.biases.includes("defer-to-provider");
+    prefer.includes("exercise") &&
+    !combinedHints.biases.includes("defer-to-provider") &&
+    !condHints.clearanceRequired;
 
   // Interleave based on preference order
   let maxStretches = wantStretch ? (wantExercise ? 4 : 6) : 1;
   let maxExercises = wantExercise ? (wantStretch ? 4 : 6) : 0;
-  if (descHints.stretchBias > 0.4) maxStretches += 1;
-  if (descHints.exerciseBias > 0.4) maxExercises += 1;
-  if (descHints.biases.includes("short-volume")) {
+  if (combinedHints.stretchBias > 0.4) maxStretches += 1;
+  if (combinedHints.exerciseBias > 0.4) maxExercises += 1;
+  if (combinedHints.biases.includes("short-volume")) {
     maxStretches = Math.min(maxStretches, 4);
     maxExercises = Math.min(maxExercises, 3);
   }
@@ -431,23 +502,34 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     painDescriptorIds.length > 0
       ? ` Descriptors: ${descHints.summaryLines.slice(0, 6).join("; ")}.`
       : "";
-  const biasDetail = descHints.biases.length
-    ? ` Program biases: ${descHints.biases.slice(0, 5).join(", ")}.`
+  const condDetail =
+    conditionIds.length > 0
+      ? ` Clinical conditions: ${condHints.summaryLines.slice(0, 6).join("; ")}.`
+      : "";
+  const biasDetail = combinedHints.biases.length
+    ? ` Program biases: ${combinedHints.biases.slice(0, 5).join(", ")}.`
     : "";
-  const rfDetail = descHints.redFlags.length
-    ? ` Safety notes applied from screening descriptors—seek care if red flags apply.`
+  const rfDetail = combinedHints.redFlags.length
+    ? ` Safety notes from screening descriptors/conditions—seek licensed care if red flags apply.`
+    : "";
+  const clearanceDetail = condHints.clearanceRequired
+    ? ` Clearance-sensitive condition(s) detected: volume and intensity capped; follow surgeon/physician/PT guidance.`
     : "";
 
   const adjustment: RoutineAdjustment = {
     at: new Date().toISOString(),
-    reason: painDescriptorIds.length
-      ? "Generated from clinical pain descriptors + intake"
-      : input.concernParagraph
-        ? "Generated from written concerns + clinical intake"
-        : "Generated from symptoms, goals, and pain scale",
+    reason: conditionIds.length
+      ? "Generated from clinical conditions + descriptors + intake"
+      : painDescriptorIds.length
+        ? "Generated from clinical pain descriptors + intake"
+        : input.concernParagraph
+          ? "Generated from written concerns + clinical intake"
+          : "Generated from symptoms, goals, and pain scale",
     painFactor: avgPain,
     action:
-      descHints.biases.includes("defer-to-provider") || avgPain >= 6
+      combinedHints.biases.includes("defer-to-provider") ||
+      condHints.clearanceRequired ||
+      avgPain >= 6
         ? "regress"
         : avgPain >= 4
           ? "modify"
@@ -461,8 +543,10 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
           ? "Moderate pain: balanced mobility + activation with mid volume per outpatient load management."
           : "Pain tolerable: include mobility and progressive exercise dosing with warm-up/cool-down.") +
       descDetail +
+      condDetail +
       biasDetail +
-      rfDetail,
+      rfDetail +
+      clearanceDetail,
     source: "user",
   };
 
@@ -498,6 +582,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       suggestedKinds: prefer,
       painDescriptorIds,
       descriptorSummary: descHints.summaryLines,
+      conditionIds,
+      conditionSummary: condHints.summaryLines,
     },
     selfAdjustHistory: [adjustment],
     createdAt: new Date().toISOString(),

@@ -263,6 +263,8 @@ export interface PainProfile {
   userId: string;
   updatedAt: string;
   descriptorIds: string[];
+  /** Clinical condition IDs from Assessment paragraph matching */
+  conditionIds?: string[];
   freeText?: string;
   overallPain: number;
   areas: BodyPart[];
@@ -293,6 +295,9 @@ export interface Routine {
     suggestedKinds?: MovementKind[];
     painDescriptorIds?: string[];
     descriptorSummary?: string[];
+    /** Clinical condition / injury / surgery IDs matched from intake */
+    conditionIds?: string[];
+    conditionSummary?: string[];
     modalityPlanId?: string;
     suggestedModalityIds?: string[];
   };
@@ -338,6 +343,8 @@ export interface SymptomInput {
   preferKinds?: MovementKind[] | "auto";
   /** Clinical pain descriptor IDs from the descriptor database */
   painDescriptorIds?: string[];
+  /** Musculoskeletal injuries, surgeries, and complex medical conditions */
+  conditionIds?: string[];
 }
 
 export interface JefferyMessage {

@@ -20,6 +20,7 @@ export function saveLocalPainProfile(
     id: partial.id || uuid(),
     userId: partial.userId,
     descriptorIds: partial.descriptorIds,
+    conditionIds: partial.conditionIds,
     freeText: partial.freeText,
     overallPain: partial.overallPain,
     areas: partial.areas,
