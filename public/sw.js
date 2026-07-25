@@ -1,11 +1,12 @@
 /* MotionRx Stretch service worker — offline shell + self-update */
-const CACHE = "motionrx-v3";
+const CACHE = "motionrx-v4";
 const PRECACHE = [
   "/login",
   "/home",
   "/library",
   "/exercises",
   "/routines",
+  "/assessment",
   "/assess",
   "/journal",
   "/progress",

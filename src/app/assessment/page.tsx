@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { sameStringArray, useDebouncedValue } from "@/lib/hooks";
 import { BODY_PART_LABELS, getStretchById } from "@/data/stretch-library";
 import { getExerciseById } from "@/data/exercise-library";
 import {
@@ -108,6 +109,142 @@ const GOAL_CHIPS = [
   "recover gently",
 ];
 
+/**
+ * IMPORTANT: Keep presentational helpers OUTSIDE AssessmentPage.
+ * Nested function components remount on every parent render, which steals
+ * focus from textareas/inputs and makes typing feel broken.
+ */
+function SubSection({
+  title,
+  hint,
+  children,
+  action,
+}: {
+  title: string;
+  hint?: string;
+  children: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="space-y-3 border-t border-brand-100 pt-5 first:border-t-0 first:pt-0 dark:border-brand-800">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-brand-950">{title}</h3>
+          {hint && <p className="mt-0.5 text-xs text-brand-500">{hint}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function StepNav({
+  step,
+  generated,
+  onStep,
+}: {
+  step: number;
+  generated: boolean;
+  onStep: (id: number) => void;
+}) {
+  const progress = ((step - 1) / (STEPS.length - 1)) * 100;
+  return (
+    <nav aria-label="Assessment steps" className="mb-6">
+      <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-brand-100 dark:bg-brand-900">
+        <div
+          className="h-full rounded-full bg-brand-600 transition-all duration-300"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <ol className="grid grid-cols-5 gap-1">
+        {STEPS.map((s) => {
+          const active = step === s.id;
+          const done = step > s.id || (s.id === 5 && generated);
+          return (
+            <li key={s.id}>
+              <button
+                type="button"
+                onClick={() => onStep(s.id)}
+                className={`flex w-full flex-col items-center gap-1 rounded-lg px-0.5 py-1.5 text-center transition ${
+                  active ? "text-brand-900" : done ? "text-brand-700" : "text-brand-400"
+                }`}
+              >
+                <span
+                  className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
+                    active
+                      ? "bg-brand-600 text-white"
+                      : done
+                        ? "bg-brand-200 text-brand-900 dark:bg-brand-800 dark:text-brand-100"
+                        : "bg-brand-50 text-brand-500 ring-1 ring-brand-100 dark:bg-brand-950 dark:ring-brand-800"
+                  }`}
+                >
+                  {done && !active ? <Check className="h-4 w-4" /> : s.id}
+                </span>
+                <span className="hidden text-[10px] font-medium leading-tight sm:block">
+                  {s.title}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+      <p className="mt-2 text-center text-sm font-medium text-brand-800">
+        {STEPS[step - 1]?.short}
+        <span className="font-normal text-brand-500"> · of {STEPS.length}</span>
+      </p>
+    </nav>
+  );
+}
+
+function FooterNav({
+  onBack,
+  onNext,
+  nextLabel = "Continue",
+  nextDisabled,
+  showGenerate,
+  onGenerate,
+  saving,
+  canGenerate,
+}: {
+  onBack?: () => void;
+  onNext?: () => void;
+  nextLabel?: string;
+  nextDisabled?: boolean;
+  showGenerate?: boolean;
+  onGenerate?: () => void;
+  saving?: boolean;
+  canGenerate?: boolean;
+}) {
+  return (
+    <div className="mt-6 flex items-center justify-between gap-3 border-t border-brand-100 pt-5 dark:border-brand-800">
+      {onBack ? (
+        <button type="button" className="btn-ghost px-3" onClick={onBack}>
+          <ChevronLeft className="h-4 w-4" />
+          Back
+        </button>
+      ) : (
+        <span className="w-20" />
+      )}
+      {showGenerate ? (
+        <button
+          type="button"
+          className="btn-primary min-w-[11rem]"
+          onClick={onGenerate}
+          disabled={saving || !canGenerate}
+        >
+          {saving ? "Building…" : "Generate plan"}
+        </button>
+      ) : (
+        <button type="button" className="btn-primary" onClick={onNext} disabled={nextDisabled}>
+          {nextLabel}
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function AssessmentPage() {
   const [paragraph, setParagraph] = useState("");
   const [areas, setAreas] = useState<BodyPart[]>([]);
@@ -145,6 +282,9 @@ export default function AssessmentPage() {
   const [step, setStep] = useState(1);
   const [deviceTab, setDeviceTab] = useState<"precautions" | "implants" | "supports">("precautions");
   const [bodyGroupOpen, setBodyGroupOpen] = useState<string>("spine-head");
+
+  /** Heavy clinical matching runs on debounced text so the textarea stays responsive */
+  const debouncedParagraph = useDebouncedValue(paragraph, 400);
 
   useEffect(() => {
     const local = loadLocalPainProfile();
@@ -188,15 +328,18 @@ export default function AssessmentPage() {
     list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
 
   const parsedPreview = useMemo(
-    () => (paragraph.trim().length > 12 ? parseConcernParagraph(paragraph) : null),
-    [paragraph]
+    () =>
+      debouncedParagraph.trim().length > 12
+        ? parseConcernParagraph(debouncedParagraph)
+        : null,
+    [debouncedParagraph]
   );
 
-  // Live clinical descriptors from paragraph text
+  // Live clinical descriptors from paragraph text (debounced for typing UX)
   const paragraphDescriptors = useMemo(() => {
-    if (paragraph.trim().length < 12) return [] as string[];
-    return matchDescriptorsFromText(paragraph, 14);
-  }, [paragraph]);
+    if (debouncedParagraph.trim().length < 12) return [] as string[];
+    return matchDescriptorsFromText(debouncedParagraph, 14);
+  }, [debouncedParagraph]);
 
   const paragraphDescDetails = useMemo(
     () =>
@@ -211,13 +354,16 @@ export default function AssessmentPage() {
   useEffect(() => {
     if (!autoApplyDesc) return;
     if (!paragraphDescriptors.length) {
-      setAutoDescIds([]);
+      setAutoDescIds((prev) => (prev.length ? [] : prev));
       return;
     }
-    setAutoDescIds(paragraphDescriptors);
+    setAutoDescIds((prev) =>
+      sameStringArray(prev, paragraphDescriptors) ? prev : paragraphDescriptors
+    );
     setDescriptorIds((prev) => {
       const manualOnly = prev.filter((id) => !autoDescIds.includes(id));
-      return Array.from(new Set([...manualOnly, ...paragraphDescriptors]));
+      const next = Array.from(new Set([...manualOnly, ...paragraphDescriptors]));
+      return sameStringArray(prev, next) ? prev : next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- autoDescIds intentionally previous set
   }, [paragraphDescriptors, autoApplyDesc]);
@@ -225,9 +371,9 @@ export default function AssessmentPage() {
   const descHints = useMemo(() => summarizeDescriptors(descriptorIds), [descriptorIds]);
 
   const paragraphConditions = useMemo(() => {
-    if (paragraph.trim().length < 12) return [] as string[];
-    return matchConditionsFromText(paragraph, 12);
-  }, [paragraph]);
+    if (debouncedParagraph.trim().length < 12) return [] as string[];
+    return matchConditionsFromText(debouncedParagraph, 12);
+  }, [debouncedParagraph]);
 
   const conditionHints = useMemo(
     () => summarizeConditions(paragraphConditions),
@@ -235,8 +381,11 @@ export default function AssessmentPage() {
   );
 
   const adjectivePreview = useMemo(
-    () => (paragraph.trim().length > 8 ? analyzeAssessmentAdjectives(paragraph) : null),
-    [paragraph]
+    () =>
+      debouncedParagraph.trim().length > 8
+        ? analyzeAssessmentAdjectives(debouncedParagraph)
+        : null,
+    [debouncedParagraph]
   );
 
   const safetyPreview = useMemo(
@@ -251,7 +400,7 @@ export default function AssessmentPage() {
         prostheticIds,
         assistiveDeviceIds,
         protocolNotes,
-        concernParagraph: paragraph,
+        concernParagraph: debouncedParagraph,
       }),
     [
       ageYears,
@@ -263,31 +412,43 @@ export default function AssessmentPage() {
       prostheticIds,
       assistiveDeviceIds,
       protocolNotes,
-      paragraph,
+      debouncedParagraph,
     ]
   );
 
   // Auto-merge paragraph-detected implants/precautions when auto-apply is on
   useEffect(() => {
-    if (!autoApplyDesc || paragraph.trim().length < 12) return;
-    setPrecautionIds((prev) => Array.from(new Set([...prev, ...safetyPreview.precautionIds])));
-    setImplantIds((prev) => Array.from(new Set([...prev, ...safetyPreview.implantIds])));
-    setOrthoticIds((prev) => Array.from(new Set([...prev, ...safetyPreview.orthoticIds])));
-    setProstheticIds((prev) => Array.from(new Set([...prev, ...safetyPreview.prostheticIds])));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on paragraph / auto flag
-  }, [paragraph, autoApplyDesc]);
+    if (!autoApplyDesc || debouncedParagraph.trim().length < 12) return;
+    setPrecautionIds((prev) => {
+      const next = Array.from(new Set([...prev, ...safetyPreview.precautionIds]));
+      return sameStringArray(prev, next) ? prev : next;
+    });
+    setImplantIds((prev) => {
+      const next = Array.from(new Set([...prev, ...safetyPreview.implantIds]));
+      return sameStringArray(prev, next) ? prev : next;
+    });
+    setOrthoticIds((prev) => {
+      const next = Array.from(new Set([...prev, ...safetyPreview.orthoticIds]));
+      return sameStringArray(prev, next) ? prev : next;
+    });
+    setProstheticIds((prev) => {
+      const next = Array.from(new Set([...prev, ...safetyPreview.prostheticIds]));
+      return sameStringArray(prev, next) ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on debounced paragraph / auto flag
+  }, [debouncedParagraph, autoApplyDesc]);
 
   // Auto-detect catalog medications named in the story (user can edit doses later)
   useEffect(() => {
-    if (!autoApplyDesc || paragraph.trim().length < 12) return;
-    const matched = matchMedicationsFromText(paragraph, 8);
+    if (!autoApplyDesc || debouncedParagraph.trim().length < 12) return;
+    const matched = matchMedicationsFromText(debouncedParagraph, 8);
     if (!matched.length) return;
     setMedications((prev) => {
       const drafts = medicationEntriesFromBaseIds(matched, prev);
       if (!drafts.length) return prev;
       return [...prev, ...drafts].slice(0, 20);
     });
-  }, [paragraph, autoApplyDesc]);
+  }, [debouncedParagraph, autoApplyDesc]);
 
   useEffect(() => {
     if (ageYears !== "" && Number(ageYears) > 0) {
@@ -509,128 +670,6 @@ export default function AssessmentPage() {
       : "border-brand-200 bg-white text-brand-800 hover:border-brand-400 dark:border-brand-700 dark:bg-brand-950 dark:text-brand-100";
   }
 
-  function SubSection({
-    title,
-    hint,
-    children,
-    action,
-  }: {
-    title: string;
-    hint?: string;
-    children: ReactNode;
-    action?: ReactNode;
-  }) {
-    return (
-      <div className="space-y-3 border-t border-brand-100 pt-5 first:border-t-0 first:pt-0 dark:border-brand-800">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h3 className="text-sm font-semibold text-brand-950">{title}</h3>
-            {hint && <p className="mt-0.5 text-xs text-brand-500">{hint}</p>}
-          </div>
-          {action}
-        </div>
-        {children}
-      </div>
-    );
-  }
-
-  function StepNav() {
-    const progress = ((step - 1) / (STEPS.length - 1)) * 100;
-    return (
-      <nav aria-label="Assessment steps" className="mb-6">
-        <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-brand-100 dark:bg-brand-900">
-          <div
-            className="h-full rounded-full bg-brand-600 transition-all duration-300"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <ol className="grid grid-cols-5 gap-1">
-          {STEPS.map((s) => {
-            const active = step === s.id;
-            const done = step > s.id || (s.id === 5 && Boolean(generated));
-            return (
-              <li key={s.id}>
-                <button
-                  type="button"
-                  onClick={() => setStep(s.id)}
-                  className={`flex w-full flex-col items-center gap-1 rounded-lg px-0.5 py-1.5 text-center transition ${
-                    active ? "text-brand-900" : done ? "text-brand-700" : "text-brand-400"
-                  }`}
-                >
-                  <span
-                    className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
-                      active
-                        ? "bg-brand-600 text-white"
-                        : done
-                          ? "bg-brand-200 text-brand-900 dark:bg-brand-800 dark:text-brand-100"
-                          : "bg-brand-50 text-brand-500 ring-1 ring-brand-100 dark:bg-brand-950 dark:ring-brand-800"
-                    }`}
-                  >
-                    {done && !active ? <Check className="h-4 w-4" /> : s.id}
-                  </span>
-                  <span className="hidden text-[10px] font-medium leading-tight sm:block">
-                    {s.title}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-        <p className="mt-2 text-center text-sm font-medium text-brand-800">
-          {STEPS[step - 1]?.short}
-          <span className="font-normal text-brand-500"> · of {STEPS.length}</span>
-        </p>
-      </nav>
-    );
-  }
-
-  function FooterNav({
-    onBack,
-    onNext,
-    nextLabel = "Continue",
-    nextDisabled,
-    showGenerate,
-  }: {
-    onBack?: () => void;
-    onNext?: () => void;
-    nextLabel?: string;
-    nextDisabled?: boolean;
-    showGenerate?: boolean;
-  }) {
-    return (
-      <div className="mt-6 flex items-center justify-between gap-3 border-t border-brand-100 pt-5 dark:border-brand-800">
-        {onBack ? (
-          <button type="button" className="btn-ghost px-3" onClick={onBack}>
-            <ChevronLeft className="h-4 w-4" />
-            Back
-          </button>
-        ) : (
-          <span className="w-20" />
-        )}
-        {showGenerate ? (
-          <button
-            type="button"
-            className="btn-primary min-w-[11rem]"
-            onClick={createPlan}
-            disabled={saving || !canGenerate}
-          >
-            {saving ? "Building…" : "Generate plan"}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={onNext}
-            disabled={nextDisabled}
-          >
-            {nextLabel}
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className="mx-auto max-w-xl pb-10 sm:max-w-2xl">
       <header className="mb-4 text-center sm:mb-6 sm:text-left">
@@ -646,7 +685,7 @@ export default function AssessmentPage() {
         </p>
       </header>
 
-      <StepNav />
+      <StepNav step={step} generated={Boolean(generated)} onStep={setStep} />
 
       {/* ─── Step 1: Story ─── */}
       {step === 1 && (
@@ -661,6 +700,8 @@ export default function AssessmentPage() {
               onChange={(e) => setParagraph(e.target.value)}
               placeholder="Example: Dull low-back ache, worse sitting at my desk. I take metformin 500 mg twice daily and naproxen 220 mg as needed. Pain about 4/10. Want to move easier at work."
               aria-label="Describe your issue"
+              autoComplete="off"
+              spellCheck
             />
             <label className="mt-3 flex items-center gap-2.5 text-sm text-brand-700">
               <input
@@ -691,7 +732,7 @@ export default function AssessmentPage() {
             <MedicationPicker
               value={medications}
               onChange={setMedications}
-              concernParagraph={paragraph}
+              concernParagraph={debouncedParagraph}
               compact
               onInsertParagraph={(snippet) => {
                 setParagraph((p) => {
@@ -1257,7 +1298,7 @@ export default function AssessmentPage() {
             <MedicationPicker
               value={medications}
               onChange={setMedications}
-              concernParagraph={paragraph}
+              concernParagraph={debouncedParagraph}
               onInsertParagraph={(snippet) => {
                 setParagraph((p) => {
                   if (p.includes(snippet.trim())) return p;
@@ -1273,6 +1314,7 @@ export default function AssessmentPage() {
               value={protocolNotes}
               onChange={(e) => setProtocolNotes(e.target.value)}
               placeholder="e.g. NWB right leg 4 weeks; 10 lb lift limit…"
+              autoComplete="off"
             />
           </SubSection>
 
@@ -1408,7 +1450,13 @@ export default function AssessmentPage() {
             </ul>
           </SubSection>
 
-          <FooterNav onBack={() => setStep(3)} showGenerate />
+          <FooterNav
+            onBack={() => setStep(3)}
+            showGenerate
+            onGenerate={createPlan}
+            saving={saving}
+            canGenerate={canGenerate}
+          />
         </section>
       )}
 

@@ -124,6 +124,22 @@ body {
       transition focus:border-brand-500 focus:ring-2 focus:ring-brand-200
       dark:border-brand-700 dark:bg-brand-950 dark:text-brand-50 dark:placeholder:text-brand-400
       dark:focus:border-brand-400 dark:focus:ring-brand-800;
+    /* Ensure typing works: never inherit pointer-events:none; keep caret/text visible */
+    pointer-events: auto;
+    -webkit-user-select: text;
+    user-select: text;
+    caret-color: var(--ring);
+    color: var(--fg);
+  }
+
+  html.dark .input {
+    color: var(--fg);
+    caret-color: var(--ring);
+  }
+
+  .input:disabled {
+    pointer-events: none;
+    opacity: 0.55;
   }
 
   .label {
@@ -193,11 +209,21 @@ body {
     line-height: var(--journal-line);
     min-height: calc(var(--journal-line) * 8);
     font-family: "Segoe Print", "Comic Sans MS", "Bradley Hand", ui-rounded, system-ui, sans-serif;
+    pointer-events: auto;
+    -webkit-user-select: text;
+    user-select: text;
+    caret-color: var(--ring);
+    color: var(--fg);
   }
 
   .journal-paper-title {
     @apply w-full border-0 bg-transparent px-4 py-1 text-lg font-semibold outline-none
       focus:ring-0 dark:text-brand-50 dark:placeholder:text-brand-400;
+    pointer-events: auto;
+    -webkit-user-select: text;
+    user-select: text;
+    caret-color: var(--ring);
+    color: var(--fg);
     padding-left: 3rem;
     line-height: var(--journal-line);
     font-family: "Segoe Print", "Comic Sans MS", "Bradley Hand", ui-rounded, system-ui, sans-serif;
@@ -289,6 +315,27 @@ html.dark .shadow-2xl {
   textarea {
     font-size: 16px !important;
   }
+}
+
+/* Interactive controls must always receive pointer/keyboard events */
+button:not(:disabled),
+a[href],
+input:not(:disabled),
+select:not(:disabled),
+textarea:not(:disabled),
+summary,
+[role="button"]:not([aria-disabled="true"]),
+[role="tab"],
+[role="checkbox"],
+[role="switch"] {
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 @media (prefers-reduced-motion: reduce) {

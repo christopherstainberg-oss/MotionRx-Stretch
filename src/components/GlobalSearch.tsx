@@ -47,11 +47,15 @@ export function GlobalSearch({
   }, [autoFocus]);
 
   useEffect(() => {
-    function onDoc(e: MouseEvent) {
+    function onDoc(e: MouseEvent | TouchEvent) {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("touchstart", onDoc, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("touchstart", onDoc);
+    };
   }, []);
 
   // Ctrl/Cmd+K to focus search
@@ -142,6 +146,10 @@ export function GlobalSearch({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
+          onBlur={() => {
+            // Delay so option click can register before close
+            window.setTimeout(() => setOpen(false), 150);
+          }}
           onKeyDown={onKeyDown}
           autoComplete="off"
           spellCheck={false}
