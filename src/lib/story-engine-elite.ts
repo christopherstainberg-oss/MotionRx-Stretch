@@ -542,9 +542,6 @@ function detectConflicts(base: StoryIntelligence, sentences: string[]): string[]
       `Mild-language conflicts with high stated score (${base.painNow}/10) — clarify current vs worst.`
     );
   }
-  if (base.activityResponse === "better" && base.activityResponse === "worse") {
-    // unreachable but kept for structure
-  }
   if (base.activityResponse === "better" && base.irritability === "high") {
     conflicts.push(
       "You describe movement easing symptoms while other signals read high irritability — specify volume that helps vs volume that spikes."

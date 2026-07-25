@@ -1462,14 +1462,15 @@ function buildLiveReadLines(s: {
       }${s.onset !== "unknown" ? ` · onset ${s.onset}` : ""}.`
     );
   }
+  // richness is already non-empty here (empty returns above).
   if (s.aggravators.length) {
     lines.push(`Aggravators you stated: ${s.aggravators.slice(0, 5).join(", ")}.`);
-  } else if (s.richness !== "empty") {
+  } else {
     lines.push("Aggravating positions/actions/activities: not specified yet (not assumed).");
   }
   if (s.easers.length) {
     lines.push(`Easers you stated: ${s.easers.slice(0, 4).join(", ")}.`);
-  } else if (s.richness !== "empty" && s.richness !== "thin") {
+  } else if (s.richness !== "thin") {
     lines.push("Easers: not specified yet (not assumed).");
   }
   if (s.functionalLimits.length) {
@@ -1480,7 +1481,7 @@ function buildLiveReadLines(s: {
   }
   if (s.goals.length) {
     lines.push(`Goals you stated: ${s.goals.slice(0, 4).join("; ")}.`);
-  } else if (s.richness !== "empty" && s.richness !== "thin") {
+  } else if (s.richness !== "thin") {
     lines.push("Goals: not specified yet (not assumed).");
   }
   lines.push(
@@ -1559,7 +1560,8 @@ function buildAdaptivePriorPrompt(s: {
       coachLine: "High irritability (from your words) → protect-calm dosing for Plan.",
     };
   }
-  if (s.irritability === "unknown" && s.richness !== "empty") {
+  // empty richness already returned above
+  if (s.irritability === "unknown") {
     return {
       heading: "I’m not assuming — need more from you",
       question:
