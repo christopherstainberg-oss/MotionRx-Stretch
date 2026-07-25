@@ -237,15 +237,17 @@ function extractPainNumbers(text: string): { now?: number; worst?: number } {
   };
 
   // Explicit scale: 7/10, 7 out of 10, 7 of 10
-  for (const m of t.matchAll(/\b(\d{1,2})\s*(?:\/\s*10|out of\s*10|of\s*10)\b/gi)) {
+  for (const m of Array.from(t.matchAll(/\b(\d{1,2})\s*(?:\/\s*10|out of\s*10|of\s*10)\b/gi))) {
     const idx = m.index ?? 0;
     const local = t.slice(Math.max(0, idx - 48), Math.min(t.length, idx + m[0].length + 24));
     pushByContext(Number(m[1]), local);
   }
 
   // Explicit pain rating language: pain is 6, rated 4, level of 5, intensity about 3, ache at a 7
-  for (const m of t.matchAll(
-    /\b(?:pain|hurt(?:s|ing)?|ache|aching|discomfort|soreness|level|rated?|score|intensity|vas)\s*(?:is|was|at|of|around|about|=|:)?\s*(?:a\s+|an\s+)?(\d{1,2})(?:\s*\/\s*10)?\b/gi
+  for (const m of Array.from(
+    t.matchAll(
+      /\b(?:pain|hurt(?:s|ing)?|ache|aching|discomfort|soreness|level|rated?|score|intensity|vas)\s*(?:is|was|at|of|around|about|=|:)?\s*(?:a\s+|an\s+)?(\d{1,2})(?:\s*\/\s*10)?\b/gi
+    )
   )) {
     const idx = m.index ?? 0;
     const local = t.slice(Math.max(0, idx - 36), Math.min(t.length, idx + m[0].length + 20));
@@ -258,7 +260,9 @@ function extractPainNumbers(text: string): { now?: number; worst?: number } {
   }
 
   // “it's a 7” / “about a 4” only when nearby pain/hurt/scale language exists
-  for (const m of t.matchAll(/\b(?:it'?s|its|about|around|roughly|maybe)\s+(?:a\s+|an\s+)?(\d{1,2})\b/gi)) {
+  for (const m of Array.from(
+    t.matchAll(/\b(?:it'?s|its|about|around|roughly|maybe)\s+(?:a\s+|an\s+)?(\d{1,2})\b/gi)
+  )) {
     const idx = m.index ?? 0;
     const local = t.slice(Math.max(0, idx - 40), Math.min(t.length, idx + m[0].length + 24));
     if (!/\b(pain|hurt|ache|\/\s*10|out of 10|scale|level|rated?|intensity|vas|sore)\b/i.test(local)) {

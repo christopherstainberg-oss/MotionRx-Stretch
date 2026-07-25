@@ -265,7 +265,7 @@ function extractPainFromSentences(sentences: string[]): {
 
   for (const sent of sentences) {
     const s = sent.toLowerCase();
-    for (const m of s.matchAll(/\b(\d{1,2})\s*(?:\/\s*10|out of\s*10)\b/g)) {
+    for (const m of Array.from(s.matchAll(/\b(\d{1,2})\s*(?:\/\s*10|out of\s*10)\b/g))) {
       const n = Number(m[1]);
       if (n < 0 || n > 10) continue;
       const local = s.slice(Math.max(0, (m.index || 0) - 40), (m.index || 0) + 24);
