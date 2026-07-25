@@ -61,6 +61,7 @@ import {
   buildStoryPriorPrompt,
   displayPreferredName,
   formatQuestionForStoryBox,
+  getStoryIntel,
   nextStoryBoxQuestion,
   selectAutoAppearingQuestions,
   storyEndsWithOpenQuestion,
@@ -745,6 +746,11 @@ export default function AssessmentPage() {
     ]
   );
 
+  const storyIntel = useMemo(
+    () => getStoryIntel(storyPromptCtx),
+    [storyPromptCtx]
+  );
+
   const storyPriorPrompt = useMemo(
     () => buildStoryPriorPrompt(storyPromptCtx),
     [storyPromptCtx]
@@ -1290,11 +1296,43 @@ export default function AssessmentPage() {
                 />
               </label>
 
-              {/* Auto-appearing open-ended questions (context-aware) */}
+              {/* Live clinical intelligence from free text (drives Plan & adaptive Q&A) */}
+              {storyIntel.richness !== "empty" ? (
+                <div className="rounded-xl border border-brand-200 bg-white px-3 py-2.5 text-xs leading-relaxed text-brand-800 dark:border-brand-700 dark:bg-brand-950/60 dark:text-brand-100">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                      Live clinical read · powers Plan &amp; Routine
+                    </p>
+                    <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-800 dark:bg-brand-900 dark:text-brand-100">
+                      {storyIntel.irritability} irritability
+                      {storyIntel.planHints.phaseBias
+                        ? ` · ${storyIntel.planHints.phaseBias}`
+                        : ""}
+                    </span>
+                  </div>
+                  <ul className="mt-1.5 list-inside list-disc space-y-0.5">
+                    {storyIntel.liveReadLines.slice(0, 5).map((line, i) => (
+                      <li key={i}>{line}</li>
+                    ))}
+                  </ul>
+                  {storyIntel.missingThemes.length > 0 ? (
+                    <p className="mt-1.5 text-[11px] text-brand-500">
+                      Still open in interview:{" "}
+                      {storyIntel.missingThemes.slice(0, 6).join(", ")}
+                    </p>
+                  ) : (
+                    <p className="mt-1.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                      Interview themes look solid — Plan can dose from this story.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+
+              {/* Auto-appearing open-ended questions (answer-adaptive) */}
               <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 p-3 dark:border-brand-700 dark:bg-brand-900/30">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                    Auto-appearing questions
+                    Adaptive questions (react to your answers)
                     {autoAppearingQuestions.length > 0
                       ? ` · ${autoAppearingQuestions.length} open`
                       : " · story looks complete"}
@@ -1341,6 +1379,11 @@ export default function AssessmentPage() {
                             <span className="mt-0.5 block leading-snug text-brand-900 dark:text-brand-50">
                               {p.question}
                             </span>
+                            {p.reason ? (
+                              <span className="mt-1 block text-[10px] italic text-brand-500">
+                                Why this: {p.reason}
+                              </span>
+                            ) : null}
                             <span className="mt-1 block text-[10px] font-semibold text-brand-600 opacity-80 group-hover:opacity-100">
                               Tap to drop into free text → answer below the ▸ line
                             </span>

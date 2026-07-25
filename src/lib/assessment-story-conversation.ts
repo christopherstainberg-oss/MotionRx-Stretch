@@ -12,7 +12,18 @@ import { getDescriptorById } from "@/data/pain-descriptors";
 import type { SexSelection } from "@/lib/clinical-history";
 import { sexLabel } from "@/lib/clinical-history";
 import type { AssessmentCoachContext } from "@/lib/assessment-coach";
-import { displayPreferredName } from "@/lib/assessment-coach";
+import {
+  analyzeStoryIntelligence,
+  type AdaptiveStoryQuestion,
+  type StoryIntelligence,
+} from "@/lib/story-intelligence";
+
+/** Local name helper — avoid circular import with assessment-coach */
+function displayPreferredName(preferredName?: string | null): string {
+  const p = (preferredName || "").trim();
+  if (p) return p;
+  return "friend";
+}
 
 export type ConversationPrompt = {
   id: string;
@@ -21,6 +32,8 @@ export type ConversationPrompt = {
   /** Full open-ended question shown when selected / asked */
   question: string;
   category: "bother" | "behavior" | "irritability" | "function" | "history" | "goals" | "safety";
+  /** Why this question appeared (answer-adaptive) */
+  reason?: string;
 };
 
 /** Opening prior prompt for the free-text “Describe your issue” box */
@@ -53,51 +66,54 @@ function storySnippet(story: string, max = 90): string {
 }
 
 /**
- * Opening prior prompt for Describe Your Issue — expands “what’s bothering you?”
- * into a friendly, medically specific invitation to write freely.
+ * Opening prior prompt for Describe Your Issue — answer-adaptive via story intelligence.
  */
 export function buildStoryPriorPrompt(ctx: {
   paragraph?: string;
   areas?: BodyPart[];
   preferredName?: string;
   sex?: SexSelection | null;
+  pastMedicalHistory?: string;
+  currentMedicalHistory?: string;
+  goals?: string[];
 }): StoryPriorPrompt {
-  const name = displayPreferredName(ctx.preferredName);
-  const story = (ctx.paragraph || "").trim();
-  const region = areaPhrase(ctx.areas || []);
-  const snip = storySnippet(story, 70);
-
-  if (!story) {
-    return {
-      id: "prior-empty",
-      heading: "What’s bothering you?",
-      question: `${name}, what is bothering you most right now in your body—and how does it show up in a typical day?`,
-      placeholder: `${name}, describe what’s bothering you in your own words… Where is it? How does it feel (sharp, dull, stiff, numb)? When is it worst? Which daily tasks get harder? Any past injuries, surgeries, or current conditions that matter?`,
-      coachLine:
-        "Write like you’re talking to a friendly outpatient PT. Open-ended is best—there are no wrong answers.",
-    };
-  }
-
-  if (story.length < 60) {
-    return {
-      id: "prior-thin",
-      heading: "Keep going — paint the full picture",
-      question: snip
-        ? `${name}, you started with “${snip}.” What else should I understand about how this feels, when it flares, and what tasks suffer?`
-        : `${name}, what else about ${region} should I understand before we build a plan?`,
-      placeholder: `Add more: onset (sudden vs gradual), pain 0–10, what eases it, hardest daily task, sleep impact, past surgery or current conditions…`,
-      coachLine:
-        "A few more clinical details help the plan match irritability, not just a body-region label.",
-    };
-  }
-
+  const intel = getStoryIntel(ctx);
   return {
-    id: "prior-rich",
-    heading: "Your story so far — refine or go deeper",
-    question: `${name}, reading your story about ${region}, what still feels incomplete—timing of flares, fear of a certain move, history, or the one thing you most want back?`,
-    placeholder: `Continue your story, or answer the guided questions that appear below. Each answer deepens Plan, Jeffery, and modalities.`,
-    coachLine:
-      "Your free text is the interview. Guided questions below auto-appear from what you wrote—tap one to drop it into this box and answer in place.",
+    id: `prior-${intel.richness}`,
+    heading: intel.priorPrompt.heading,
+    question: intel.priorPrompt.question,
+    placeholder: intel.priorPrompt.placeholder,
+    coachLine: intel.priorPrompt.coachLine,
+  };
+}
+
+/** Full story intelligence snapshot for UI + engines */
+export function getStoryIntel(ctx: {
+  paragraph?: string;
+  areas?: BodyPart[];
+  preferredName?: string;
+  sex?: SexSelection | null;
+  pastMedicalHistory?: string;
+  currentMedicalHistory?: string;
+  goals?: string[];
+}): StoryIntelligence {
+  return analyzeStoryIntelligence(ctx.paragraph || "", {
+    preferredName: ctx.preferredName,
+    areas: ctx.areas,
+    sex: ctx.sex,
+    pastMedicalHistory: ctx.pastMedicalHistory,
+    currentMedicalHistory: ctx.currentMedicalHistory,
+    goals: ctx.goals,
+  });
+}
+
+function adaptiveToPrompt(q: AdaptiveStoryQuestion): ConversationPrompt {
+  return {
+    id: q.id,
+    label: q.label,
+    question: q.question,
+    category: q.category,
+    reason: q.reason,
   };
 }
 
@@ -199,7 +215,8 @@ export function formatQuestionForStoryBox(prompt: ConversationPrompt): string {
 
 /**
  * Auto-appearing open-ended questions for the free-text box.
- * Filters out themes already covered; prioritizes interview flow.
+ * Primary path: answer-adaptive questions from story intelligence.
+ * Fallback: classic prompt catalog with coverage filtering.
  */
 export function selectAutoAppearingQuestions(
   ctx: {
@@ -215,38 +232,27 @@ export function selectAutoAppearingQuestions(
   },
   limit = 6
 ): ConversationPrompt[] {
+  const intel = getStoryIntel(ctx);
+  const adaptive = intel.adaptiveQuestions.map(adaptiveToPrompt);
+
+  if (adaptive.length >= 2) {
+    return adaptive.slice(0, limit);
+  }
+
+  // Merge adaptive + classic uncovered catalog
   const story = (ctx.paragraph || "").trim();
   const all = buildConversationPrompts(ctx);
   const covered = detectCoveredPromptIds(story, all);
-
   const uncovered = all.filter((p) => !covered.has(p.id));
-
-  // Interview order: expand “what’s bothering you” then deepen
-  const order: ConversationPrompt["category"][] = [
-    "bother",
-    "irritability",
-    "function",
-    "behavior",
-    "history",
-    "goals",
-    "safety",
-  ];
-
-  const sorted = [...uncovered].sort((a, b) => {
-    const ai = order.indexOf(a.category);
-    const bi = order.indexOf(b.category);
-    if (ai !== bi) return ai - bi;
-    return 0;
-  });
-
-  // Always surface main bother first if story is empty
-  if (!story) {
-    const main = all.find((p) => p.id === "bother-main");
-    const rest = sorted.filter((p) => p.id !== "bother-main");
-    return (main ? [main, ...rest] : sorted).slice(0, limit);
+  const seen = new Set(adaptive.map((p) => p.id));
+  const merged = [...adaptive];
+  for (const p of uncovered) {
+    if (seen.has(p.id)) continue;
+    seen.add(p.id);
+    merged.push(p);
+    if (merged.length >= limit) break;
   }
-
-  return sorted.slice(0, limit);
+  return merged.slice(0, limit);
 }
 
 /** Next single guided question to drop into free text (progressive interview). */
@@ -511,7 +517,7 @@ export function buildConversationPrompts(ctx: {
   return ordered.slice(0, 14);
 }
 
-/** Chip labels + full questions for UI */
+/** Chip labels + full questions for UI (answer-adaptive first) */
 export function suggestedConversationChips(ctx: {
   paragraph?: string;
   areas?: BodyPart[];
@@ -523,11 +529,12 @@ export function suggestedConversationChips(ctx: {
   conditionIds?: string[];
   goals?: string[];
 }): ConversationPrompt[] {
-  return buildConversationPrompts(ctx);
+  return selectAutoAppearingQuestions(ctx, 12);
 }
 
 /**
  * Friendly, medically specific answer + always one open-ended follow-up question.
+ * Follow-ups adapt to combined story + latest answer via story intelligence.
  */
 export function answerStoryConversation(
   userText: string,
@@ -535,77 +542,81 @@ export function answerStoryConversation(
 ): { answer: string; followUp: string } {
   const name = displayPreferredName(ctx.preferredName);
   const q = userText.trim();
-  const story = ctx.paragraph.trim();
-  const regions = areaLabels(ctx.areas);
+  const combinedStory = [ctx.paragraph, q].filter(Boolean).join("\n\n");
+  const intel = analyzeStoryIntelligence(combinedStory, {
+    preferredName: ctx.preferredName,
+    areas: ctx.areas,
+    sex: ctx.sex,
+    pastMedicalHistory: ctx.pastMedicalHistory,
+    currentMedicalHistory: ctx.currentMedicalHistory,
+    goals: ctx.goals,
+  });
+  const regions =
+    intel.regions.length > 0
+      ? intel.regions
+          .slice(0, 3)
+          .map((a) => BODY_PART_LABELS[a] || a)
+          .join(", ")
+      : areaLabels(ctx.areas);
   const pain = topPain(ctx);
-  const descs = descriptorLabels(ctx.descriptorIds);
-  const conds = conditionLabels(ctx.conditionIds);
+  const descs = descriptorLabels(
+    intel.descriptorIds.length ? intel.descriptorIds : ctx.descriptorIds
+  );
+  const conds = conditionLabels(
+    intel.conditionIds.length ? intel.conditionIds : ctx.conditionIds
+  );
   const t = q.toLowerCase();
 
   const disclaimer =
     " This is friendly educational guidance—not a diagnosis. A licensed PT or physician should evaluate red-flag symptoms or personal medical decisions.";
 
-  // Detect if user is answering vs asking
-  const isQuestion = /\?$/.test(q) || /^(what|how|why|when|where|should|can|is|do|does|will)\b/i.test(q);
-
   let core = "";
   if (!q) {
-    core = `${name}, I’m here with you. Start with what is bothering you most, or pick a prompt below—we’ll build a clear picture the way a careful PT interview would.`;
-  } else if (/bother|worst|main issue|hurts|pain|stiff|afraid|fear/i.test(t) || !isQuestion) {
-    core = buildEmpathicClinicalReflection(name, q, {
-      regions,
-      pain,
-      descs,
-      conds,
-      story,
-      sex: ctx.sex,
-      pmh: ctx.pastMedicalHistory,
-      cmh: ctx.currentMedicalHistory,
-    });
+    core = `${name}, I’m here with you. Start with what is bothering you most—we’ll adapt every next question to your answers.`;
   } else if (/okay to (move|exercise)|safe to|should i (stop|rest|exercise)/i.test(t)) {
-    core = `${name}, with what you’ve shared about ${regions}${
-      pain.level != null ? ` (pain ~${pain.level}/10${pain.area ? ` in the ${pain.area}` : ""})` : ""
-    }, mild productive discomfort (often ≤3/10 that settles within about a day) can be okay during gentle mobility. Sharp, spreading, or “worse for more than a day” pain is a yellow/red light—ease range and volume. Think traffic lights: green proceed, yellow modify, red stop that move.`;
+    core = `${name}, with ${regions}${
+      intel.painNow != null
+        ? ` (~${intel.painNow}/10)`
+        : pain.level != null
+          ? ` (pain ~${pain.level}/10)`
+          : ""
+    } and ${intel.irritability} irritability, mild productive discomfort (often ≤3/10 that settles within about a day) can be okay during gentle mobility. Sharp, spreading, or “worse for more than a day” pain is a yellow/red light—ease range and volume.`;
   } else if (/how often|frequency|how many days|schedule/i.test(t)) {
-    core = `${name}, most recovery-friendly plans work best as short practice most days (about ${ctx.minutes} minutes) rather than rare long sessions. Consistency beats heroics. If you flare more than a day, cut volume ~30–50% but keep gentle motion when you can.`;
+    const mins = Math.max(8, Math.round(ctx.minutes * intel.planHints.minutesScale));
+    core = `${name}, with your story’s ${intel.irritability} irritability, short practice most days (~${mins} min) beats rare long sessions. If you flare more than a day, cut volume ~30–50% but keep gentle motion when you can.`;
   } else if (/avoid|don'?t|contraindic|surgery|implant|precaution/i.test(t)) {
-    core = `${name}, for now prioritize avoiding end-range forcing, ballistic bouncing, and breath-holding under heavy strain. ${
-      ctx.precautionIds.length || ctx.implantIds.length
-        ? "Honor any post-op, weight-bearing, or device precautions you listed."
-        : "If you have surgical or device limits, add them to your story so we can respect them."
+    core = `${name}, prioritize avoiding end-range forcing, ballistic bouncing, and breath-holding under heavy strain. ${
+      intel.planHints.avoidTags.slice(0, 4).length
+        ? `From your story I’m also cautious about: ${intel.planHints.avoidTags.slice(0, 4).join(", ")}.`
+        : ""
     } Your clinician’s protocol always wins over the app.`;
   } else if (/heat|ice|cold|modalit/i.test(t)) {
-    core = `${name}, stiffness often pairs with brief heat then easy mobility; irritable or post-load flares often pair with relative rest and optional short cold. Modalities should help you move better—not replace progressive practice.`;
-  } else if (/medical history|pmh|diagnos|condition|surgery/i.test(t)) {
-    const pmh = ctx.pastMedicalHistory?.trim();
-    const cmh = ctx.currentMedicalHistory?.trim();
-    core =
-      pmh || cmh
-        ? `${name}, I’m holding your history in mind${pmh ? ` (past: ${pmh.slice(0, 120)})` : ""}${
-            cmh ? ` (current: ${cmh.slice(0, 120)})` : ""
-          }. Systemic issues (heart, lungs, clotting, bone density, pregnancy, devices) keep us more conservative and outcome-focused rather than aggressive.`
-        : `${name}, I don’t have much medical history yet. Anything about surgeries, fractures, heart/lung issues, diabetes, or clotting helps me dose safer.`;
-  } else if (/focus|first|priority|start/i.test(t)) {
-    const focus =
-      pain.area && pain.level != null
-        ? `${pain.area} (~${pain.level}/10)`
-        : regions;
-    core = `${name}, first we calm and control ${focus}: easy motion, good form, and tasks you care about—before hard stretching or heavy loading. That approach usually protects recovery time better than “push through.”`;
+    core = `${name}, ${
+      intel.easers.includes("heat")
+        ? "you already noted heat helps—"
+        : intel.sensory.includes("stiff/tight")
+          ? "stiffness language often pairs with brief heat then easy mobility—"
+          : "irritable or post-load flares often pair with relative rest and optional short cold—"
+    } modalities should help you move better, not replace progressive practice.`;
   } else {
-    core = buildEmpathicClinicalReflection(name, q, {
+    core = buildStoryIntelReflection(name, q, intel, {
       regions,
       pain,
       descs,
       conds,
-      story,
       sex: ctx.sex,
       pmh: ctx.pastMedicalHistory,
       cmh: ctx.currentMedicalHistory,
     });
   }
 
-  const followUp = pickFollowUpQuestion(ctx, t);
-  const answer = `${core}${disclaimer}\n\n**I’m curious:** ${followUp}`;
+  const followUp =
+    intel.adaptiveQuestions[0]?.question ||
+    pickFollowUpQuestion({ ...ctx, paragraph: combinedStory }, t);
+  const readBits = intel.liveReadLines.slice(0, 2).join(" ");
+  const answer = `${core}${
+    readBits ? `\n\n_${readBits}_` : ""
+  }${disclaimer}\n\n**I’m curious:** ${followUp}`;
   return { answer, followUp };
 }
 
@@ -644,15 +655,15 @@ function conditionLabels(ids: string[]): string[] {
     .filter(Boolean) as string[];
 }
 
-function buildEmpathicClinicalReflection(
+function buildStoryIntelReflection(
   name: string,
   userText: string,
+  intel: StoryIntelligence,
   ctx: {
     regions: string;
     pain: { area?: string; level?: number };
     descs: string[];
     conds: string[];
-    story: string;
     sex?: SexSelection | null;
     pmh?: string;
     cmh?: string;
@@ -660,78 +671,81 @@ function buildEmpathicClinicalReflection(
 ): string {
   const bits: string[] = [];
   bits.push(
-    `${name}, thank you for sharing that—I’m listening the way a careful outpatient PT would in the first minutes of an eval.`
+    `${name}, thank you—I’m listening the way a careful outpatient PT would in the first minutes of an eval.`
   );
-  bits.push(`You said: “${userText.trim().slice(0, 220)}${userText.trim().length > 220 ? "…" : ""}.”`);
-
-  if (ctx.story) {
+  bits.push(
+    `You said: “${userText.trim().slice(0, 220)}${userText.trim().length > 220 ? "…" : ""}.”`
+  );
+  bits.push(
+    `Putting that together with your free-text story: ${ctx.regions}${
+      intel.laterality !== "unknown" ? ` (${intel.laterality})` : ""
+    }${intel.sensory.length ? `; sensations like ${intel.sensory.slice(0, 3).join(", ")}` : ""}${
+      intel.painNow != null
+        ? `; ~${intel.painNow}/10`
+        : ctx.pain.level != null
+          ? `; ~${ctx.pain.level}/10`
+          : ""
+    }. Irritability reads **${intel.irritability}**${
+      intel.activityResponse !== "unknown"
+        ? ` with activity response “${intel.activityResponse}”`
+        : ""
+    }.`
+  );
+  if (intel.aggravators.length) {
+    bits.push(`Aggravators I’m holding: ${intel.aggravators.slice(0, 4).join(", ")}.`);
+  }
+  if (intel.easers.length) {
+    bits.push(`Easers noted: ${intel.easers.slice(0, 3).join(", ")}.`);
+  }
+  if (intel.functionalLimits.length) {
     bits.push(
-      `Together with your story about ${ctx.regions}${
-        ctx.descs.length ? ` (${ctx.descs.slice(0, 3).join(", ")} sensations)` : ""
-      }, that helps us map irritability and function—not just a single pain number.`
-    );
-  } else {
-    bits.push(
-      `If you add a short story above (where it is, what it feels like, what tasks suffer), I can get even more specific.`
+      `Function anchors for the plan: ${intel.functionalLimits.slice(0, 4).join(", ")}.`
     );
   }
-
-  if (ctx.pain.level != null) {
-    bits.push(
-      `With pain around ${ctx.pain.level}/10${ctx.pain.area ? ` in the ${ctx.pain.area}` : ""}, we’ll bias toward calm control and graded exposure rather than forcing end-range.`
-    );
+  if (intel.planHints.evidenceLines[0]) {
+    bits.push(intel.planHints.evidenceLines[0]);
   }
-  if (ctx.conds.length) {
-    bits.push(`Clinical themes in play: ${ctx.conds.slice(0, 3).join(", ")}.`);
-  }
+  if (ctx.conds.length) bits.push(`Clinical themes: ${ctx.conds.slice(0, 3).join(", ")}.`);
+  if (ctx.descs.length) bits.push(`Descriptor themes: ${ctx.descs.slice(0, 3).join(", ")}.`);
   if (ctx.sex && ctx.sex !== "prefer-not-to-say") {
     bits.push(`I’ll keep ${sexLabel(ctx.sex)}-related cautions in mind where relevant.`);
   }
   if (ctx.pmh || ctx.cmh) {
-    bits.push(`Your medical history is part of the dosing picture so we don’t rush rehab at the cost of flares.`);
+    bits.push(`Medical history is part of dosing so we don’t rush rehab into flares.`);
   }
-
+  if (intel.redFlagHints.length) {
+    bits.push(
+      `You used language that deserves clinician attention (${intel.redFlagHints[0]}). The app stays conservative and educational.`
+    );
+  }
   bits.push(
-    `Next we translate this into a plan that aims to ease pain interference and restore a daily task you care about—usually more effective than chasing zero pain overnight.`
+    `Next we translate this into a routine that targets your real-world tasks—not just a generic body-region template.`
   );
-
   return bits.join(" ");
 }
 
 function pickFollowUpQuestion(ctx: AssessmentCoachContext, lastUserLower: string): string {
-  const prompts = buildConversationPrompts({
-    paragraph: ctx.paragraph,
-    areas: ctx.areas,
-    preferredName: ctx.preferredName,
-    sex: ctx.sex,
-    pastMedicalHistory: ctx.pastMedicalHistory,
-    currentMedicalHistory: ctx.currentMedicalHistory,
-    descriptorIds: ctx.descriptorIds,
-    conditionIds: ctx.conditionIds,
-    goals: ctx.goals,
-  });
+  const adaptive = selectAutoAppearingQuestions(
+    {
+      paragraph: ctx.paragraph,
+      areas: ctx.areas,
+      preferredName: ctx.preferredName,
+      sex: ctx.sex,
+      pastMedicalHistory: ctx.pastMedicalHistory,
+      currentMedicalHistory: ctx.currentMedicalHistory,
+      descriptorIds: ctx.descriptorIds,
+      conditionIds: ctx.conditionIds,
+      goals: ctx.goals,
+    },
+    8
+  );
 
-  // Avoid repeating a prompt that matches what they just asked
-  const candidates = prompts.filter(
+  const candidates = adaptive.filter(
     (p) =>
       !lastUserLower.includes(p.label.toLowerCase().slice(0, 12)) &&
       !lastUserLower.includes(p.question.toLowerCase().slice(0, 24))
   );
-  const pool = candidates.length ? candidates : prompts;
-  // Prefer unanswered categories for interview flow
-  const order: ConversationPrompt["category"][] = [
-    "bother",
-    "irritability",
-    "function",
-    "behavior",
-    "history",
-    "goals",
-    "safety",
-  ];
-  for (const cat of order) {
-    const hit = pool.find((p) => p.category === cat);
-    if (hit) return hit.question;
-  }
+  const pool = candidates.length ? candidates : adaptive;
   return (
     pool[0]?.question ||
     "What else about this bother should I understand before we lock a plan?"

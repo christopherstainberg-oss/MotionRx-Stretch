@@ -15,6 +15,10 @@ import {
 import { matchDescriptorsFromText } from "@/data/pain-descriptors";
 import { matchConditionsFromText } from "@/data/clinical-conditions";
 import { matchMedicationsFromText } from "@/data/medications";
+import {
+  analyzeStoryIntelligence,
+  storyIntelCorrelationSummary,
+} from "@/lib/story-intelligence";
 
 export const CLINICAL_CONTEXT_KEY = "motionrx-clinical-context";
 export const ASSESSMENT_QA_KEY = "motionrx-assessment-qa";
@@ -35,6 +39,11 @@ export type AssessmentStoryContext = {
   goals?: string[];
   /** Q&A exchanges from Assessment Story */
   qa: CoachExchange[];
+  /** Live clinical read lines from free-text story intelligence */
+  storyIntelLines?: string[];
+  /** Story irritability / phase hints for Plan correlation */
+  storyIrritability?: string;
+  storyPhaseBias?: string;
   /** Latest written plan approach */
   writtenApproach?: string;
   routineId?: string;
@@ -99,6 +108,21 @@ export function saveClinicalContext(
   const freeText = partial.freeText ?? prev.freeText ?? "";
   const hist = freeText.trim().length >= 8 ? parseMedicalHistoryFromText(freeText) : null;
   const parsedSex = freeText.trim().length >= 8 ? parseSexFromText(freeText) : undefined;
+  const storyIntel =
+    freeText.trim().length >= 8
+      ? analyzeStoryIntelligence(freeText, {
+          preferredName: partial.preferredName ?? prev.preferredName,
+          areas: partial.areas ?? prev.areas,
+          sex: normalizeSex(partial.sex) || parsedSex || prev.sex,
+          pastMedicalHistory:
+            partial.pastMedicalHistory ?? hist?.pastMedicalHistory ?? prev.pastMedicalHistory,
+          currentMedicalHistory:
+            partial.currentMedicalHistory ??
+            hist?.currentMedicalHistory ??
+            prev.currentMedicalHistory,
+          goals: partial.goals ?? prev.goals,
+        })
+      : null;
 
   const next: AssessmentStoryContext = {
     freeText,
@@ -117,25 +141,41 @@ export function saveClinicalContext(
       partial.currentMedicalHistory ??
       hist?.currentMedicalHistory ??
       prev.currentMedicalHistory,
-    areas: partial.areas ?? prev.areas,
-    overallPain: partial.overallPain ?? prev.overallPain,
+    areas:
+      partial.areas ??
+      (storyIntel?.regions?.length ? storyIntel.regions : prev.areas),
+    overallPain:
+      partial.overallPain ?? storyIntel?.painNow ?? prev.overallPain,
     descriptorIds:
       partial.descriptorIds ??
-      (freeText.trim().length >= 12
-        ? matchDescriptorsFromText(freeText, 12)
-        : prev.descriptorIds),
+      (storyIntel?.descriptorIds?.length
+        ? storyIntel.descriptorIds
+        : freeText.trim().length >= 12
+          ? matchDescriptorsFromText(freeText, 12)
+          : prev.descriptorIds),
     conditionIds:
       partial.conditionIds ??
-      (freeText.trim().length >= 12
-        ? matchConditionsFromText(freeText, 10)
-        : prev.conditionIds),
+      (storyIntel?.conditionIds?.length
+        ? storyIntel.conditionIds
+        : freeText.trim().length >= 12
+          ? matchConditionsFromText(freeText, 10)
+          : prev.conditionIds),
     medicationNames:
       partial.medicationNames ??
       (freeText.trim().length >= 8
         ? matchMedicationsFromText(freeText, 8)
         : prev.medicationNames),
-    goals: partial.goals ?? prev.goals,
+    goals:
+      partial.goals ??
+      (storyIntel?.planHints.functionalGoals?.length
+        ? storyIntel.planHints.functionalGoals
+        : prev.goals),
     qa: partial.qa ?? prev.qa ?? loadAssessmentQa(),
+    storyIntelLines: storyIntel
+      ? storyIntelCorrelationSummary(storyIntel)
+      : prev.storyIntelLines,
+    storyIrritability: storyIntel?.irritability ?? prev.storyIrritability,
+    storyPhaseBias: storyIntel?.planHints.phaseBias ?? prev.storyPhaseBias,
     writtenApproach: partial.writtenApproach ?? prev.writtenApproach,
     routineId: partial.routineId ?? prev.routineId,
     updatedAt: new Date().toISOString(),
@@ -263,6 +303,16 @@ export function correlateAcrossApp(opts?: {
 
   const summaryLines: string[] = [];
   if (story) summaryLines.push(`Story on file (${story.length} chars).`);
+  if (context.storyIrritability) {
+    summaryLines.push(
+      `Story irritability: ${context.storyIrritability}${
+        context.storyPhaseBias ? ` · phase bias ${context.storyPhaseBias}` : ""
+      }.`
+    );
+  }
+  if (context.storyIntelLines?.length) {
+    summaryLines.push(...context.storyIntelLines.slice(0, 4));
+  }
   if (context.sex && context.sex !== "prefer-not-to-say") {
     summaryLines.push(`Sex context: ${context.sex}.`);
   }
@@ -297,6 +347,26 @@ export function correlateAcrossApp(opts?: {
     href: "/assessment",
     severity: "info",
   });
+
+  if (context.storyIrritability || context.storyIntelLines?.length) {
+    insights.push({
+      id: "story-intel",
+      title: "Free-text clinical intelligence",
+      body: [
+        context.storyIrritability
+          ? `Irritability ${context.storyIrritability}${
+              context.storyPhaseBias ? ` → ${context.storyPhaseBias} phase bias` : ""
+            }`
+          : null,
+        ...(context.storyIntelLines || []).slice(0, 3),
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      href: "/assessment",
+      severity:
+        context.storyIrritability === "high" ? "caution" : "info",
+    });
+  }
 
   if (context.qa.length) {
     const last = context.qa[context.qa.length - 1]!;
@@ -371,7 +441,15 @@ export function clinicalContextPromptBlob(ctx?: AssessmentStoryContext | null): 
   if (!c) return "";
   const lines: string[] = [];
   if (c.preferredName) lines.push(`Preferred name: ${c.preferredName}`);
-  if (c.freeText) lines.push(`Assessment story: ${c.freeText.slice(0, 500)}`);
+  if (c.freeText) lines.push(`Assessment story: ${c.freeText.slice(0, 700)}`);
+  if (c.storyIrritability)
+    lines.push(
+      `Story irritability: ${c.storyIrritability}${
+        c.storyPhaseBias ? `; phase bias: ${c.storyPhaseBias}` : ""
+      }`
+    );
+  if (c.storyIntelLines?.length)
+    lines.push(`Story intel: ${c.storyIntelLines.slice(0, 5).join(" | ")}`);
   if (c.sex) lines.push(`Sex: ${c.sex}`);
   if (c.pastMedicalHistory) lines.push(`PMH: ${c.pastMedicalHistory.slice(0, 240)}`);
   if (c.currentMedicalHistory) lines.push(`Current Hx: ${c.currentMedicalHistory.slice(0, 240)}`);

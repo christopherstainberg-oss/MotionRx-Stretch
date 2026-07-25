@@ -20,6 +20,11 @@ import {
   clinicalMovementBoost,
   type ClinicalRehabPlan,
 } from "@/lib/clinical-rehab-intel";
+import {
+  analyzeStoryIntelligence,
+  storyMovementBoost,
+  type StoryIntelligence,
+} from "@/lib/story-intelligence";
 import type {
   BodyPart,
   Difficulty,
@@ -136,11 +141,16 @@ export function parseConcernParagraph(paragraph: string): {
   conditionIds: string[];
   conditionLabels: string[];
 } {
+  // Prefer deep story intelligence when free text has enough signal
+  const intel =
+    paragraph.trim().length >= 12 ? analyzeStoryIntelligence(paragraph) : null;
+
   const text = paragraph.toLowerCase();
   const areas = new Set<BodyPart>();
   for (const [key, parts] of Object.entries(AREA_KEYWORDS)) {
     if (text.includes(key)) parts.forEach((p) => areas.add(p));
   }
+  intel?.regions.forEach((r) => areas.add(r));
 
   const symptoms: string[] = [];
   for (const s of [
@@ -168,19 +178,33 @@ export function parseConcernParagraph(paragraph: string): {
   if (text.includes("walk") || text.includes("stair")) goals.push("move easier walking");
   if (text.includes("desk") || text.includes("work")) goals.push("move easier at work");
   if (text.includes("sport") || text.includes("run")) goals.push("prepare for sport");
+  for (const g of intel?.planHints.functionalGoals || []) goals.push(g);
+  for (const g of intel?.goals || []) if (g !== "stated goal") goals.push(g);
   if (goals.length === 0) goals.push("reduce stiffness", "move easier");
 
-  let pain = 3;
+  let pain = intel?.painNow ?? 3;
   const painMatch = text.match(/pain\s*(?:is|=|:)?\s*(\d{1,2})/);
   if (painMatch) pain = Math.min(10, Number(painMatch[1]));
+  else if (intel?.painNow != null) pain = intel.painNow;
   else if (text.includes("severe") || text.includes("unbearable")) pain = 7;
   else if (text.includes("moderate")) pain = 4;
   else if (text.includes("mild") || text.includes("slight")) pain = 2;
   else if (text.includes("sharp")) pain = 6;
+  if (intel?.irritability === "high") pain = Math.max(pain, 5);
 
-  const painDescriptorIds = matchDescriptorsFromText(paragraph, 14);
+  const painDescriptorIds = Array.from(
+    new Set([
+      ...matchDescriptorsFromText(paragraph, 14),
+      ...(intel?.descriptorIds || []),
+    ])
+  );
   const descHints = summarizeDescriptors(painDescriptorIds);
-  const conditionIds = matchConditionsFromText(paragraph, 12);
+  const conditionIds = Array.from(
+    new Set([
+      ...matchConditionsFromText(paragraph, 12),
+      ...(intel?.conditionIds || []),
+    ])
+  );
   const condHints = summarizeConditions(conditionIds);
 
   // Condition body regions enrich area set
@@ -200,16 +224,24 @@ export function parseConcernParagraph(paragraph: string): {
   const exScore = EXERCISE_HINTS.filter((h) => text.includes(h)).length;
   const stScore = STRETCH_HINTS.filter((h) => text.includes(h)).length;
   let preferKinds: MovementKind[] | "auto" = "auto";
-  if (condHints.preferKinds !== "auto") preferKinds = condHints.preferKinds;
+  if (intel?.planHints.preferKinds?.length) preferKinds = intel.planHints.preferKinds;
+  else if (condHints.preferKinds !== "auto") preferKinds = condHints.preferKinds;
   else if (descHints.preferKinds !== "auto") preferKinds = descHints.preferKinds;
   else if (exScore > stScore + 1) preferKinds = ["exercise", "stretch"];
   else if (stScore > exScore + 1) preferKinds = ["stretch", "exercise"];
   else preferKinds = "auto";
 
+  // Enrich symptoms from story intel
+  if (intel?.sensory.length) {
+    for (const s of intel.sensory) {
+      if (!symptoms.includes(s)) symptoms.push(s);
+    }
+  }
+
   return {
     areas: areas.size ? Array.from(areas) : ["full-body"],
     symptoms: symptoms.length ? symptoms : ["general stiffness"],
-    goals,
+    goals: Array.from(new Set(goals)),
     preferKinds,
     estimatedPain: pain,
     painDescriptorIds,
@@ -234,11 +266,16 @@ function scoreMovement(
   kind: MovementKind,
   descHints?: ReturnType<typeof summarizeDescriptors>,
   rehab?: ClinicalRehabPlan,
-  movementId?: string
+  movementId?: string,
+  storyIntel?: StoryIntelligence | null
 ): number {
   let score = 0;
   // Priority-weighted area match (primary complaint regions first)
-  const priority = rehab?.priorityAreas?.length ? rehab.priorityAreas : input.areas;
+  const priority = rehab?.priorityAreas?.length
+    ? rehab.priorityAreas
+    : storyIntel?.regions?.length
+      ? storyIntel.regions
+      : input.areas;
   for (let i = 0; i < priority.length; i++) {
     const area = priority[i]!;
     if (bodyParts.includes(area)) score += Math.max(3, 10 - i * 1.5);
@@ -297,6 +334,18 @@ function scoreMovement(
     score += clinicalMovementBoost(rehab, {
       id: movementId,
       kind,
+      name,
+      tags,
+      bodyParts,
+      benefits,
+    });
+  }
+
+  // Deep free-text story intelligence (Describe Your Issue → routine ranking)
+  if (storyIntel && movementId) {
+    score += storyMovementBoost(storyIntel, {
+      id: movementId,
+      kind: kind === "stretch" ? "stretch" : "exercise",
       name,
       tags,
       bodyParts,
@@ -381,6 +430,17 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     ? parseConcernParagraph(input.concernParagraph)
     : null;
 
+  // Deep free-text intelligence (Describe Your Issue is primary signal)
+  const storyIntel = input.concernParagraph?.trim()
+    ? analyzeStoryIntelligence(input.concernParagraph, {
+        areas: input.areas,
+        sex: input.sex,
+        pastMedicalHistory: input.pastMedicalHistory,
+        currentMedicalHistory: input.currentMedicalHistory,
+        goals: input.goals,
+      })
+    : null;
+
   const adj = analyzeAssessmentAdjectives(input.concernParagraph || "");
   const safety = buildClinicalSafetyPlan({
     ageYears: input.ageYears,
@@ -411,7 +471,11 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     ? matchDescriptorsFromText(input.concernParagraph, 8)
     : [];
   const painDescriptorIds = Array.from(
-    new Set([...(input.painDescriptorIds || []), ...textMatched])
+    new Set([
+      ...(input.painDescriptorIds || []),
+      ...textMatched,
+      ...(storyIntel?.descriptorIds || []),
+    ])
   );
   const descHints = summarizeDescriptors(painDescriptorIds);
 
@@ -419,28 +483,45 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     ? matchConditionsFromText(input.concernParagraph, 10)
     : [];
   const conditionIds = Array.from(
-    new Set([...(input.conditionIds || []), ...(parsed?.conditionIds || []), ...textConditions])
+    new Set([
+      ...(input.conditionIds || []),
+      ...(parsed?.conditionIds || []),
+      ...textConditions,
+      ...(storyIntel?.conditionIds || []),
+    ])
   );
   const condHints = summarizeConditions(conditionIds);
 
-  // Injury-specific, phase-based outpatient HEP intelligence
+  // Story-derived areas + pain fill gaps when chips empty
+  const storyAreas =
+    storyIntel?.regions?.length
+      ? storyIntel.regions
+      : parsed?.areas || [];
+  const storyPain =
+    storyIntel?.painNow ?? parsed?.estimatedPain ?? 3;
+
+  // Injury-specific, phase-based outpatient HEP intelligence (+ story phase bias)
   const rehab = buildClinicalRehabPlan({
     ...input,
-    areas: input.areas.length ? input.areas : parsed?.areas || [],
+    areas: input.areas.length ? input.areas : storyAreas,
     painDescriptorIds,
     conditionIds,
     painLevels: {
       ...Object.fromEntries(
-        (input.areas.length ? input.areas : parsed?.areas || ["full-body"]).map((a) => [
-          a,
-          input.painLevels[a] ?? parsed?.estimatedPain ?? 3,
-        ])
+        (
+          input.areas.length
+            ? input.areas
+            : storyAreas.length
+              ? storyAreas
+              : (["full-body"] as BodyPart[])
+        ).map((a: BodyPart) => [a, input.painLevels[a] ?? storyPain])
       ),
       ...input.painLevels,
     },
+    // pass story signals via concern paragraph already; rehab reads paragraph
   });
 
-  // Merge program biases: descriptors + conditions + adjectives + safety + ADLs + symptoms
+  // Merge program biases: descriptors + conditions + adjectives + safety + ADLs + symptoms + story
   const mergedBiases = Array.from(
     new Set([
       ...descHints.biases,
@@ -462,6 +543,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ...adj.avoidTags,
       ...safety.avoidTags,
       ...rehab.avoidTags,
+      ...(storyIntel?.planHints.avoidTags || []),
     ])
   );
   const mergedPrefer = Array.from(
@@ -471,6 +553,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ...adj.preferTags,
       ...safety.preferTags,
       ...rehab.preferTags,
+      ...(storyIntel?.planHints.preferTags || []),
       ...(homeBased ? ["home", "minimal-equipment", "chair", "wall"] : []),
     ])
   );
@@ -520,29 +603,60 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       safety.maxDifficulty,
       adlSummary?.maxDifficulty,
       sxSummary?.maxDifficulty,
-      rehab.maxDifficulty
+      rehab.maxDifficulty,
+      storyIntel?.planHints.maxDifficulty
     ),
     preferKinds: descHints.preferKinds,
   };
 
   const areaSet = new Set<BodyPart>(
-    input.areas.length ? input.areas : parsed?.areas ?? ["full-body"]
+    input.areas.length
+      ? input.areas
+      : storyIntel?.regions?.length
+        ? storyIntel.regions
+        : parsed?.areas ?? ["full-body"]
   );
   condHints.bodyParts.forEach((bp) => areaSet.add(bp));
   for (const p of safety.precautions) {
     p.bodyPartsHint?.forEach((bp) => areaSet.add(bp));
   }
   rehab.priorityAreas.forEach((bp) => areaSet.add(bp));
-  // Injury-priority order first (clinical specificity)
+  storyIntel?.regions?.forEach((bp) => areaSet.add(bp));
+  // Injury-priority + free-text story regions first (Describe Your Issue primary)
   const areas = Array.from(
-    new Set([...rehab.priorityAreas, ...Array.from(areaSet)])
+    new Set([
+      ...rehab.priorityAreas,
+      ...(storyIntel?.regions || []),
+      ...Array.from(areaSet),
+    ])
   ) as BodyPart[];
-  const symptoms = input.symptoms.length ? input.symptoms : parsed?.symptoms ?? [];
-  const goals = input.goals.length ? input.goals : parsed?.goals ?? [];
+
+  const symptoms = input.symptoms.length
+    ? input.symptoms
+    : [
+        ...(parsed?.symptoms ?? []),
+        ...(storyIntel?.sensory || []),
+        ...(storyIntel?.aggravators.map((a) => `aggravated by ${a}`) || []),
+      ];
+  const goals = input.goals.length
+    ? input.goals
+    : [
+        ...(parsed?.goals ?? []),
+        ...(storyIntel?.planHints.functionalGoals || []),
+        ...(storyIntel?.goals || []),
+      ].filter(Boolean);
   const rawAvg =
-    areas.reduce((sum, a) => sum + (input.painLevels[a] ?? parsed?.estimatedPain ?? 3), 0) /
-    Math.max(areas.length, 1);
-  const avgPain = Math.min(10, rawAvg + combinedHints.effectivePainBoost);
+    areas.reduce(
+      (sum, a) =>
+        sum + (input.painLevels[a] ?? storyIntel?.painNow ?? parsed?.estimatedPain ?? 3),
+      0
+    ) / Math.max(areas.length, 1);
+  const avgPain = Math.min(
+    10,
+    rawAvg +
+      combinedHints.effectivePainBoost +
+      (storyIntel?.irritability === "high" ? 1.2 : storyIntel?.irritability === "low" ? -0.4 : 0)
+  );
 
   let difficulty = input.difficulty;
   if (combinedHints.maxDifficulty) {
@@ -553,7 +667,15 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   if (rank[rehab.maxDifficulty] < rank[difficulty]) {
     difficulty = rehab.maxDifficulty;
   }
+  if (
+    storyIntel?.planHints.maxDifficulty &&
+    rank[storyIntel.planHints.maxDifficulty] < rank[difficulty]
+  ) {
+    difficulty = storyIntel.planHints.maxDifficulty;
+  }
   if (avgPain >= 6 || condHints.clearanceRequired) difficulty = "beginner";
+  if (storyIntel?.irritability === "high" || storyIntel?.redFlagHints.length)
+    difficulty = "beginner";
   if (safety.programBiases.includes("sternal-precautions")) difficulty = "beginner";
   if (safety.programBiases.includes("nwb") || safety.programBiases.includes("ttwb"))
     difficulty = "beginner";
@@ -566,6 +688,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     new Set([
       ...symptoms,
       ...(sxSummary?.labels || []),
+      ...(storyIntel?.functionalLimits || []),
       ...(adlSummary?.limitedCount
         ? adlEntries
             .filter((e) => e.assistance !== "independent")
@@ -593,17 +716,19 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   const prefer: MovementKind[] =
     input.preferKinds && input.preferKinds !== "auto"
       ? input.preferKinds
-      : rehab.preferKinds?.length
-        ? rehab.preferKinds
-        : combinedHints.preferKinds !== "auto" && Array.isArray(combinedHints.preferKinds)
-          ? combinedHints.preferKinds
-          : condHints.preferKinds !== "auto"
-            ? condHints.preferKinds
-            : descHints.preferKinds !== "auto"
-              ? descHints.preferKinds
-              : parsed?.preferKinds && parsed.preferKinds !== "auto"
-                ? parsed.preferKinds
-                : (["stretch", "exercise"] as MovementKind[]);
+      : storyIntel?.planHints.preferKinds?.length
+        ? storyIntel.planHints.preferKinds
+        : rehab.preferKinds?.length
+          ? rehab.preferKinds
+          : combinedHints.preferKinds !== "auto" && Array.isArray(combinedHints.preferKinds)
+            ? combinedHints.preferKinds
+            : condHints.preferKinds !== "auto"
+              ? condHints.preferKinds
+              : descHints.preferKinds !== "auto"
+                ? descHints.preferKinds
+                : parsed?.preferKinds && parsed.preferKinds !== "auto"
+                  ? parsed.preferKinds
+                  : (["stretch", "exercise"] as MovementKind[]);
 
   const stretchCandidates = BASE_STRETCHES.filter((s) => {
     if (!rankOk(s.difficulty, difficulty, avgPain)) return false;
@@ -626,7 +751,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         "stretch",
         combinedHints,
         rehab,
-        s.id
+        s.id,
+        storyIntel
       ),
     }))
     .sort((a, b) => b.score - a.score);
@@ -699,7 +825,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         "exercise",
         combinedHints,
         rehab,
-        e.id
+        e.id,
+        storyIntel
       ),
     }))
     .sort((a, b) => b.score - a.score);
@@ -714,6 +841,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       safety.minutesScale *
       adj.minutesScale *
       rehab.minutesScale *
+      (storyIntel?.planHints.minutesScale ?? 1) *
       (adlSummary?.minutesScale ?? 1) *
       (sxSummary?.minutesScale ?? 1)
   );
@@ -959,6 +1087,17 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         : `${primaryRegion.replace(/-/g, " ")}: ${patternLabel || kindsLabel}`,
     description: [
       `Injury-specific outpatient-style HEP in the “${rehab.phase.replace(/-/g, " ")}” phase.`,
+      storyIntel
+        ? `Story intelligence: ${storyIntel.irritability} irritability${
+            storyIntel.activityResponse !== "unknown"
+              ? `, activity response ${storyIntel.activityResponse}`
+              : ""
+          }${
+            storyIntel.functionalLimits.length
+              ? `; function: ${storyIntel.functionalLimits.slice(0, 3).join(", ")}`
+              : ""
+          }.`
+        : null,
       `Priority regions: ${rehab.priorityAreas.slice(0, 4).map((a) => a.replace(/-/g, " ")).join(", ")}.`,
       `Structure: ${rehab.sessionBlueprint.join(" → ")}.`,
       medSummary
@@ -967,7 +1106,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
           }${medSummary.hrBlunting ? "; beta-blocker → prefer Borg/RPE over HR" : ""}.`
         : null,
       homeBased ? "Home-friendly variations preferred." : null,
-      "Selections ranked by clinical descriptors, conditions, story text, medical history, and irritability-based dosing for positive functional outcomes.",
+      "Selections ranked by free-text story intelligence, clinical descriptors, conditions, medical history, and irritability-based dosing for functional outcomes.",
     ]
       .filter(Boolean)
       .join(" "),
@@ -1003,18 +1142,43 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       prostheticIds: safety.prostheticIds,
       assistiveDeviceIds: safety.assistiveDeviceIds,
       suggestedAssistiveDeviceIds: safety.suggestedAssistiveDeviceIds,
-      safetySummary: [...rehab.summaryLines, ...safety.summaryLines].slice(0, 16),
+      safetySummary: [
+        ...(storyIntel?.liveReadLines || []),
+        ...rehab.summaryLines,
+        ...safety.summaryLines,
+      ].slice(0, 18),
       safetyEducation: [
         {
           title: "Evidence-informed session blueprint",
           body: rehab.sessionBlueprint.join(" → "),
           bullets: rehab.evidenceNotes.slice(0, 6),
         },
+        ...(storyIntel
+          ? [
+              {
+                title: "From your free-text story",
+                body: storyIntel.coachSummary,
+                bullets: [
+                  ...storyIntel.planHints.evidenceLines.slice(0, 4),
+                  ...(storyIntel.aggravators.length
+                    ? [`Aggravators: ${storyIntel.aggravators.slice(0, 5).join(", ")}`]
+                    : []),
+                  ...(storyIntel.functionalLimits.length
+                    ? [`Function: ${storyIntel.functionalLimits.slice(0, 5).join(", ")}`]
+                    : []),
+                ],
+              },
+            ]
+          : []),
         ...safety.educationBlocks.slice(0, 16),
       ],
       protocolNotes: input.protocolNotes,
       adjectiveHits: adj.wordsFound,
-      adjectiveSummary: [...adj.summaryLines, ...rehab.evidenceNotes].slice(0, 12),
+      adjectiveSummary: [
+        ...adj.summaryLines,
+        ...(storyIntel?.planHints.evidenceLines || []),
+        ...rehab.evidenceNotes,
+      ].slice(0, 14),
       // Clinical outcome targets: conditions + injury-pattern outcomes
       // (prefer condition-specific evidence when present)
       clinicalOutcomes: (

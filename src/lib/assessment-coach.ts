@@ -14,6 +14,7 @@ import {
   answerStoryConversation,
   buildStoryPriorPrompt,
   formatQuestionForStoryBox,
+  getStoryIntel,
   nextStoryBoxQuestion,
   selectAutoAppearingQuestions,
   storyEndsWithOpenQuestion,
@@ -21,11 +22,16 @@ import {
   type ConversationPrompt,
   type StoryPriorPrompt,
 } from "@/lib/assessment-story-conversation";
+import {
+  analyzeStoryIntelligence,
+  type StoryIntelligence,
+} from "@/lib/story-intelligence";
 
-export type { ConversationPrompt, StoryPriorPrompt };
+export type { ConversationPrompt, StoryPriorPrompt, StoryIntelligence };
 export {
   buildStoryPriorPrompt,
   formatQuestionForStoryBox,
+  getStoryIntel,
   nextStoryBoxQuestion,
   selectAutoAppearingQuestions,
   storyEndsWithOpenQuestion,
@@ -247,11 +253,37 @@ export function buildWrittenPlanApproach(
   }
   paragraphs.push(problemBits.join(" "));
 
+  const storyIntel = ctx.paragraph.trim()
+    ? analyzeStoryIntelligence(ctx.paragraph, {
+        preferredName: ctx.preferredName,
+        areas: ctx.areas,
+        sex: ctx.sex,
+        pastMedicalHistory: ctx.pastMedicalHistory,
+        currentMedicalHistory: ctx.currentMedicalHistory,
+        goals: ctx.goals,
+      })
+    : null;
+
   paragraphs.push(
     `Goal of care: support “${goals}” with a ${routine.difficulty} home program of about ${routine.estimatedMinutes} minutes (${routine.items.length} movements: ${stretchItems.length} mobility, ${exerciseItems.length} strength/control)${
       routine.homeBasedProgram ? ", using home-friendly variations" : ""
-    }. Your written story, sex context, and medical history are correlated so dosing stays realistic across Assessment, Plan, Journal, and Jeffery.`
+    }. Your free-text story${
+      storyIntel
+        ? ` (${storyIntel.irritability} irritability${
+            storyIntel.activityResponse !== "unknown"
+              ? `, activity ${storyIntel.activityResponse}`
+              : ""
+          }${
+            storyIntel.functionalLimits.length
+              ? `; function: ${storyIntel.functionalLimits.slice(0, 3).join(", ")}`
+              : ""
+          } → ${storyIntel.planHints.phaseBias} dosing bias)`
+        : ""
+    }, sex context, and medical history are correlated so dosing stays realistic across Assessment, Plan, Journal, and Jeffery.`
   );
+  if (storyIntel?.planHints.evidenceLines[0]) {
+    paragraphs.push(`Story-driven dosing note: ${storyIntel.planHints.evidenceLines[0]}`);
+  }
 
   const blueprint =
     routine.generatedFrom?.safetyEducation?.find((b) =>

@@ -11,6 +11,7 @@ import type { ProgramBias } from "@/data/pain-descriptors";
 import { summarizeConditions } from "@/data/clinical-conditions";
 import { summarizeDescriptors } from "@/data/pain-descriptors";
 import { clinicalHistorySummary, type SexSelection } from "@/lib/clinical-history";
+import { analyzeStoryIntelligence } from "@/lib/story-intelligence";
 
 /** Clinical program phase for HEP structure */
 export type RehabPhase =
@@ -284,24 +285,46 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
   painDescriptorIds?: string[];
 }): ClinicalRehabPlan {
   const paragraph = input.concernParagraph || "";
-  const descIds = input.painDescriptorIds || [];
-  const condIds = input.conditionIds || [];
+  const story = paragraph.trim()
+    ? analyzeStoryIntelligence(paragraph, {
+        areas: input.areas,
+        sex: input.sex,
+        pastMedicalHistory: input.pastMedicalHistory,
+        currentMedicalHistory: input.currentMedicalHistory,
+        goals: input.goals,
+      })
+    : null;
+
+  const descIds = unique([
+    ...(input.painDescriptorIds || []),
+    ...(story?.descriptorIds || []),
+  ]);
+  const condIds = unique([
+    ...(input.conditionIds || []),
+    ...(story?.conditionIds || []),
+  ]);
   const desc = summarizeDescriptors(descIds);
   const cond = summarizeConditions(condIds);
 
   const areas = unique([
     ...(input.areas || []),
+    ...(story?.regions || []),
     ...cond.bodyParts,
   ]) as BodyPart[];
 
-  const areaPainValues = areas.map((a) => input.painLevels?.[a] ?? 3);
+  const areaPainValues = areas.map(
+    (a) => input.painLevels?.[a] ?? story?.painNow ?? 3
+  );
   const rawAvg =
     areaPainValues.length > 0
       ? areaPainValues.reduce((a, b) => a + b, 0) / areaPainValues.length
-      : 3;
+      : story?.painNow ?? 3;
   const avgPain = Math.min(
     10,
-    rawAvg + desc.effectivePainBoost * 0.35 + cond.effectivePainBoost * 0.35
+    rawAvg +
+      desc.effectivePainBoost * 0.35 +
+      cond.effectivePainBoost * 0.35 +
+      (story?.irritability === "high" ? 1 : story?.irritability === "low" ? -0.5 : 0)
   );
 
   const patterns = detectPatterns({
@@ -317,14 +340,41 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
     currentMedicalHistory: input.currentMedicalHistory,
   });
 
-  const phase = phaseFor({
+  // Story-driven phase can override generic phase when free text is rich
+  let phase = phaseFor({
     avgPain,
     patterns,
     clearanceRequired: cond.clearanceRequired,
   });
+  if (story && (story.richness === "rich" || story.richness === "clinical" || story.richness === "moderate")) {
+    const storyPhase = story.planHints.phaseBias;
+    // Prefer more protective phase when story and heuristic disagree under high irritability
+    const order: RehabPhase[] = [
+      "protect-calm",
+      "mobility-restore",
+      "motor-control",
+      "capacity-load",
+      "function-return",
+    ];
+    if (story.irritability === "high" || story.redFlagHints.length) {
+      phase = "protect-calm";
+    } else if (order.indexOf(storyPhase) < order.indexOf(phase)) {
+      phase = storyPhase;
+    } else if (story.irritability === "low" && avgPain <= 3) {
+      phase = storyPhase;
+    }
+  }
 
-  let preferTags: string[] = [...desc.preferTags, ...cond.preferTags];
-  let avoidTags: string[] = [...desc.avoidTags, ...cond.avoidTags];
+  let preferTags: string[] = [
+    ...desc.preferTags,
+    ...cond.preferTags,
+    ...(story?.planHints.preferTags || []),
+  ];
+  let avoidTags: string[] = [
+    ...desc.avoidTags,
+    ...cond.avoidTags,
+    ...(story?.planHints.avoidTags || []),
+  ];
   let preferredStretchIds: string[] = [];
   let preferredExerciseIds: string[] = [];
   const programBiases = unique([
@@ -389,6 +439,27 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
       break;
   }
 
+  // Story minutes / kind bias
+  if (story) {
+    minutesScale *= story.planHints.minutesScale;
+    if (story.planHints.preferKinds?.length) {
+      preferKinds = story.planHints.preferKinds;
+    }
+    // Function-task quotas: stairs/sit-to-stand → more exercise control
+    if (
+      story.functionalLimits.some((f) =>
+        /stairs|sit-to-stand|walking|sport|gym/.test(f)
+      ) &&
+      story.irritability !== "high"
+    ) {
+      exerciseQuota = Math.max(exerciseQuota, 4);
+      stretchQuota = Math.min(stretchQuota, 4);
+    }
+    if (story.sensory.includes("stiff/tight") && story.irritability !== "high") {
+      stretchQuota = Math.max(stretchQuota, 4);
+    }
+  }
+
   // Condition/descriptor caps
   if (cond.maxDifficulty && difficultyRank(cond.maxDifficulty) < difficultyRank(maxDifficulty)) {
     maxDifficulty = cond.maxDifficulty;
@@ -396,10 +467,19 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
   if (desc.maxDifficulty && difficultyRank(desc.maxDifficulty) < difficultyRank(maxDifficulty)) {
     maxDifficulty = desc.maxDifficulty;
   }
-  if (avgPain >= 6 || cond.clearanceRequired) maxDifficulty = "beginner";
+  if (story?.planHints.maxDifficulty &&
+    difficultyRank(story.planHints.maxDifficulty) < difficultyRank(maxDifficulty)
+  ) {
+    maxDifficulty = story.planHints.maxDifficulty;
+  }
+  if (avgPain >= 6 || cond.clearanceRequired || story?.irritability === "high")
+    maxDifficulty = "beginner";
 
   // Desk / posture language
-  if (/desk|posture|screen|computer/i.test(paragraph)) {
+  if (
+    /desk|posture|screen|computer/i.test(paragraph) ||
+    story?.aggravators.some((a) => a.includes("sitting") || a.includes("desk"))
+  ) {
     preferTags.push("desk", "posture", "thoracic", "chin-tuck");
     if (!patterns.includes("cervical-desk")) preferKinds = ["stretch", "exercise"];
   }
@@ -416,37 +496,61 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
     preferTags.push("balance", "foot", "gentle");
   }
 
-  const priorityAreas = prioritizeAreas(areas.length ? areas : ["full-body"], patterns, paragraph);
+  const priorityAreas = prioritizeAreas(
+    areas.length ? areas : ["full-body"],
+    patterns,
+    paragraph
+  );
 
   const outcomeFocus = unique([
     ...cond.outcomeFocus,
+    ...(story?.planHints.functionalGoals || []),
     ...patterns.map((pat) => patternOutcome(pat)),
   ]).slice(0, 8);
 
   const evidenceNotes = [
     `Phase: ${phaseLabel(phase)} — irritability-guided dosing (pain traffic light; mild productive discomfort ≤3/10 often acceptable if settles ≤24h).`,
     `Patterns: ${patterns.map(patternLabel).join("; ")}.`,
+    story
+      ? `Free-text story: ${story.irritability} irritability${
+          story.activityResponse !== "unknown"
+            ? `, activity ${story.activityResponse}`
+            : ""
+        }${
+          story.aggravators.length
+            ? `; aggravators ${story.aggravators.slice(0, 4).join(", ")}`
+            : ""
+        }.`
+      : null,
     `Session built as graded outpatient-style HEP: ${PHASE_BLUEPRINT[phase].join(" → ")}.`,
-    avgPain >= 5
+    avgPain >= 5 || story?.irritability === "high"
       ? "Higher irritability: prioritize control and protected ROM over aggressive stretch or load."
       : "Lower irritability: progress motor control and capacity while maintaining mobility gains.",
+    ...(story?.planHints.evidenceLines.slice(0, 3) || []),
     cond.clinicalOutcomes[0]
       ? `Outcome focus example: ${cond.clinicalOutcomes[0].label} (${cond.clinicalOutcomes[0].timeframe}).`
-      : "Track a patient-specific functional goal (PSFS-style) weekly.",
+      : story?.functionalLimits[0]
+        ? `Track function: ${story.functionalLimits[0]} (PSFS-style weekly).`
+        : "Track a patient-specific functional goal (PSFS-style) weekly.",
     clinicalHistorySummary({
       sex: input.sex,
       pastMedicalHistory: input.pastMedicalHistory,
       currentMedicalHistory: input.currentMedicalHistory,
     }) || "No extra medical-history modifiers beyond paragraph/conditions.",
-  ];
+  ].filter(Boolean) as string[];
 
   const summaryLines = [
     `Rehab phase: ${phaseLabel(phase)}`,
     `Injury/clinical patterns: ${patterns.map(patternLabel).join(", ")}`,
+    story
+      ? `Story irritability: ${story.irritability}${
+          story.painNow != null ? ` · ~${story.painNow}/10` : ""
+        }`
+      : null,
     `Priority regions: ${priorityAreas.slice(0, 5).join(", ")}`,
     `Volume bias: ${stretchQuota} mobility + ${exerciseQuota} strength/control (scaled)`,
     `Max difficulty cap: ${maxDifficulty}`,
-  ];
+  ].filter(Boolean) as string[];
 
   return {
     phase,
