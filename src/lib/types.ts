@@ -181,6 +181,10 @@ export interface UserProfile {
   passwordHash: string;
   twoFactorEnabled: boolean;
   twoFactorSecret?: string;
+  /** Increment to invalidate all existing JWTs for this user */
+  sessionVersion: number;
+  /** Server-assigned avatar object key (never client path) */
+  avatarKey?: string;
   createdAt: string;
   preferences: UserPreferences;
   goals: Goal[];
@@ -195,6 +199,8 @@ export interface UserPreferences {
   notificationsEnabled: boolean;
   offlineVideosPreferred: boolean;
   nameChoice?: string;
+  /** UI theme preference: auto | light | dark */
+  theme?: "auto" | "light" | "dark";
 }
 
 export interface Goal {

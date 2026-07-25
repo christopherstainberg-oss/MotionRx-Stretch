@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppLogo } from "./Icons";
+import { ThemeCycleButton } from "./ThemeToggle";
 import { cn } from "@/lib/utils";
 import {
   BookOpen,
@@ -142,6 +143,7 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
           </nav>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
+            <ThemeCycleButton className="hidden sm:inline-flex" />
             <button
               type="button"
               className="btn-ghost min-h-[44px] min-w-[44px] p-2 lg:hidden"
@@ -179,10 +181,10 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
           />
           <div
             id="mobile-drawer"
-            className="absolute bottom-0 left-0 right-0 max-h-[88dvh] overflow-y-auto rounded-t-3xl border-t border-brand-100 bg-white shadow-2xl"
+            className="absolute bottom-0 left-0 right-0 max-h-[88dvh] overflow-y-auto rounded-t-3xl border-t border-brand-100 bg-white shadow-2xl dark:border-brand-800 dark:bg-brand-950"
             style={{ paddingBottom: "max(1.25rem, var(--safe-bottom))" }}
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-brand-50 bg-white px-5 py-4">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-brand-50 bg-white px-5 py-4 dark:border-brand-800 dark:bg-brand-950">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">Menu</p>
                 <p className="font-bold text-brand-950">Where to next?</p>
@@ -195,6 +197,12 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
               >
                 <X className="h-5 w-5" />
               </button>
+            </div>
+            <div className="border-b border-brand-50 px-4 py-3 dark:border-brand-800">
+              <ThemeCycleButton />
+              <p className="mt-1 text-[11px] text-brand-600 dark:text-brand-400">
+                Tap to cycle Auto · Light · Dark
+              </p>
             </div>
             <ul className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-3">
               {links.map(({ href, label, icon: Icon }) => {
@@ -230,7 +238,7 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
 
       {/* Bottom tab bar (phones & small tablets) */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 border-t border-brand-100/90 bg-white/95 shadow-[0_-8px_30px_-12px_rgba(15,61,58,0.18)] backdrop-blur-xl lg:hidden"
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-brand-100/90 bg-white/95 shadow-[0_-8px_30px_-12px_rgba(15,61,58,0.18)] backdrop-blur-xl dark:border-brand-800/90 dark:bg-brand-950/95 dark:shadow-[0_-8px_30px_-12px_rgba(0,0,0,0.45)] lg:hidden"
         aria-label="Primary"
         style={{ paddingBottom: "var(--safe-bottom)" }}
       >

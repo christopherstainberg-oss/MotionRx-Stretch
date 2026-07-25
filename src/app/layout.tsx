@@ -1,7 +1,10 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import { DEFAULT_APP_NAME } from "@/data/names";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: {
@@ -33,20 +36,25 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#2c756f" },
-    { media: "(prefers-color-scheme: dark)", color: "#1f413f" },
+    { media: "(prefers-color-scheme: dark)", color: "#0d2625" },
   ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
-  colorScheme: "light",
+  colorScheme: "light dark",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className="font-sans antialiased">
-        <AppShell>{children}</AppShell>
+        <Script id="theme-boot" strategy="beforeInteractive">
+          {THEME_BOOT_SCRIPT}
+        </Script>
+        <ThemeProvider>
+          <AppShell>{children}</AppShell>
+        </ThemeProvider>
       </body>
     </html>
   );

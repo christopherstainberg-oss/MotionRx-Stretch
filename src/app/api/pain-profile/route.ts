@@ -3,6 +3,7 @@ import { getActorId } from "@/lib/auth";
 import { readDb, updateDb } from "@/lib/storage";
 import type { BodyPart, PainProfile } from "@/lib/types";
 import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
+import { clampInt } from "@/lib/security";
 import { v4 as uuid } from "uuid";
 
 export async function GET() {
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
     updatedAt: new Date().toISOString(),
     descriptorIds,
     freeText: body.freeText ? sanitizeText(String(body.freeText), 2000) : undefined,
-    overallPain: Math.max(0, Math.min(10, Number(body.overallPain) || 0)),
+    overallPain: clampInt(Number(body.overallPain), 0, 10, 0),
     areas: (Array.isArray(body.areas) ? body.areas.slice(0, 15) : []) as BodyPart[],
     source: (body.source as PainProfile["source"]) || "manual",
   };

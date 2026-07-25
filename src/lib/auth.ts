@@ -1,13 +1,16 @@
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
-import { readDb, updateDb } from "@/lib/storage";
+import { readDb, updateDb, type DbShape } from "@/lib/storage";
 import type { UserPreferences, UserProfile } from "@/lib/types";
 import { v4 as uuid } from "uuid";
 import { isValidEmail } from "@/lib/rate-limit";
+import { sanitizeDisplayName } from "@/lib/security";
 
 const COOKIE = "motionrx_session";
 const GUEST_COOKIE = "motionrx_guest";
+/** Access session lifetime (seconds) — shorter than prior 14d */
+const SESSION_MAX_AGE_SEC = 60 * 60 * 24 * 7; // 7 days
 
 function authSecretBytes(): Uint8Array {
   const raw = process.env.AUTH_SECRET;
@@ -29,6 +32,7 @@ const defaultPrefs = (): UserPreferences => ({
   notificationsEnabled: true,
   offlineVideosPreferred: false,
   nameChoice: "motionrx",
+  theme: "auto",
 });
 
 export async function hashPassword(password: string) {
@@ -39,18 +43,22 @@ export async function verifyPassword(password: string, hash: string) {
   return bcrypt.compare(password, hash);
 }
 
-export async function createToken(userId: string) {
-  return new SignJWT({ sub: userId })
+export async function createToken(userId: string, sessionVersion: number) {
+  return new SignJWT({ sub: userId, sv: sessionVersion })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("14d")
+    .setExpirationTime(`${SESSION_MAX_AGE_SEC}s`)
     .sign(authSecretBytes());
 }
 
-export async function verifyToken(token: string) {
+export async function verifyToken(
+  token: string
+): Promise<{ userId: string; sessionVersion: number } | null> {
   try {
     const { payload } = await jwtVerify(token, authSecretBytes());
-    return typeof payload.sub === "string" ? payload.sub : null;
+    if (typeof payload.sub !== "string") return null;
+    const sv = typeof payload.sv === "number" ? payload.sv : 0;
+    return { userId: payload.sub, sessionVersion: sv };
   } catch {
     return null;
   }
@@ -62,12 +70,22 @@ export async function setSessionCookie(token: string) {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 24 * 14,
+    maxAge: SESSION_MAX_AGE_SEC,
   });
 }
 
 export async function clearSessionCookie() {
   cookies().set(COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  });
+}
+
+export function clearGuestCookie() {
+  cookies().set(GUEST_COOKIE, "", {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -92,13 +110,31 @@ export function getOrCreateGuestId(): string {
   return id;
 }
 
+export function peekGuestId(): string | null {
+  const existing = cookies().get(GUEST_COOKIE)?.value;
+  if (existing && /^guest_[a-f0-9-]{8,}$/i.test(existing)) return existing;
+  return null;
+}
+
+function normalizeUser(u: UserProfile): UserProfile {
+  return {
+    ...u,
+    sessionVersion: typeof u.sessionVersion === "number" ? u.sessionVersion : 0,
+    twoFactorEnabled: Boolean(u.twoFactorEnabled && u.twoFactorSecret),
+  };
+}
+
 export async function getSessionUser(): Promise<UserProfile | null> {
   const token = cookies().get(COOKIE)?.value;
   if (!token) return null;
-  const userId = await verifyToken(token);
-  if (!userId) return null;
+  const parsed = await verifyToken(token);
+  if (!parsed) return null;
   const db = await readDb();
-  return db.users.find((u) => u.id === userId) ?? null;
+  const user = db.users.find((u) => u.id === parsed.userId);
+  if (!user) return null;
+  const normalized = normalizeUser(user);
+  if (normalized.sessionVersion !== parsed.sessionVersion) return null;
+  return normalized;
 }
 
 /** Authenticated user id or isolated guest id */
@@ -106,6 +142,39 @@ export async function getActorId(): Promise<{ userId: string; isGuest: boolean }
   const user = await getSessionUser();
   if (user) return { userId: user.id, isGuest: false };
   return { userId: getOrCreateGuestId(), isGuest: true };
+}
+
+export function assertCanEditProfile(actorId: string, targetId: string): boolean {
+  return Boolean(actorId) && actorId === targetId;
+}
+
+/** Reassign guest-owned records to authenticated user after login/register */
+export function migrateGuestData(db: DbShape, guestId: string, userId: string) {
+  if (!guestId || !userId || guestId === userId) return;
+  const reassign = <T extends { userId?: string }>(rows: T[]) => {
+    for (const r of rows) {
+      if (r.userId === guestId) r.userId = userId;
+    }
+  };
+  reassign(db.sessions);
+  reassign(db.journal);
+  reassign(db.routines);
+  reassign(db.painProfiles);
+  reassign(db.jefferyThreads);
+  reassign(db.modalityPlans);
+  reassign(db.modalityLogs);
+  reassign(db.communityPosts);
+}
+
+export async function bumpSessionVersion(userId: string): Promise<number> {
+  let next = 0;
+  await updateDb((db) => {
+    const u = db.users.find((x) => x.id === userId);
+    if (!u) return;
+    u.sessionVersion = (typeof u.sessionVersion === "number" ? u.sessionVersion : 0) + 1;
+    next = u.sessionVersion;
+  });
+  return next;
 }
 
 export async function registerUser(input: {
@@ -124,7 +193,7 @@ export async function registerUser(input: {
   if (password.length > 128) {
     return { error: "Password must be at most 128 characters." };
   }
-  const name = input.name.trim().slice(0, 80) || "Mover";
+  const name = sanitizeDisplayName(input.name, 80) || "Mover";
 
   const db = await readDb();
   if (db.users.some((u) => u.email === email)) {
@@ -136,6 +205,7 @@ export async function registerUser(input: {
     name,
     passwordHash: await hashPassword(password),
     twoFactorEnabled: false,
+    sessionVersion: 0,
     createdAt: new Date().toISOString(),
     preferences: defaultPrefs(),
     goals: [],
@@ -154,26 +224,40 @@ export async function loginUser(input: {
 }): Promise<{ user: UserProfile } | { error: string }> {
   const email = input.email.trim().toLowerCase();
   const password = input.password;
-  if (!isValidEmail(email) || !password) {
+  if (!isValidEmail(email) || !password || password.length > 128) {
     return { error: "Invalid email or password." };
   }
-  // Constant-ish path: always hash compare when user missing
   const db = await readDb();
   const user = db.users.find((u) => u.email === email);
   if (!user) {
-    // Mitigate timing leaks for unknown emails
     await hashPassword(password);
     return { error: "Invalid email or password." };
   }
   if (!(await verifyPassword(password, user.passwordHash))) {
     return { error: "Invalid email or password." };
   }
-  return { user };
+  return { user: normalizeUser(user) };
 }
 
+/** Minimal public user — no secrets, no full internal graph dump */
 export function publicUser(user: UserProfile) {
-  const { passwordHash, twoFactorSecret, ...safe } = user;
-  return safe;
+  const enrolled = Boolean(user.twoFactorSecret);
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    twoFactorEnabled: Boolean(user.twoFactorEnabled && enrolled),
+    twoFactorEnrolled: enrolled,
+    avatarKey: user.avatarKey || null,
+    hasAvatar: Boolean(user.avatarKey),
+    preferences: {
+      reminderTimes: user.preferences.reminderTimes ?? [],
+      notificationsEnabled: Boolean(user.preferences.notificationsEnabled),
+      nameChoice: user.preferences.nameChoice,
+      sessionLengthMinutes: user.preferences.sessionLengthMinutes ?? 15,
+      theme: user.preferences.theme ?? "auto",
+    },
+  };
 }
 
 export function ownsRecord(

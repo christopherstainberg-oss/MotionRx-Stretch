@@ -1,28 +1,61 @@
 import { NextResponse } from "next/server";
-import { createToken, loginUser, publicUser, setSessionCookie } from "@/lib/auth";
+import {
+  createToken,
+  loginUser,
+  publicUser,
+  setSessionCookie,
+  peekGuestId,
+  clearGuestCookie,
+  migrateGuestData,
+} from "@/lib/auth";
+import { updateDb } from "@/lib/storage";
 import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
+import { assertSameOrigin, contentLengthOk } from "@/lib/security";
 
 export async function POST(req: Request) {
-  const limited = rateLimit(`login:${clientIp(req)}`, {
-    limit: 10,
-    windowMs: 15 * 60 * 1000,
-  });
-  if (!limited.ok) {
-    return NextResponse.json(
-      { error: "Too many login attempts. Try again later." },
-      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
-    );
-  }
+  try {
+    const limited = rateLimit(`login:${clientIp(req)}`, {
+      limit: 10,
+      windowMs: 15 * 60 * 1000,
+    });
+    if (!limited.ok) {
+      return NextResponse.json(
+        { error: "Too many login attempts. Try again later." },
+        { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+      );
+    }
 
-  const body = await req.json().catch(() => ({}));
-  const result = await loginUser({
-    email: sanitizeText(String(body.email || ""), 254),
-    password: String(body.password || ""),
-  });
-  if ("error" in result) {
-    return NextResponse.json({ error: result.error }, { status: 401 });
+    if (!contentLengthOk(req, 4_096)) {
+      return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+    }
+    if (!assertSameOrigin(req)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const result = await loginUser({
+      email: sanitizeText(String(body.email || ""), 254),
+      password: String(body.password || ""),
+    });
+    if ("error" in result) {
+      return NextResponse.json({ error: result.error }, { status: 401 });
+    }
+
+    const guestId = peekGuestId();
+    if (guestId) {
+      await updateDb((db) => {
+        migrateGuestData(db, guestId, result.user.id);
+      });
+      clearGuestCookie();
+    }
+
+    const sv =
+      typeof result.user.sessionVersion === "number" ? result.user.sessionVersion : 0;
+    const token = await createToken(result.user.id, sv);
+    await setSessionCookie(token);
+    return NextResponse.json({ user: publicUser(result.user) });
+  } catch (e) {
+    console.error("login_failed", { err: String(e) });
+    return NextResponse.json({ error: "Login failed" }, { status: 500 });
   }
-  const token = await createToken(result.user.id);
-  await setSessionCookie(token);
-  return NextResponse.json({ user: publicUser(result.user) });
 }

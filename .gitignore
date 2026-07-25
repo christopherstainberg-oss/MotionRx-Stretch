@@ -6,7 +6,9 @@ dist
 .env.local
 .env*.local
 data/*.json
+data/uploads/**
 !data/.gitkeep
+!data/uploads/.gitkeep
 *.log
 .DS_Store
 standalone

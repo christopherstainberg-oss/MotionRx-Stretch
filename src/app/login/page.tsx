@@ -17,6 +17,8 @@ import {
   Stethoscope,
 } from "lucide-react";
 import { AppLogo } from "@/components/Icons";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { apiFetch } from "@/lib/api-client";
 import { DEFAULT_APP_NAME } from "@/data/names";
 
 const FEATURES = [
@@ -65,7 +67,7 @@ export default function LoginPage() {
 
   // If already signed in, go straight to the home dashboard
   useEffect(() => {
-    fetch("/api/auth/me")
+    apiFetch("/api/auth/me")
       .then((r) => r.json())
       .then((d) => {
         if (d.user) router.replace("/home");
@@ -79,7 +81,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch(mode === "login" ? "/api/auth/login" : "/api/auth/register", {
+      const res = await apiFetch(mode === "login" ? "/api/auth/login" : "/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, name }),
@@ -183,8 +185,11 @@ export default function LoginPage() {
         </section>
 
         {/* Sign-in form */}
-        <section className="flex flex-col justify-center border-t border-brand-100 bg-white/80 px-5 py-8 shadow-[0_-12px_40px_-20px_rgba(15,61,58,0.15)] sm:px-10 sm:py-12 lg:border-l lg:border-t-0 lg:py-16 lg:shadow-none">
+        <section className="flex flex-col justify-center border-t border-brand-100 bg-white/80 px-5 py-8 shadow-[0_-12px_40px_-20px_rgba(15,61,58,0.15)] sm:px-10 sm:py-12 lg:border-l lg:border-t-0 lg:py-16 lg:shadow-none dark:border-brand-800 dark:bg-brand-950/80">
           <div className="mx-auto w-full max-w-md">
+            <div className="mb-5">
+              <ThemeToggle compact />
+            </div>
             <div className="mb-6">
               <h2 className="text-2xl font-bold text-brand-950">
                 {mode === "login" ? "Sign in to continue" : "Create your free account"}
