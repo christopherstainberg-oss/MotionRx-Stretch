@@ -8,38 +8,40 @@
 #   docker compose -f docker-compose.build.yml build && docker compose up -d
 #
 # ── Portainer (Stacks → Add stack → Web editor) ──────────────────────────────
-# 1. Paste this entire file.
-# 2. Environment variables (stack env):
-#      AUTH_SECRET          required in production (openssl rand -base64 32)
+# 1. Paste this entire file (do not select "Build" / Git build).
+# 2. Stack environment variables (required for a working deploy):
+#      AUTH_SECRET          openssl rand -base64 32
 #      APP_PORT             default 3000
 #      GHCR_IO_IMAGE        default below
 #      GHCR_IO_USER         GitHub username (private package)
 #      GHCR_IO_TOKEN        PAT with read:packages (private package)
-# 3. Portainer → Registries → Add registry:
+# 3. Portainer → Registries → Add registry (required while package is private):
 #      URL:      ghcr.io
 #      Username: your GitHub username
 #      Password: PAT with read:packages
-#    (Package motionrx-stretch is private — pull fails without this.)
-# 4. Deploy the stack. Do not enable "Build" options.
+# 4. Deploy the stack. Watchtower starts only after the app is healthy.
 #
 # Image (always lowercase on ghcr.io):
 #   ghcr.io/christopherstainberg-oss/motionrx-stretch:latest
+
+name: motionrx-stretch
 
 services:
   motionrx:
     image: ${GHCR_IO_IMAGE:-ghcr.io/christopherstainberg-oss/motionrx-stretch:latest}
     # No `build:` — Portainer must pull the image (avoids mkdir /.docker permission denied)
+    pull_policy: always
     container_name: motionrx-app
     restart: unless-stopped
     ports:
       - "${APP_PORT:-3000}:3000"
     environment:
-      - NODE_ENV=production
-      - AUTH_SECRET=${AUTH_SECRET:-dev-only-change-me-use-openssl-rand}
-      - DATA_DIR=/app/data
-      - PORT=3000
-      - XAI_API_KEY=${XAI_API_KEY:-}
-      - XAI_MODEL=${XAI_MODEL:-grok-4-1-fast-non-reasoning}
+      NODE_ENV: production
+      AUTH_SECRET: ${AUTH_SECRET:-dev-only-change-me-use-openssl-rand}
+      DATA_DIR: /app/data
+      PORT: "3000"
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      XAI_MODEL: ${XAI_MODEL:-grok-4-1-fast-non-reasoning}
     volumes:
       - motionrx-data:/app/data
     networks:
@@ -48,8 +50,8 @@ services:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 5s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 45s
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
       - "com.motionrx.description=MotionRx Stretch Physical Therapy PWA"
@@ -57,21 +59,25 @@ services:
 
   watchtower:
     image: containrrr/watchtower:latest
+    pull_policy: always
     container_name: motionrx-watchtower
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_POLL_INTERVAL=${WATCHTOWER_POLL_INTERVAL:-3600}
-      - WATCHTOWER_LABEL_ENABLE=true
-      - WATCHTOWER_INCLUDE_RESTARTING=true
-      - REPO_USER=${GHCR_IO_USER:-}
-      - REPO_PASS=${GHCR_IO_TOKEN:-}
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_POLL_INTERVAL: ${WATCHTOWER_POLL_INTERVAL:-3600}
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
+      # Private ghcr.io package pulls (same PAT as Portainer registry)
+      REPO_USER: ${GHCR_IO_USER:-}
+      REPO_PASS: ${GHCR_IO_TOKEN:-}
     networks:
       - motionrx-net
+    # Deploy condition: only start Watchtower after app healthcheck passes
     depends_on:
-      - motionrx
+      motionrx:
+        condition: service_healthy
 
 networks:
   motionrx-net:

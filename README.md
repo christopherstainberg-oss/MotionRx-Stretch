@@ -77,6 +77,16 @@ npm start
 compose build operation failed: mkdir /.docker: permission denied
 ```
 
+Deploy conditions (validated for Portainer stacks):
+
+| Condition | How it is satisfied |
+|-----------|---------------------|
+| No compose `build:` | Image pull only from ghcr.io |
+| Registry auth | Portainer registry + `GHCR_IO_USER` / `GHCR_IO_TOKEN` (private package) |
+| App readiness | Healthcheck on `GET /api/health` |
+| Watchtower start | `depends_on` → `condition: service_healthy` |
+| Fresh images on update | `pull_policy: always` |
+
 ### Portainer deploy
 
 1. **Registries → Add registry**
@@ -86,11 +96,11 @@ compose build operation failed: mkdir /.docker: permission denied
    - Password: PAT with **`read:packages`**  
    - Required while the `motionrx-stretch` package is **private**
 2. **Stacks → Add stack → Web editor** → paste `docker-compose.yml`
-3. Stack **environment variables**:
+3. Stack **environment variables** (see `portainer.stack.env.example`):
    - `AUTH_SECRET` — strong secret (`openssl rand -base64 32`)
    - `APP_PORT` — optional, default `3000`
    - `GHCR_IO_USER` / `GHCR_IO_TOKEN` — same as registry (for Watchtower pulls)
-4. Deploy (**do not** use a compose file that includes `build:`)
+4. Deploy (**do not** enable Build, and **do not** use `docker-compose.build.yml`)
 
 If the stack already failed, **Editor** the stack, replace the YAML with the current `docker-compose.yml` (no `build:` block), ensure the registry is configured, then **Update the stack**.
 
@@ -114,7 +124,7 @@ Services:
 | Service | Role |
 |---------|------|
 | `motionrx` | Next.js app (standalone), port 3000, persistent `/app/data` |
-| `watchtower` | Polls registry, updates labeled containers automatically |
+| `watchtower` | Starts after app is healthy; polls registry and updates labeled containers |
 
 Health: `GET /api/health`
 
