@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f4faf9;
+  --fg: #0d2625;
+  --card: #ffffff;
+  --muted: #5b7472;
+  --ring: #3a928a;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  color: var(--fg);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #d9f0ed 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #ffe8d6 0%, transparent 45%),
+    var(--bg);
+  min-height: 100dvh;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl bg-white shadow-card border border-brand-100/80;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700 shadow-soft;
+  }
+  .btn-secondary {
+    @apply btn bg-brand-50 text-brand-800 hover:bg-brand-100 border border-brand-200;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-brand-800 hover:bg-brand-50;
+  }
+  .input {
+    @apply w-full rounded-xl border border-brand-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200;
+  }
+  .label {
+    @apply mb-1 block text-sm font-medium text-brand-900;
+  }
+  .chip {
+    @apply inline-flex items-center rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-800 border border-brand-100;
+  }
+}
+
+/* Accessible focus for keyboard users */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

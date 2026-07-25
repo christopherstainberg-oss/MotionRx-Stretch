@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+data/store.json
+.env
+.env.local
+*.log
+README.md
+Build.MD

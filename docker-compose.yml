@@ -1,0 +1,61 @@
+# MotionRx Stretch stack for Docker / Portainer
+# Pull/build images and deploy with Portainer Stacks or: docker compose up -d
+#
+# ghcr.io example image name (set GHCR_IMAGE after publishing):
+#   ghcr.io/<owner>/motionrx-stretch:latest
+
+services:
+  motionrx:
+    image: ${GHCR_IMAGE:-motionrx-stretch:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: motionrx-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - AUTH_SECRET=${AUTH_SECRET:-change-me-to-a-long-random-string}
+      - DATA_DIR=/app/data
+      - PORT=3000
+      - XAI_API_KEY=${XAI_API_KEY:-}
+      - XAI_MODEL=${XAI_MODEL:-grok-4-1-fast-non-reasoning}
+    volumes:
+      - motionrx-data:/app/data
+    networks:
+      - motionrx-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.motionrx.description=MotionRx Stretch Physical Therapy PWA"
+
+  # Automatic container updates from the registry (e.g. ghcr.io)
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: motionrx-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=${WATCHTOWER_POLL_INTERVAL:-3600}
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_INCLUDE_RESTARTING=true
+    networks:
+      - motionrx-net
+    depends_on:
+      - motionrx
+
+networks:
+  motionrx-net:
+    driver: bridge
+
+volumes:
+  motionrx-data:
+    name: motionrx-data
