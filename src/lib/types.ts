@@ -398,6 +398,14 @@ export interface Routine {
     protocolNotes?: string;
     /** Personalized written plan narrative for the user */
     writtenApproach?: string;
+    /** Full prescribed plan of care text (PT-style) */
+    prescribedPlanText?: string;
+    /** User agreed to prescribed plan */
+    planAgreed?: boolean;
+    planAgreedAt?: string;
+    /** Free-text user adaptation requests applied to reconfigure plan */
+    planAdaptationNotes?: string[];
+    planVersion?: number;
     /** Preferred name used in plan copy */
     preferredName?: string;
     /** Sex used for plan / Q&A correlation */

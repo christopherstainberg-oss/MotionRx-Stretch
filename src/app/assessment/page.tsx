@@ -58,7 +58,6 @@ import {
 } from "@/lib/pain-profile";
 import {
   answerAssessmentQuestion,
-  buildWrittenPlanApproach,
   displayPreferredName,
   suggestedAssessmentQuestions,
   type AssessmentCoachContext,
@@ -77,6 +76,11 @@ import {
   saveAssessmentQa,
   saveClinicalContext,
 } from "@/lib/clinical-context";
+import {
+  buildPrescribedPlanDocument,
+  reconfigurePrescribedPlan,
+  type PrescribedPlanDocument,
+} from "@/lib/prescribed-plan";
 import {
   Check,
   ChevronLeft,
@@ -309,6 +313,12 @@ export default function AssessmentPage() {
   const [coachQuestion, setCoachQuestion] = useState("");
   const [coachLog, setCoachLog] = useState<CoachExchange[]>([]);
   const [writtenApproach, setWrittenApproach] = useState<string | null>(null);
+  const [prescribed, setPrescribed] = useState<PrescribedPlanDocument | null>(null);
+  const [planAgreed, setPlanAgreed] = useState(false);
+  const [adaptText, setAdaptText] = useState("");
+  const [adaptMsg, setAdaptMsg] = useState("");
+  const [adapting, setAdapting] = useState(false);
+  const [planInputSnapshot, setPlanInputSnapshot] = useState<SymptomInput | null>(null);
   const [sex, setSex] = useState<SexSelection | "">("");
   const [pastMedicalHistory, setPastMedicalHistory] = useState("");
   const [currentMedicalHistory, setCurrentMedicalHistory] = useState("");
@@ -766,7 +776,127 @@ export default function AssessmentPage() {
     setCoachQuestion("");
   }
 
+  function persistRoutine(
+    routine: ReturnType<typeof generateHybridPlan>,
+    approach: string,
+    agreed = planAgreed,
+    doc?: PrescribedPlanDocument | null
+  ) {
+    try {
+      localStorage.setItem(`routine:${routine.id}`, JSON.stringify(routine));
+      localStorage.setItem("active-routine", JSON.stringify(routine));
+      localStorage.setItem(
+        "prescribed-plan",
+        JSON.stringify({
+          approach,
+          document: doc || prescribed,
+          agreed,
+          at: new Date().toISOString(),
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function agreeToPlan(agreed: boolean) {
+    setPlanAgreed(agreed);
+    if (!generated) return;
+    const next = {
+      ...generated,
+      generatedFrom: {
+        ...generated.generatedFrom!,
+        planAgreed: agreed,
+        planAgreedAt: agreed ? new Date().toISOString() : undefined,
+        prescribedPlanText: writtenApproach || generated.generatedFrom?.prescribedPlanText,
+      },
+    };
+    setGenerated(next);
+    persistRoutine(next, writtenApproach || next.generatedFrom?.writtenApproach || "", agreed);
+    if (prescribed) {
+      setPrescribed({
+        ...prescribed,
+        agreedAt: agreed ? new Date().toISOString() : undefined,
+      });
+    }
+  }
+
+  async function adaptPlan() {
+    if (!generated || !adaptText.trim()) {
+      setAdaptMsg("Describe what you want changed (easier, shorter, more hip focus, etc.).");
+      return;
+    }
+    setAdapting(true);
+    setAdaptMsg("");
+    try {
+      const baseInput = planInputSnapshot || input;
+      const result = reconfigurePrescribedPlan({
+        baseInput,
+        currentRoutine: generated,
+        adaptationText: adaptText.trim(),
+        coach: coachContext,
+      });
+
+      // Refresh modalities with adapted input
+      const modPlan = planFromSymptomInput({
+        ...result.input,
+        painDescriptorIds:
+          result.routine.generatedFrom?.painDescriptorIds ||
+          result.input.painDescriptorIds ||
+          descriptorIds,
+      });
+      modPlan.source = "assess";
+
+      result.routine.generatedFrom = {
+        ...result.routine.generatedFrom!,
+        modalityPlanId: modPlan.id,
+        planAgreed: false,
+        planAgreedAt: undefined,
+        planAdaptationNotes: [
+          ...((generated.generatedFrom?.planAdaptationNotes as string[] | undefined) || []),
+          adaptText.trim(),
+        ],
+        planVersion: result.prescribed.version,
+        prescribedPlanText: result.prescribed.fullText,
+        writtenApproach: result.prescribed.fullText,
+      };
+
+      setPlanAgreed(false);
+      setPlanInputSnapshot(result.input);
+      setPrescribed(result.prescribed);
+      setWrittenApproach(result.prescribed.fullText);
+      setGenerated(result.routine);
+      setModalityPlan(modPlan);
+      setRoutineId(result.routine.id);
+      setAdaptMsg(result.changeSummary);
+      setAdaptText("");
+      persistRoutine(result.routine, result.prescribed.fullText, false, result.prescribed);
+      saveClinicalContext({
+        freeText: paragraph,
+        writtenApproach: result.prescribed.fullText,
+        routineId: result.routine.id,
+        qa: coachLog,
+      });
+
+      try {
+        localStorage.setItem("modality-plan", JSON.stringify(modPlan));
+        await fetch("/api/routines", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(result.routine),
+        }).catch(() => {});
+      } catch {
+        /* offline ok */
+      }
+    } finally {
+      setAdapting(false);
+    }
+  }
+
   async function createPlan() {
+    setPlanAgreed(false);
+    setAdaptMsg("");
+    setAdaptText("");
     const routine = generateHybridPlan(input);
     const modPlan = planFromSymptomInput({
       ...input,
@@ -783,22 +913,33 @@ export default function AssessmentPage() {
       .map((m) => m.modalityId)
       .filter((id, i, arr) => arr.indexOf(id) === i)
       .slice(0, 12);
-    const approach = buildWrittenPlanApproach(routine, coachContext);
+    const doc = buildPrescribedPlanDocument({
+      routine,
+      input,
+      coach: coachContext,
+    });
+    const approach = doc.fullText;
     routine.generatedFrom = {
       ...routine.generatedFrom!,
       modalityPlanId: modPlan.id,
       suggestedModalityIds,
       writtenApproach: approach,
+      prescribedPlanText: approach,
+      planAgreed: false,
+      planVersion: 1,
       preferredName: displayPreferredName(preferredName),
       sex: sex || undefined,
       pastMedicalHistory: pastMedicalHistory.trim() || undefined,
       currentMedicalHistory: currentMedicalHistory.trim() || undefined,
     };
     setWrittenApproach(approach);
+    setPrescribed(doc);
+    setPlanInputSnapshot(input);
     setGenerated(routine);
     setModalityPlan(modPlan);
     setStep(5);
     setSaving(true);
+    persistRoutine(routine, approach);
     saveClinicalContext({
       freeText: paragraph,
       preferredName: displayPreferredName(preferredName),
@@ -853,8 +994,6 @@ export default function AssessmentPage() {
       currentMedicalHistory: currentMedicalHistory.trim() || undefined,
     });
     try {
-      localStorage.setItem(`routine:${routine.id}`, JSON.stringify(routine));
-      localStorage.setItem("active-routine", JSON.stringify(routine));
       localStorage.setItem("modality-plan", JSON.stringify(modPlan));
       localStorage.setItem(
         "clinical-conditions",
@@ -1934,30 +2073,138 @@ export default function AssessmentPage() {
                   </p>
                 )}
 
-                {(writtenApproach || generated.generatedFrom?.writtenApproach) && (
-                  <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-4 dark:border-brand-700 dark:bg-brand-950/50">
-                    <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-600">
-                      <Stethoscope className="h-3.5 w-3.5" />
-                      Written plan of approach
-                    </p>
-                    <div className="space-y-3 text-sm leading-relaxed text-brand-900 dark:text-brand-100">
-                      {(writtenApproach || generated.generatedFrom?.writtenApproach || "")
+                {/* Prescribed written plan of care (PT-style) */}
+                <div className="rounded-xl border border-brand-300 bg-brand-50/60 p-4 dark:border-brand-600 dark:bg-brand-950/50">
+                  <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-700">
+                    <Stethoscope className="h-3.5 w-3.5" />
+                    Prescribed plan of care
+                    {prescribed?.phase ? ` · ${prescribed.phase.replace(/-/g, " ")}` : ""}
+                  </p>
+                  <div className="max-h-80 space-y-3 overflow-y-auto text-sm leading-relaxed text-brand-900 dark:text-brand-100">
+                    {(prescribed?.sections || []).map((sec) => (
+                      <div key={sec.heading}>
+                        <p className="font-semibold text-brand-950 dark:text-brand-50">
+                          {sec.heading}
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap text-brand-800 dark:text-brand-100">
+                          {sec.body}
+                        </p>
+                      </div>
+                    ))}
+                    {!prescribed?.sections?.length &&
+                      (writtenApproach || generated.generatedFrom?.writtenApproach || "")
                         .split(/\n\n+/)
                         .map((block, i) => (
-                          <p key={i}>{block}</p>
+                          <p key={i} className="whitespace-pre-wrap">
+                            {block}
+                          </p>
                         ))}
-                    </div>
                   </div>
-                )}
+
+                  {prescribed?.outcomeMeasures?.length ? (
+                    <div className="mt-3 rounded-lg border border-brand-100 bg-white/70 p-3 dark:border-brand-800 dark:bg-brand-950/40">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                        Functional outcome measures (track for faster recovery)
+                      </p>
+                      <ul className="mt-2 space-y-1.5">
+                        {prescribed.outcomeMeasures.map((o) => (
+                          <li key={o.label} className="text-xs text-brand-800 dark:text-brand-100">
+                            <span className="font-semibold">{o.label}</span>
+                            <span className="text-brand-600">
+                              {" "}
+                              · {o.timeframe} · {o.baselineHint}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-2 text-xs text-brand-700">
+                        Pain goal: ~{prescribed.painGoals.currentOverall}/10 → ≤
+                        {prescribed.painGoals.targetOverall}/10 while improving task ease.{" "}
+                        {prescribed.painGoals.rule}
+                      </p>
+                      <p className="mt-1 text-xs text-brand-600">
+                        Frequency: {prescribed.frequency} · {prescribed.durationWeeks}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-brand-200 bg-white p-3 dark:border-brand-700 dark:bg-brand-950">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-5 w-5 accent-brand-600"
+                      checked={planAgreed}
+                      onChange={(e) => agreeToPlan(e.target.checked)}
+                    />
+                    <span className="text-sm leading-relaxed text-brand-900 dark:text-brand-50">
+                      <span className="font-semibold">I agree with this prescribed plan.</span> I
+                      understand the goals, dosing, and safety rules. This is educational support—not
+                      a medical diagnosis—and I can request changes below.
+                      {planAgreed && prescribed?.agreedAt ? (
+                        <span className="mt-1 block text-xs text-emerald-700">
+                          Agreed {new Date(prescribed.agreedAt).toLocaleString()}
+                        </span>
+                      ) : null}
+                    </span>
+                  </label>
+                </div>
+
+                {/* User adaptation free-text → reconfigure plan */}
+                <div className="rounded-xl border border-brand-200 p-4 dark:border-brand-700">
+                  <p className="text-sm font-semibold text-brand-950">
+                    Request changes (free text)
+                  </p>
+                  <p className="mt-1 text-xs text-brand-600">
+                    Examples: “make it easier, my low back flared,” “shorter sessions,” “more hip
+                    strength,” “too hard,” “focus more on neck.” The app reconfigures the routine
+                    using PT-style rules (pain, irritability, injury pattern).
+                  </p>
+                  <textarea
+                    className="input mt-2 min-h-[88px]"
+                    value={adaptText}
+                    onChange={(e) => setAdaptText(e.target.value)}
+                    placeholder="Describe how you want the plan adapted…"
+                    aria-label="Adapt prescribed plan"
+                  />
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={adapting || !adaptText.trim()}
+                      onClick={() => void adaptPlan()}
+                    >
+                      {adapting ? "Reconfiguring…" : "Reconfigure plan"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost text-sm"
+                      onClick={() => {
+                        setGenerated(null);
+                        setPrescribed(null);
+                        setPlanAgreed(false);
+                        createPlan();
+                      }}
+                    >
+                      Regenerate from Assessment
+                    </button>
+                  </div>
+                  {adaptMsg ? (
+                    <p className="mt-2 text-sm text-brand-700" role="status">
+                      {adaptMsg} Agreement reset—please review and re-check the box if you accept the
+                      updated plan.
+                    </p>
+                  ) : null}
+                </div>
 
                 <details className="rounded-xl border border-brand-100 dark:border-brand-800">
                   <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-brand-900">
-                    Why this plan was dosed this way
+                    Why this plan was dosed this way (clinical reasoning)
                   </summary>
                   <div className="space-y-2 border-t border-brand-100 px-3 py-2 text-xs text-brand-700 dark:border-brand-800">
-                    {generated.selfAdjustHistory[0] && (
-                      <p>{generated.selfAdjustHistory[0].details}</p>
-                    )}
+                    {generated.selfAdjustHistory.slice(-3).map((h, i) => (
+                      <p key={`${h.at}-${i}`}>
+                        <span className="font-semibold">{h.action}</span>: {h.details}
+                      </p>
+                    ))}
                     {(generated.generatedFrom?.safetySummary || []).map((line) => (
                       <p key={line}>{line}</p>
                     ))}
@@ -2046,12 +2293,21 @@ export default function AssessmentPage() {
                 <div className="flex flex-wrap gap-2 pt-1">
                   <Link
                     href={routineId ? `/routines/session?id=${routineId}` : "/routines"}
-                    className="btn-primary"
+                    className={`btn-primary ${!planAgreed ? "pointer-events-none opacity-50" : ""}`}
+                    aria-disabled={!planAgreed}
+                    title={
+                      planAgreed
+                        ? "Start your prescribed session"
+                        : "Agree to the prescribed plan first"
+                    }
+                    onClick={(e) => {
+                      if (!planAgreed) e.preventDefault();
+                    }}
                   >
-                    Start session
+                    Start prescribed session
                   </Link>
                   <Link href="/builder" className="btn-secondary">
-                    Customize
+                    Customize in builder
                   </Link>
                   <Link href="/modalities" className="btn-ghost text-sm">
                     Modalities
@@ -2060,6 +2316,12 @@ export default function AssessmentPage() {
                     Jeffery
                   </Link>
                 </div>
+                {!planAgreed ? (
+                  <p className="text-xs text-amber-800 dark:text-amber-200">
+                    Check “I agree with this prescribed plan” above before starting a session—or
+                    request changes to reconfigure first.
+                  </p>
+                ) : null}
               </section>
 
               {modalityPlan && (
