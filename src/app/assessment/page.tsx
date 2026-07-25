@@ -29,7 +29,11 @@ import {
   buildClinicalSafetyPlan,
 } from "@/data/clinical-safety";
 import { analyzeAssessmentAdjectives } from "@/data/assessment-adjectives";
-import type { UserMedicationEntry } from "@/data/medications";
+import {
+  matchMedicationsFromText,
+  medicationEntriesFromBaseIds,
+  type UserMedicationEntry,
+} from "@/data/medications";
 import { generateHybridPlan, parseConcernParagraph } from "@/lib/routine-engine";
 import { planFromSymptomInput } from "@/lib/modality-engine";
 import type {
@@ -271,6 +275,18 @@ export default function AssessmentPage() {
     setOrthoticIds((prev) => Array.from(new Set([...prev, ...safetyPreview.orthoticIds])));
     setProstheticIds((prev) => Array.from(new Set([...prev, ...safetyPreview.prostheticIds])));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on paragraph / auto flag
+  }, [paragraph, autoApplyDesc]);
+
+  // Auto-detect catalog medications named in the story (user can edit doses later)
+  useEffect(() => {
+    if (!autoApplyDesc || paragraph.trim().length < 12) return;
+    const matched = matchMedicationsFromText(paragraph, 8);
+    if (!matched.length) return;
+    setMedications((prev) => {
+      const drafts = medicationEntriesFromBaseIds(matched, prev);
+      if (!drafts.length) return prev;
+      return [...prev, ...drafts].slice(0, 20);
+    });
   }, [paragraph, autoApplyDesc]);
 
   useEffect(() => {
@@ -643,7 +659,7 @@ export default function AssessmentPage() {
               className="input min-h-[150px] resize-y text-base leading-relaxed"
               value={paragraph}
               onChange={(e) => setParagraph(e.target.value)}
-              placeholder="Example: Dull low-back ache, worse sitting at my desk, stiff in the morning. Sharp pain when I bend. Pain about 4/10. Want to move easier at work."
+              placeholder="Example: Dull low-back ache, worse sitting at my desk. I take metformin 500 mg twice daily and naproxen 220 mg as needed. Pain about 4/10. Want to move easier at work."
               aria-label="Describe your issue"
             />
             <label className="mt-3 flex items-center gap-2.5 text-sm text-brand-700">
@@ -653,8 +669,38 @@ export default function AssessmentPage() {
                 checked={autoApplyDesc}
                 onChange={(e) => setAutoApplyDesc(e.target.checked)}
               />
-              Auto-detect clinical details from my text
+              Auto-detect clinical details from my text (including medication names)
             </label>
+            <p className="mt-2 text-xs text-brand-500">
+              Tip: you can write meds in the story (e.g. “I take metformin 500 mg twice daily and
+              Eliquis 5 mg”) or use the medication list below with exact doses.
+            </p>
+          </SubSection>
+
+          <SubSection
+            title="Current medications & doses"
+            hint="Search the clinical library or add custom. Use “Add meds to my story” to place doses in your paragraph."
+            action={
+              medications.length > 0 ? (
+                <span className="text-xs font-semibold text-brand-600">
+                  {medications.length} listed
+                </span>
+              ) : null
+            }
+          >
+            <MedicationPicker
+              value={medications}
+              onChange={setMedications}
+              concernParagraph={paragraph}
+              compact
+              onInsertParagraph={(snippet) => {
+                setParagraph((p) => {
+                  // Avoid duplicating an identical meds block
+                  if (p.includes(snippet.trim())) return p;
+                  return p.trim() ? `${p.trim()}\n\n${snippet}` : snippet;
+                });
+              }}
+            />
           </SubSection>
 
           {paragraph.trim().length >= 12 && (
@@ -1198,8 +1244,8 @@ export default function AssessmentPage() {
           </SubSection>
 
           <SubSection
-            title="Current medications"
-            hint="Optional. Search the clinical library, then set strength, route (pill, IM, IV…), and dose."
+            title="Current medications & doses"
+            hint="Same list as Step 1. Edit strength, route (pill, IM, IV…), dose, and frequency; add to your story anytime."
             action={
               medications.length > 0 ? (
                 <span className="text-xs font-semibold text-brand-600">
@@ -1208,7 +1254,17 @@ export default function AssessmentPage() {
               ) : null
             }
           >
-            <MedicationPicker value={medications} onChange={setMedications} />
+            <MedicationPicker
+              value={medications}
+              onChange={setMedications}
+              concernParagraph={paragraph}
+              onInsertParagraph={(snippet) => {
+                setParagraph((p) => {
+                  if (p.includes(snippet.trim())) return p;
+                  return p.trim() ? `${p.trim()}\n\n${snippet}` : snippet;
+                });
+              }}
+            />
           </SubSection>
 
           <SubSection title="Protocol notes" hint="Optional free text from your surgeon or PT.">

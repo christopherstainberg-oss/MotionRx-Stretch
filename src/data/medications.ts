@@ -423,6 +423,120 @@ export function searchMedications(opts: {
   return out;
 }
 
+/** Plain sentences for Assessment story paragraph */
+export function buildMedicationParagraphSnippet(entries: UserMedicationEntry[]): string {
+  if (!entries.length) return "";
+  const bits = entries.map((e) => {
+    const brand = e.brandName ? ` (${e.brandName})` : "";
+    const prn = e.asNeeded || /as needed|prn/i.test(e.frequency) ? " as needed (PRN)" : "";
+    const notes = e.notes ? ` [${e.notes}]` : "";
+    return `${e.genericName}${brand} ${e.strength}, ${e.doseText}, ${e.frequency}${prn} — ${e.routeLabel}${notes}`;
+  });
+  return `Current medications and doses: ${bits.join("; ")}.`;
+}
+
+/**
+ * Detect catalog medications mentioned in free-text (generic or brand).
+ * Returns base IDs ranked by match strength.
+ */
+export function matchMedicationsFromText(text: string, limit = 10): string[] {
+  const t = text.toLowerCase();
+  if (t.length < 3) return [];
+
+  const hits: Array<{ id: string; score: number }> = [];
+  for (const base of BASE_MEDICATIONS) {
+    let score = 0;
+    const generic = base.genericName.toLowerCase();
+    // Prefer whole-word-ish matches for longer names
+    if (generic.length >= 4 && t.includes(generic)) {
+      score += generic.length >= 8 ? 12 : 8;
+    }
+    // multi-word generic: first token
+    const first = generic.split(/[\s/]+/)[0] || "";
+    if (first.length >= 5 && t.includes(first) && !score) score += 4;
+
+    for (const brand of base.brandNames) {
+      const b = brand.toLowerCase();
+      if (b.length >= 3 && t.includes(b)) score += b.length >= 6 ? 14 : 9;
+    }
+    // slug tokens
+    for (const term of base.searchTerms.slice(0, 6)) {
+      if (term.length >= 5 && t.includes(term) && term === generic.split(" ")[0]) score += 2;
+    }
+    if (score > 0) hits.push({ id: base.id, score });
+  }
+
+  return hits
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+    .slice(0, limit)
+    .map((h) => h.id);
+}
+
+/** Build default UserMedicationEntry drafts from matched base IDs */
+export function medicationEntriesFromBaseIds(
+  baseIds: string[],
+  existing: UserMedicationEntry[] = []
+): UserMedicationEntry[] {
+  const have = new Set(
+    existing.map((e) => e.medicationId.split("__")[0] || e.genericName.toLowerCase())
+  );
+  const out: UserMedicationEntry[] = [];
+  for (const id of baseIds) {
+    const base = BASE_MEDICATIONS.find((b) => b.id === id);
+    if (!base) continue;
+    if (have.has(base.id) || have.has(base.genericName.toLowerCase())) continue;
+    const strength = base.commonStrengths[0] || "as labeled";
+    const route = base.defaultRoute;
+    out.push({
+      medicationId: `${base.id}__${strength.replace(/\s+/g, "-").slice(0, 40)}__${route}`,
+      genericName: base.genericName,
+      brandName: base.brandNames[0],
+      strength,
+      route,
+      routeLabel: MEDICATION_ROUTE_LABELS[route] || route,
+      doseText:
+        routeCategory(route) === "inhaled"
+          ? "1–2 puffs"
+          : routeCategory(route) === "injectable"
+            ? "as labeled"
+            : "1 tablet",
+      frequency: "as directed by clinician",
+      primaryUse: base.primaryUse,
+      classLabel: classLabel(base.classId),
+    });
+  }
+  return out;
+}
+
+/** Free-text custom medication (not required to be in catalog) */
+export function createCustomMedicationEntry(input: {
+  name: string;
+  strength?: string;
+  doseText?: string;
+  frequency?: string;
+  route?: MedicationRoute;
+  asNeeded?: boolean;
+  notes?: string;
+}): UserMedicationEntry | null {
+  const name = input.name.trim();
+  if (!name) return null;
+  const route = input.route || "oral-tablet";
+  const strength = (input.strength || "dose as labeled").trim();
+  return {
+    medicationId: `med-custom-${slugify(name)}__${slugify(strength)}__${route}`,
+    genericName: name,
+    strength,
+    route,
+    routeLabel: MEDICATION_ROUTE_LABELS[route] || route,
+    doseText: (input.doseText || "as labeled").trim(),
+    frequency: (input.frequency || "as directed by clinician").trim(),
+    asNeeded: input.asNeeded,
+    notes: input.notes?.trim() || undefined,
+    classLabel: "Custom / patient-reported",
+    primaryUse: "Patient-reported medication (verify with care team)",
+  };
+}
+
 export function summarizeUserMedications(entries: UserMedicationEntry[]): {
   summaryLines: string[];
   classLabels: string[];

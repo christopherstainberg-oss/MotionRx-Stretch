@@ -6,7 +6,11 @@ import {
   MEDICATION_FREQUENCY_OPTIONS,
   MEDICATION_ROUTE_LABELS,
   MEDICATION_STATS,
+  buildMedicationParagraphSnippet,
+  createCustomMedicationEntry,
   getBaseMedication,
+  matchMedicationsFromText,
+  medicationEntriesFromBaseIds,
   searchMedications,
   type Medication,
   type MedicationClass,
@@ -22,10 +26,18 @@ export function MedicationPicker({
   value,
   onChange,
   maxSelect = 20,
+  concernParagraph = "",
+  onInsertParagraph,
+  compact = false,
 }: {
   value: UserMedicationEntry[];
   onChange: (entries: UserMedicationEntry[]) => void;
   maxSelect?: number;
+  /** Assessment story text — used to detect mentioned meds */
+  concernParagraph?: string;
+  /** Append listed meds + doses into the Assessment paragraph */
+  onInsertParagraph?: (snippet: string) => void;
+  compact?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [classId, setClassId] = useState<MedicationClass | "all">("all");
@@ -36,6 +48,16 @@ export function MedicationPicker({
   const [frequency, setFrequency] = useState<string>("once daily");
   const [asNeeded, setAsNeeded] = useState(false);
   const [notes, setNotes] = useState("");
+  const [customName, setCustomName] = useState("");
+  const [customStrength, setCustomStrength] = useState("");
+  const [customDose, setCustomDose] = useState("1 tablet");
+  const [customFreq, setCustomFreq] = useState("once daily");
+  const [showCustom, setShowCustom] = useState(false);
+
+  const textMatches = useMemo(
+    () => matchMedicationsFromText(concernParagraph, 8),
+    [concernParagraph]
+  );
 
   const results = useMemo(
     () =>
@@ -97,6 +119,29 @@ export function MedicationPicker({
     onChange(value.filter((_, idx) => idx !== i));
   }
 
+  function applyTextMatches() {
+    const drafts = medicationEntriesFromBaseIds(textMatches, value);
+    if (!drafts.length) return;
+    onChange([...value, ...drafts].slice(0, maxSelect));
+  }
+
+  function addCustom() {
+    const entry = createCustomMedicationEntry({
+      name: customName,
+      strength: customStrength || undefined,
+      doseText: customDose,
+      frequency: customFreq,
+      route: "oral-tablet",
+    });
+    if (!entry || value.length >= maxSelect) return;
+    onChange([...value, entry]);
+    setCustomName("");
+    setCustomStrength("");
+    setCustomDose("1 tablet");
+    setCustomFreq("once daily");
+    setShowCustom(false);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
@@ -106,15 +151,32 @@ export function MedicationPicker({
             Current medications & doses
           </h3>
           <p className="mt-0.5 text-xs text-brand-500">
-            Search a clinical library of{" "}
-            <strong>{MEDICATION_STATS.totalCount.toLocaleString()}</strong> entries (
-            {MEDICATION_STATS.baseCount} evidence-based molecules × strength/route editions).
-            Educational only—record what your clinician prescribed.
+            Search the clinical library (
+            <strong>{MEDICATION_STATS.totalCount.toLocaleString()}</strong> entries) or add a
+            custom med. Set strength, dose, route, and frequency—then optionally add them to your
+            Assessment story.
           </p>
         </div>
-        <p className="text-xs font-medium text-brand-600">
-          {value.length}/{maxSelect} listed
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {textMatches.length > 0 && (
+            <button type="button" className="btn-secondary py-1.5 text-xs" onClick={applyTextMatches}>
+              Apply {textMatches.length} from story
+            </button>
+          )}
+          {value.length > 0 && onInsertParagraph && (
+            <button
+              type="button"
+              className="btn-secondary py-1.5 text-xs"
+              onClick={() => onInsertParagraph(buildMedicationParagraphSnippet(value))}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add meds to my story
+            </button>
+          )}
+          <p className="text-xs font-medium text-brand-600">
+            {value.length}/{maxSelect} listed
+          </p>
+        </div>
       </div>
 
       {value.length > 0 && (
@@ -171,36 +233,43 @@ export function MedicationPicker({
               autoComplete="off"
             />
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              onClick={() => setClassId("all")}
-              className={cn(
-                "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
-                classId === "all"
-                  ? "border-brand-600 bg-brand-600 text-white"
-                  : "border-brand-200 text-brand-700 dark:border-brand-700"
-              )}
-            >
-              All classes
-            </button>
-            {CLASSES.slice(0, 14).map((c) => (
+          {!compact && (
+            <div className="flex flex-wrap gap-1.5">
               <button
-                key={c}
                 type="button"
-                onClick={() => setClassId(c)}
+                onClick={() => setClassId("all")}
                 className={cn(
-                  "rounded-full border px-2.5 py-1 text-[11px] font-medium",
-                  classId === c
+                  "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                  classId === "all"
                     ? "border-brand-600 bg-brand-600 text-white"
                     : "border-brand-200 text-brand-700 dark:border-brand-700"
                 )}
               >
-                {MEDICATION_CLASS_LABELS[c].split(/[&/]/)[0]!.trim()}
+                All classes
               </button>
-            ))}
-          </div>
-          <ul className="max-h-56 space-y-0 overflow-y-auto rounded-xl border border-brand-100 dark:border-brand-800">
+              {CLASSES.slice(0, 14).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setClassId(c)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-[11px] font-medium",
+                    classId === c
+                      ? "border-brand-600 bg-brand-600 text-white"
+                      : "border-brand-200 text-brand-700 dark:border-brand-700"
+                  )}
+                >
+                  {MEDICATION_CLASS_LABELS[c].split(/[&/]/)[0]!.trim()}
+                </button>
+              ))}
+            </div>
+          )}
+          <ul
+            className={cn(
+              "space-y-0 overflow-y-auto rounded-xl border border-brand-100 dark:border-brand-800",
+              compact ? "max-h-44" : "max-h-56"
+            )}
+          >
             {results.map((m) => (
               <li key={m.id} className="border-b border-brand-50 last:border-0 dark:border-brand-900">
                 <button
@@ -227,10 +296,74 @@ export function MedicationPicker({
             ))}
             {results.length === 0 && (
               <li className="px-3 py-4 text-center text-sm text-brand-500">
-                No matches. Try a generic or brand name.
+                No matches. Try a generic/brand name, or add a custom medication below.
               </li>
             )}
           </ul>
+
+          <div className="rounded-xl border border-dashed border-brand-200 p-3 dark:border-brand-700">
+            <button
+              type="button"
+              className="text-xs font-semibold text-brand-700 hover:underline"
+              onClick={() => setShowCustom((s) => !s)}
+            >
+              {showCustom ? "Hide custom medication" : "+ Add custom medication (not in list)"}
+            </button>
+            {showCustom && (
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <label className="block text-sm sm:col-span-2">
+                  <span className="label">Medication name</span>
+                  <input
+                    className="input"
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    placeholder="As on the bottle or from your clinician"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="label">Strength</span>
+                  <input
+                    className="input"
+                    value={customStrength}
+                    onChange={(e) => setCustomStrength(e.target.value)}
+                    placeholder="e.g. 500 mg"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="label">Dose amount</span>
+                  <input
+                    className="input"
+                    value={customDose}
+                    onChange={(e) => setCustomDose(e.target.value)}
+                    placeholder="e.g. 1 tablet"
+                  />
+                </label>
+                <label className="block text-sm sm:col-span-2">
+                  <span className="label">Frequency</span>
+                  <select
+                    className="input"
+                    value={customFreq}
+                    onChange={(e) => setCustomFreq(e.target.value)}
+                  >
+                    {MEDICATION_FREQUENCY_OPTIONS.map((f) => (
+                      <option key={f} value={f}>
+                        {f}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="btn-primary sm:col-span-2"
+                  onClick={addCustom}
+                  disabled={!customName.trim()}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add custom med & dose
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="space-y-3 rounded-xl border border-brand-200 bg-white p-4 dark:border-brand-700 dark:bg-brand-950">
@@ -347,6 +480,11 @@ export function MedicationPicker({
             <Plus className="h-4 w-4" />
             Add to my medication list
           </button>
+          {onInsertParagraph && (
+            <p className="text-center text-[11px] text-brand-500">
+              After adding, use “Add meds to my story” to put doses into your Assessment paragraph.
+            </p>
+          )}
         </div>
       )}
     </div>
