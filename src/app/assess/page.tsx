@@ -103,16 +103,18 @@ export default function AssessPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-5 sm:space-y-6">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-brand-950">
-          <Stethoscope className="h-7 w-7 text-brand-600" />
-          Clinical intake & personalized plan
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-500">
+          Step 1 · Intake
+        </p>
+        <h1 className="flex items-center gap-2 text-xl font-bold text-brand-950 sm:text-2xl">
+          <Stethoscope className="h-6 w-6 shrink-0 text-brand-600 sm:h-7 sm:w-7" />
+          How are you feeling?
         </h1>
-        <p className="mt-1 text-sm text-brand-700/85">
-          Describe issues in a short paragraph. MotionRx Stretch suggests <strong>stretches and/or
-          exercises</strong> using outpatient-style, pain-aware logic—then you can refine chips,
-          pain scores, and preferences.
+        <p className="mt-1.5 text-sm leading-relaxed text-brand-700/85">
+          Describe issues in a short paragraph. We&apos;ll suggest{" "}
+          <strong>stretches and/or exercises</strong> with pain-aware logic—then you can fine-tune.
         </p>
       </div>
 

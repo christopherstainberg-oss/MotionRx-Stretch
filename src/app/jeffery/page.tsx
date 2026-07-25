@@ -52,6 +52,20 @@ export default function JefferyPage() {
         body: JSON.stringify({ message: text }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        setMessages((m) => [
+          ...m,
+          {
+            id: `e-${Date.now()}`,
+            role: "jeffery",
+            content:
+              data.error ||
+              "I couldn't process that message. Please wait a moment and try again.",
+            createdAt: new Date().toISOString(),
+          },
+        ]);
+        return;
+      }
       if (data.message) setMessages((m) => [...m, data.message]);
       if (data.adjustedRoutine) {
         setAdjusted(data.adjustedRoutine);
@@ -80,20 +94,24 @@ export default function JefferyPage() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-brand-950">
-          <Bot className="h-7 w-7 text-brand-600" />
-          Jeffery — clinical AI coach
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-500">
+          AI coach
+        </p>
+        <h1 className="flex items-center gap-2 text-xl font-bold text-brand-950 sm:text-2xl">
+          <Bot className="h-6 w-6 shrink-0 text-brand-600 sm:h-7 sm:w-7" />
+          Chat with Jeffery
         </h1>
-        <p className="mt-1 text-sm text-brand-700/85">
-          Ask about pain, progress, stretches, or exercises. Jeffery knows your adjustments,
-          custom routines, sessions, and journal signals—and can modify your program based on the
-          discussion. Optional live model: set <code className="rounded bg-brand-50 px-1">XAI_API_KEY</code>{" "}
-          (SpaceXAI / xAI). Works offline with a built-in clinical coach.
+        <p className="mt-1.5 text-sm leading-relaxed text-brand-700/85">
+          Ask about pain, progress, or your plan. Jeffery can educate you and adjust your program
+          from the conversation.
         </p>
       </div>
 
-      <div className="card flex max-h-[60vh] flex-col overflow-hidden">
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div
+        className="card flex flex-col overflow-hidden"
+        style={{ height: "min(62dvh, 560px)" }}
+      >
+        <div className="flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 sm:p-4">
           {messages.map((m) => (
             <div
               key={m.id}
@@ -116,16 +134,25 @@ export default function JefferyPage() {
           )}
           <div ref={bottomRef} />
         </div>
-        <form onSubmit={send} className="flex gap-2 border-t border-brand-100 p-3">
+        <form
+          onSubmit={send}
+          className="flex gap-2 border-t border-brand-100 bg-brand-50/30 p-3"
+        >
           <input
             className="input"
-            placeholder="e.g. My low back is stiff after sitting; pain is 4/10. What should I change?"
+            placeholder="Describe how you feel or ask a question…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            aria-label="Message to Jeffery"
           />
-          <button type="submit" className="btn-primary shrink-0" disabled={loading}>
+          <button
+            type="submit"
+            className="btn-primary min-w-[48px] shrink-0 px-3 sm:px-4"
+            disabled={loading}
+            aria-label="Send message"
+          >
             <Send className="h-4 w-4" />
-            Send
+            <span className="hidden sm:inline">Send</span>
           </button>
         </form>
       </div>

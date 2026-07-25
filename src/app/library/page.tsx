@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { StretchCard } from "@/components/StretchCard";
 import { BODY_PART_LABELS, filterStretches, LIBRARY_STATS } from "@/data/stretch-library";
 import type { BodyPart, Difficulty, DurationBucket } from "@/lib/types";
@@ -42,9 +43,9 @@ export default function LibraryPage({
         </p>
         <p className="mt-2 text-sm">
           Need strength, activation, or functional drills?{" "}
-          <a href="/exercises" className="font-semibold text-brand-700 underline">
+          <Link href="/exercises" className="font-semibold text-brand-700 underline">
             Open Exercise Library
-          </a>
+          </Link>
         </p>
       </div>
 

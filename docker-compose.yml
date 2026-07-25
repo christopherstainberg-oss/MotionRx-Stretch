@@ -16,7 +16,8 @@ services:
       - "${APP_PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
-      - AUTH_SECRET=${AUTH_SECRET:-change-me-to-a-long-random-string}
+      # Generate a strong secret: openssl rand -base64 32
+      - AUTH_SECRET=${AUTH_SECRET:-dev-only-change-me-use-openssl-rand}
       - DATA_DIR=/app/data
       - PORT=3000
       - XAI_API_KEY=${XAI_API_KEY:-}

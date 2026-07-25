@@ -43,6 +43,14 @@ const config: Config = {
         soft: "0 4px 24px -4px rgba(15, 61, 58, 0.12)",
         card: "0 1px 3px rgba(15, 61, 58, 0.06), 0 8px 24px -8px rgba(15, 61, 58, 0.12)",
       },
+      minHeight: {
+        touch: "44px",
+      },
+      spacing: {
+        "safe-top": "var(--safe-top)",
+        "safe-bottom": "var(--safe-bottom)",
+        tabbar: "var(--tabbar-h)",
+      },
     },
   },
   plugins: [],

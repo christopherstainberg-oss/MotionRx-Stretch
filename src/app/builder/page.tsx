@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { BASE_EXERCISES } from "@/data/exercise-library";
+import { BASE_EXERCISES, getExerciseById } from "@/data/exercise-library";
 import { BASE_STRETCHES, getStretchById } from "@/data/stretch-library";
-import { getExerciseById } from "@/data/exercise-library";
 import {
   addMovementToRoutine,
   ensureRoutineItems,
@@ -20,14 +19,20 @@ import { v4 as uuid } from "uuid";
 
 function BuilderInner() {
   const params = useSearchParams();
+  const router = useRouter();
   const [routine, setRoutine] = useState<Routine | null>(null);
   const [msg, setMsg] = useState("");
+  const appliedQuery = useRef<string>("");
 
   useEffect(() => {
     const raw = localStorage.getItem("active-routine");
     if (raw) {
-      setRoutine(ensureRoutineItems(JSON.parse(raw)));
-      return;
+      try {
+        setRoutine(ensureRoutineItems(JSON.parse(raw)));
+        return;
+      } catch {
+        /* fall through */
+      }
     }
     const starter = STARTER_ROUTINES[0]!;
     const r: Routine = {
@@ -37,26 +42,46 @@ function BuilderInner() {
       items: starter.items.map((i) => ({ ...i, id: uuid() })),
     };
     setRoutine(r);
+    localStorage.setItem("active-routine", JSON.stringify(r));
   }, []);
 
+  // Apply addStretch / addExercise once routine is ready (fixes prior race)
   useEffect(() => {
     if (!routine) return;
     const addS = params.get("addStretch");
     const addE = params.get("addExercise");
-    if (addS) {
-      const next = addMovementToRoutine(routine, addS, "stretch");
-      setRoutine(next);
-      localStorage.setItem("active-routine", JSON.stringify(next));
+    if (!addS && !addE) return;
+
+    const key = `${addS || ""}|${addE || ""}`;
+    if (appliedQuery.current === key) return;
+    appliedQuery.current = key;
+
+    let next = routine;
+    if (addS && getStretchById(addS)) {
+      next = addMovementToRoutine(next, addS, "stretch");
       setMsg("Stretch added from library.");
+    } else if (addS) {
+      setMsg("That stretch could not be found.");
     }
-    if (addE) {
-      const next = addMovementToRoutine(routine, addE, "exercise");
-      setRoutine(next);
-      localStorage.setItem("active-routine", JSON.stringify(next));
-      setMsg("Exercise added from library.");
+    if (addE && getExerciseById(addE)) {
+      next = addMovementToRoutine(next, addE, "exercise");
+      setMsg((m) => (m.includes("Stretch") ? `${m} Exercise added.` : "Exercise added from library."));
+    } else if (addE) {
+      setMsg("That exercise could not be found.");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params]);
+
+    setRoutine(next);
+    localStorage.setItem("active-routine", JSON.stringify(next));
+    localStorage.setItem(`routine:${next.id}`, JSON.stringify(next));
+    fetch("/api/routines", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next),
+    }).catch(() => {});
+
+    // Clear query so refresh doesn't re-add
+    router.replace("/builder", { scroll: false });
+  }, [routine, params, router]);
 
   function persist(next: Routine) {
     setRoutine(next);
@@ -116,29 +141,51 @@ function BuilderInner() {
         </div>
       </div>
 
-      {msg && <p className="rounded-xl bg-brand-50 px-4 py-2 text-sm text-brand-800">{msg}</p>}
+      {msg && (
+        <p className="rounded-xl bg-brand-50 px-4 py-2 text-sm text-brand-800" role="status">
+          {msg}
+        </p>
+      )}
 
       <section className="card p-5">
+        <label className="label" htmlFor="routine-name">
+          Routine name
+        </label>
         <input
+          id="routine-name"
           className="input text-lg font-semibold"
           value={routine.name}
-          onChange={(e) => persist({ ...routine, name: e.target.value })}
+          onChange={(e) => persist({ ...routine, name: e.target.value.slice(0, 120) })}
         />
+        <label className="label mt-3" htmlFor="routine-desc">
+          Description
+        </label>
         <textarea
-          className="input mt-2 min-h-[70px]"
+          id="routine-desc"
+          className="input min-h-[70px]"
           value={routine.description}
-          onChange={(e) => persist({ ...routine, description: e.target.value })}
+          onChange={(e) =>
+            persist({ ...routine, description: e.target.value.slice(0, 2000) })
+          }
         />
         <p className="mt-2 text-xs text-brand-600">
           ~{routine.estimatedMinutes} min · {routine.difficulty} · rotations:{" "}
-          {routine.rotationCount ?? 0}
+          {routine.rotationCount ?? 0} · {resolved.length} movements
         </p>
       </section>
 
       <section className="space-y-3">
         <h2 className="font-semibold text-brand-900">Current plan</h2>
+        {resolved.length === 0 && (
+          <p className="card p-4 text-sm text-brand-600">
+            No movements yet—add from the lists below.
+          </p>
+        )}
         {resolved.map(({ item, m }, idx) => (
-          <article key={item.id} className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
+          <article
+            key={item.id}
+            className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-start"
+          >
             <div className="flex-1">
               <p className="text-xs font-bold uppercase text-brand-500">
                 {idx + 1}. {item.kind}
@@ -151,6 +198,11 @@ function BuilderInner() {
                     <strong>Why it matters:</strong> {m.clinical.whyImportant}
                   </p>
                 </>
+              )}
+              {!m && (
+                <p className="mt-1 text-sm text-amber-700">
+                  Movement data missing—rotate or remove this item.
+                </p>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -169,7 +221,10 @@ function BuilderInner() {
               <button
                 type="button"
                 className="btn-ghost text-xs text-red-700"
-                onClick={() => persist(removeItemFromRoutine(routine, item.id))}
+                onClick={() => {
+                  persist(removeItemFromRoutine(routine, item.id));
+                  setMsg("Removed from plan.");
+                }}
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Remove

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { getActorId } from "@/lib/auth";
 import { jefferyReply, newThread } from "@/lib/jeffery";
 import { readDb, updateDb } from "@/lib/storage";
 import { v4 as uuid } from "uuid";
+import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
 
 export async function GET() {
-  const user = await getSessionUser();
-  const userId = user?.id ?? "local";
+  const { userId } = await getActorId();
   const db = await readDb();
   let thread = db.jefferyThreads.find((t) => t.userId === userId);
   if (!thread) {
@@ -19,18 +19,33 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const limited = rateLimit(`jeffery:${clientIp(req)}`, {
+    limit: 20,
+    windowMs: 60 * 1000,
+  });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: "Jeffery is receiving many messages. Please wait a moment." },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
+  }
+
   const body = await req.json().catch(() => ({}));
-  const text = String(body.message || "").trim();
+  const text = sanitizeText(String(body.message || ""), 2000);
   if (!text) {
     return NextResponse.json({ error: "Empty message" }, { status: 400 });
   }
 
-  const user = await getSessionUser();
-  const userId = user?.id ?? "local";
+  const { userId } = await getActorId();
   const db = await readDb();
 
   let thread = db.jefferyThreads.find((t) => t.userId === userId);
   if (!thread) thread = newThread(userId);
+
+  // Cap thread growth
+  if (thread.messages.length > 200) {
+    thread.messages = thread.messages.slice(-150);
+  }
 
   const userMsg = {
     id: uuid(),
@@ -40,9 +55,9 @@ export async function POST(req: Request) {
   };
   thread.messages.push(userMsg);
 
-  const routines = db.routines.filter((r) => r.userId === userId || !r.userId);
-  const sessions = db.sessions.filter((s) => s.userId === userId || s.userId === "local" || s.userId === "anonymous");
-  const journal = db.journal.filter((j) => j.userId === userId || j.userId === "local" || j.userId === "anonymous");
+  const routines = db.routines.filter((r) => r.userId === userId);
+  const sessions = db.sessions.filter((s) => s.userId === userId).slice(0, 30);
+  const journal = db.journal.filter((j) => j.userId === userId).slice(0, 20);
 
   const reply = await jefferyReply(text, {
     routines,
@@ -60,6 +75,7 @@ export async function POST(req: Request) {
     thread.knownAdjustments.push(
       ...reply.adjustedRoutine.selfAdjustHistory.slice(-1).map((a) => a.details)
     );
+    thread.knownAdjustments = thread.knownAdjustments.slice(-40);
   }
 
   await updateDb((d) => {
@@ -70,8 +86,13 @@ export async function POST(req: Request) {
     if (reply.adjustedRoutine) {
       const r = { ...reply.adjustedRoutine, userId };
       const ri = d.routines.findIndex((x) => x.id === r.id);
-      if (ri >= 0) d.routines[ri] = r;
-      else d.routines.push(r);
+      if (ri >= 0) {
+        if (d.routines[ri]!.userId === userId || !d.routines[ri]!.userId) {
+          d.routines[ri] = r;
+        }
+      } else {
+        d.routines.push(r);
+      }
     }
   });
 

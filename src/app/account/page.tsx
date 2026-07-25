@@ -85,7 +85,8 @@ export default function AccountPage() {
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
-    setMsg("Signed out.");
+    setMsg("Signed out. Redirecting to welcome…");
+    window.location.href = "/login";
   }
 
   return (
@@ -181,7 +182,7 @@ export default function AccountPage() {
             checked={twoFa}
             onChange={(e) => setTwoFa(e.target.checked)}
           />
-          Prefer two-factor authentication (TOTP wiring for production SSO)
+          Flag account for future 2FA (not enforced yet—preference only)
         </label>
 
         <button type="submit" className="btn-primary">

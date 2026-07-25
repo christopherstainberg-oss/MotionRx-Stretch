@@ -20,15 +20,33 @@ export default function JournalPage() {
   const [share, setShare] = useState(false);
 
   useEffect(() => {
-    const raw = localStorage.getItem("journal-entries");
-    if (raw) setEntries(JSON.parse(raw));
+    let local: JournalEntry[] = [];
+    try {
+      const raw = localStorage.getItem("journal-entries");
+      if (raw) local = JSON.parse(raw);
+    } catch {
+      local = [];
+    }
+    setEntries(local);
+
     fetch("/api/journal")
       .then((r) => r.json())
       .then((d) => {
-        if (d.entries?.length) {
-          setEntries(d.entries);
-          localStorage.setItem("journal-entries", JSON.stringify(d.entries));
+        const server: JournalEntry[] = Array.isArray(d.entries) ? d.entries : [];
+        // Merge by id; prefer newer updatedAt; never wipe local-only offline entries
+        const map = new Map<string, JournalEntry>();
+        for (const e of local) map.set(e.id, e);
+        for (const e of server) {
+          const prev = map.get(e.id);
+          if (!prev || new Date(e.updatedAt || e.createdAt) >= new Date(prev.updatedAt || prev.createdAt)) {
+            map.set(e.id, e);
+          }
         }
+        const merged = Array.from(map.values()).sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        setEntries(merged);
+        localStorage.setItem("journal-entries", JSON.stringify(merged));
       })
       .catch(() => {});
   }, []);

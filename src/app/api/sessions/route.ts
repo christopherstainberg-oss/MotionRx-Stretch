@@ -1,32 +1,72 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { getActorId, ownsRecord } from "@/lib/auth";
 import { readDb, updateDb } from "@/lib/storage";
 import type { SessionLog } from "@/lib/types";
+import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
 
 export async function GET() {
-  const user = await getSessionUser();
+  const { userId } = await getActorId();
   const db = await readDb();
-  const sessions = user
-    ? db.sessions.filter((s) => s.userId === user.id)
-    : db.sessions.slice(-30);
-  sessions.sort(
-    (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-  );
+  const sessions = db.sessions
+    .filter((s) => s.userId === userId)
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
   return NextResponse.json({ sessions });
 }
 
 export async function POST(req: Request) {
+  const limited = rateLimit(`sessions:${clientIp(req)}`, {
+    limit: 40,
+    windowMs: 60 * 1000,
+  });
+  if (!limited.ok) {
+    return NextResponse.json({ error: "Rate limited" }, { status: 429 });
+  }
+
   const body = (await req.json().catch(() => null)) as SessionLog | null;
-  if (!body?.id) {
+  if (!body?.id || !Array.isArray(body.stretchIds)) {
     return NextResponse.json({ error: "Invalid session" }, { status: 400 });
   }
-  const user = await getSessionUser();
+
+  const { userId } = await getActorId();
+  const painBefore = clampPain(body.averagePainBefore);
+  const painAfter = clampPain(body.averagePainAfter);
+  const difficultyFelt = clampDifficulty(body.difficultyFelt);
+
   const session: SessionLog = {
     ...body,
-    userId: user?.id ?? body.userId ?? "anonymous",
+    userId,
+    stretchIds: body.stretchIds.slice(0, 40),
+    exerciseIds: (body.exerciseIds || []).slice(0, 40),
+    averagePainBefore: painBefore,
+    averagePainAfter: painAfter,
+    difficultyFelt,
+    durationMinutes: Math.max(0, Math.min(180, Number(body.durationMinutes) || 0)),
+    notes: body.notes ? sanitizeText(body.notes, 1000) : undefined,
+    completed: Boolean(body.completed),
   };
+
   await updateDb((db) => {
-    db.sessions.push(session);
+    const existing = db.sessions.find((s) => s.id === session.id);
+    if (existing && !ownsRecord(existing.userId, userId)) return;
+    if (existing) {
+      const i = db.sessions.findIndex((s) => s.id === session.id);
+      db.sessions[i] = session;
+    } else {
+      db.sessions.push(session);
+    }
   });
   return NextResponse.json({ session });
+}
+
+function clampPain(n: unknown): number {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(10, Math.round(v)));
+}
+
+function clampDifficulty(n: unknown): 1 | 2 | 3 | 4 | 5 {
+  const v = Math.round(Number(n));
+  if (v < 1) return 1;
+  if (v > 5) return 5;
+  return v as 1 | 2 | 3 | 4 | 5;
 }

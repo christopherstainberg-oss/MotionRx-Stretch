@@ -43,10 +43,12 @@ export default function CommunityPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ displayName: name, body, tips: true }),
     });
-    if (res.ok) {
-      const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.post) {
       setPosts((p) => [data.post, ...p]);
       setBody("");
+    } else {
+      alert(data.error || "Could not post. Please try again shortly.");
     }
   }
 

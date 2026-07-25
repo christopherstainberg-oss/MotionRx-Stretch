@@ -5,13 +5,25 @@ import {
   registerUser,
   setSessionCookie,
 } from "@/lib/auth";
+import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
+  const limited = rateLimit(`register:${clientIp(req)}`, {
+    limit: 5,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: "Too many registration attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
+  }
+
   const body = await req.json().catch(() => ({}));
   const result = await registerUser({
-    email: String(body.email || ""),
+    email: sanitizeText(String(body.email || ""), 254),
     password: String(body.password || ""),
-    name: String(body.name || ""),
+    name: sanitizeText(String(body.name || ""), 80),
   });
   if ("error" in result) {
     return NextResponse.json({ error: result.error }, { status: 400 });
