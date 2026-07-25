@@ -57,10 +57,20 @@ import {
   saveLocalPainProfile,
 } from "@/lib/pain-profile";
 import {
+  answerAssessmentQuestion,
+  buildWrittenPlanApproach,
+  displayPreferredName,
+  suggestedAssessmentQuestions,
+  type AssessmentCoachContext,
+  type CoachExchange,
+} from "@/lib/assessment-coach";
+import {
   Check,
   ChevronLeft,
   ChevronRight,
   Home,
+  MessageCircleQuestion,
+  Send,
   Sparkles,
   Stethoscope,
 } from "lucide-react";
@@ -282,11 +292,39 @@ export default function AssessmentPage() {
   const [step, setStep] = useState(1);
   const [deviceTab, setDeviceTab] = useState<"precautions" | "implants" | "supports">("precautions");
   const [bodyGroupOpen, setBodyGroupOpen] = useState<string>("spine-head");
+  const [preferredName, setPreferredName] = useState("");
+  const [coachQuestion, setCoachQuestion] = useState("");
+  const [coachLog, setCoachLog] = useState<CoachExchange[]>([]);
+  const [writtenApproach, setWrittenApproach] = useState<string | null>(null);
 
   /** Heavy clinical matching runs on debounced text so the textarea stays responsive */
   const debouncedParagraph = useDebouncedValue(paragraph, 400);
 
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem("preferredName");
+      if (stored?.trim()) setPreferredName(stored.trim());
+    } catch {
+      /* ignore */
+    }
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => {
+        const fromUser =
+          d.user?.preferredName ||
+          d.user?.displayName ||
+          (typeof d.user?.name === "string" ? d.user.name.split(/\s+/)[0] : "");
+        if (fromUser) {
+          setPreferredName(String(fromUser).trim());
+          try {
+            localStorage.setItem("preferredName", String(fromUser).trim());
+          } catch {
+            /* ignore */
+          }
+        }
+      })
+      .catch(() => {});
+
     const local = loadLocalPainProfile();
     if (local?.descriptorIds?.length) setDescriptorIds(local.descriptorIds);
     if (local?.freeText) setParagraph(local.freeText);
@@ -528,6 +566,61 @@ export default function AssessmentPage() {
     adlEntries,
   ]);
 
+  const coachContext = useMemo((): AssessmentCoachContext => {
+    return {
+      paragraph,
+      areas,
+      painLevels,
+      goals,
+      symptoms,
+      minutes,
+      difficulty,
+      preferKinds,
+      descriptorIds,
+      conditionIds: paragraphConditions,
+      clinicalSymptomIds,
+      medications: medications.map((m) => ({
+        genericName: m.genericName,
+        strength: m.strength,
+      })),
+      precautionIds,
+      implantIds,
+      homeBasedProgram,
+      preferredName: displayPreferredName(preferredName),
+    };
+  }, [
+    paragraph,
+    areas,
+    painLevels,
+    goals,
+    symptoms,
+    minutes,
+    difficulty,
+    preferKinds,
+    descriptorIds,
+    paragraphConditions,
+    clinicalSymptomIds,
+    medications,
+    precautionIds,
+    implantIds,
+    homeBasedProgram,
+    preferredName,
+  ]);
+
+  function askCoach(question?: string) {
+    const q = (question ?? coachQuestion).trim();
+    if (!q) return;
+    const answer = answerAssessmentQuestion(q, coachContext);
+    const entry: CoachExchange = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      question: q,
+      answer,
+      at: new Date().toISOString(),
+    };
+    setCoachLog((prev) => [...prev, entry].slice(-12));
+    setCoachQuestion("");
+  }
+
   async function createPlan() {
     const routine = generateHybridPlan(input);
     const modPlan = planFromSymptomInput({
@@ -545,11 +638,15 @@ export default function AssessmentPage() {
       .map((m) => m.modalityId)
       .filter((id, i, arr) => arr.indexOf(id) === i)
       .slice(0, 12);
+    const approach = buildWrittenPlanApproach(routine, coachContext);
     routine.generatedFrom = {
       ...routine.generatedFrom!,
       modalityPlanId: modPlan.id,
       suggestedModalityIds,
+      writtenApproach: approach,
+      preferredName: displayPreferredName(preferredName),
     };
+    setWrittenApproach(approach);
     setGenerated(routine);
     setModalityPlan(modPlan);
     setStep(5);
@@ -716,6 +813,72 @@ export default function AssessmentPage() {
               Tip: you can write meds in the story (e.g. “I take metformin 500 mg twice daily and
               Eliquis 5 mg”) or use the medication list below with exact doses.
             </p>
+          </SubSection>
+
+          <SubSection
+            title={`Ask a question${
+              preferredName ? `, ${displayPreferredName(preferredName)}` : ""
+            }`}
+            hint="Ask about your story, pain, practice schedule, or what to prioritize. Answers use what you have entered so far."
+          >
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-1.5">
+                {suggestedAssessmentQuestions().map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    className="rounded-full border border-brand-200 bg-brand-50/80 px-2.5 py-1 text-left text-[11px] font-medium text-brand-800 hover:border-brand-400 hover:bg-brand-100 dark:border-brand-700 dark:bg-brand-950 dark:text-brand-100"
+                    onClick={() => askCoach(q)}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  className="input flex-1"
+                  value={coachQuestion}
+                  onChange={(e) => setCoachQuestion(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      askCoach();
+                    }
+                  }}
+                  placeholder="Type your question…"
+                  aria-label="Ask a question about your assessment"
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className="btn-primary shrink-0 px-3"
+                  onClick={() => askCoach()}
+                  disabled={!coachQuestion.trim()}
+                  aria-label="Send question"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              </div>
+              {coachLog.length > 0 && (
+                <ul className="max-h-64 space-y-2.5 overflow-y-auto rounded-xl border border-brand-100 bg-brand-50/40 p-3 dark:border-brand-800 dark:bg-brand-950/40">
+                  {coachLog.map((ex) => (
+                    <li key={ex.id} className="text-sm">
+                      <p className="flex items-start gap-1.5 font-semibold text-brand-900">
+                        <MessageCircleQuestion className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-600" />
+                        {ex.question}
+                      </p>
+                      <p className="mt-1 leading-relaxed text-brand-700 dark:text-brand-200">
+                        {ex.answer}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-[11px] leading-relaxed text-brand-500">
+                Educational answers only. Not a diagnosis. Preferred name is set at registration or
+                under Account.
+              </p>
+            </div>
           </SubSection>
 
           <SubSection
@@ -1486,6 +1649,9 @@ export default function AssessmentPage() {
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
                       Plan ready
+                      {preferredName
+                        ? ` · for ${displayPreferredName(preferredName)}`
+                        : ""}
                     </p>
                     <h2 className="text-lg font-bold text-brand-950">{generated.name}</h2>
                   </div>
@@ -1509,6 +1675,22 @@ export default function AssessmentPage() {
                       ? ` · HRmax ~${generated.generatedFrom.maxHr} (cap ~${generated.generatedFrom.targetHrCap})`
                       : ""}
                   </p>
+                )}
+
+                {(writtenApproach || generated.generatedFrom?.writtenApproach) && (
+                  <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-4 dark:border-brand-700 dark:bg-brand-950/50">
+                    <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-600">
+                      <Stethoscope className="h-3.5 w-3.5" />
+                      Written plan of approach
+                    </p>
+                    <div className="space-y-3 text-sm leading-relaxed text-brand-900 dark:text-brand-100">
+                      {(writtenApproach || generated.generatedFrom?.writtenApproach || "")
+                        .split(/\n\n+/)
+                        .map((block, i) => (
+                          <p key={i}>{block}</p>
+                        ))}
+                    </div>
+                  </div>
                 )}
 
                 <details className="rounded-xl border border-brand-100 dark:border-brand-800">

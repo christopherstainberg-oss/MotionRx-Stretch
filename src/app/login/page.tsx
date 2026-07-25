@@ -59,6 +59,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [preferredName, setPreferredName] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
@@ -84,12 +85,30 @@ export default function LoginPage() {
       const res = await apiFetch(mode === "login" ? "/api/auth/login" : "/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({
+          email,
+          password,
+          name,
+          ...(mode === "register" ? { preferredName } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Something went wrong. Please try again.");
         return;
+      }
+      if (mode === "register") {
+        const display =
+          (data.user?.preferredName as string | undefined)?.trim() ||
+          preferredName.trim() ||
+          name.trim();
+        if (display) {
+          try {
+            localStorage.setItem("preferredName", display);
+          } catch {
+            /* ignore */
+          }
+        }
       }
       router.push("/home");
       router.refresh();
@@ -243,19 +262,38 @@ export default function LoginPage() {
 
             <form onSubmit={submit} className="space-y-4">
               {mode === "register" && (
-                <div>
-                  <label className="label" htmlFor="name">
-                    Your name
-                  </label>
-                  <input
-                    id="name"
-                    className="input py-3"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    autoComplete="name"
-                    placeholder="e.g. Alex"
-                  />
-                </div>
+                <>
+                  <div>
+                    <label className="label" htmlFor="name">
+                      Your name
+                    </label>
+                    <input
+                      id="name"
+                      className="input py-3"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      autoComplete="name"
+                      placeholder="e.g. Christopher Stainberg"
+                    />
+                  </div>
+                  <div>
+                    <label className="label" htmlFor="preferredName">
+                      Preferred name
+                    </label>
+                    <input
+                      id="preferredName"
+                      className="input py-3"
+                      value={preferredName}
+                      onChange={(e) => setPreferredName(e.target.value)}
+                      autoComplete="nickname"
+                      placeholder="e.g. Chris (what we call you in plans)"
+                    />
+                    <p className="mt-1.5 text-xs text-brand-500">
+                      Used in your Assessment answers and written plan. Optional — defaults to your
+                      first name.
+                    </p>
+                  </div>
+                </>
               )}
               <div>
                 <label className="label" htmlFor="email">

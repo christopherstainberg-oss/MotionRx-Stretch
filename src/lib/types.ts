@@ -178,6 +178,11 @@ export interface UserProfile {
   id: string;
   email: string;
   name: string;
+  /**
+   * How the person prefers to be addressed in coaching/plan copy
+   * (e.g. nickname). Falls back to `name` when empty.
+   */
+  preferredName?: string;
   passwordHash: string;
   twoFactorEnabled: boolean;
   twoFactorSecret?: string;
@@ -382,6 +387,10 @@ export interface Routine {
     safetySummary?: string[];
     safetyEducation?: Array<{ title: string; body: string; bullets: string[] }>;
     protocolNotes?: string;
+    /** Personalized written plan narrative for the user */
+    writtenApproach?: string;
+    /** Preferred name used in plan copy */
+    preferredName?: string;
     /** Adjective / qualifier analysis from paragraph */
     adjectiveHits?: string[];
     adjectiveSummary?: string[];

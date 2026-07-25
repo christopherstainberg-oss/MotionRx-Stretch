@@ -14,6 +14,8 @@ interface PublicUser {
   id: string;
   email: string;
   name: string;
+  preferredName?: string | null;
+  displayName?: string;
   twoFactorEnabled: boolean;
   twoFactorEnrolled?: boolean;
   hasAvatar?: boolean;
@@ -30,6 +32,7 @@ interface PublicUser {
 export default function AccountPage() {
   const [user, setUser] = useState<PublicUser | null>(null);
   const [nameChoice, setNameChoice] = useState("motionrx");
+  const [preferredName, setPreferredName] = useState("");
   const [reminders, setReminders] = useState("08:00, 12:30, 18:00");
   const [notifications, setNotifications] = useState(true);
   const [msg, setMsg] = useState("");
@@ -48,6 +51,12 @@ export default function AccountPage() {
         if (d.user) {
           setUser(d.user);
           setNameChoice(d.user.preferences?.nameChoice || "motionrx");
+          setPreferredName(
+            d.user.preferredName ||
+              d.user.displayName ||
+              d.user.name?.split(/\s+/)[0] ||
+              ""
+          );
           setReminders((d.user.preferences?.reminderTimes || []).join(", "));
           setNotifications(!!d.user.preferences?.notificationsEnabled);
           setSessionLen(d.user.preferences?.sessionLengthMinutes || 15);
@@ -61,12 +70,19 @@ export default function AccountPage() {
       .catch(() => {});
     const stored = localStorage.getItem("nameChoice");
     if (stored) setNameChoice(stored);
+    const storedPref = localStorage.getItem("preferredName");
+    if (storedPref && !preferredName) setPreferredName(storedPref);
   }, [setThemePref]);
 
   async function savePrefs(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
     localStorage.setItem("nameChoice", nameChoice);
+    try {
+      localStorage.setItem("preferredName", preferredName.trim());
+    } catch {
+      /* ignore */
+    }
     writeStoredTheme(themePref);
     const times = reminders
       .split(",")
@@ -84,6 +100,7 @@ export default function AccountPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nameChoice,
+          preferredName: preferredName.trim(),
           reminderTimes: times,
           notificationsEnabled: notifications,
           sessionLengthMinutes: sessionLen,
@@ -216,6 +233,12 @@ export default function AccountPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-brand-900">{user.name}</p>
+                {(user.preferredName || user.displayName) &&
+                  (user.preferredName || user.displayName) !== user.name && (
+                    <p className="text-sm text-brand-700">
+                      Preferred: {user.preferredName || user.displayName}
+                    </p>
+                  )}
                 <p className="text-sm text-brand-600">{user.email}</p>
                 <p className="mt-1 text-xs text-brand-500">
                   2FA:{" "}
@@ -267,6 +290,25 @@ export default function AccountPage() {
       </section>
 
       <form onSubmit={savePrefs} className="card space-y-5 p-5">
+        <div>
+          <label className="label" htmlFor="preferredName">
+            Preferred name
+          </label>
+          <input
+            id="preferredName"
+            className="input"
+            value={preferredName}
+            onChange={(e) => setPreferredName(e.target.value)}
+            autoComplete="nickname"
+            placeholder="What we should call you in plans & coaching"
+            maxLength={40}
+          />
+          <p className="mt-1 text-xs text-brand-500">
+            Used in Assessment Q&amp;A and your written plan of care (e.g. Chris instead of full legal
+            name).
+          </p>
+        </div>
+
         <div>
           <h2 className="font-semibold text-brand-900">App name (10 options)</h2>
           <select

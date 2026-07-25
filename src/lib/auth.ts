@@ -167,6 +167,10 @@ export function peekGuestId(): string | null {
 function normalizeUser(u: UserProfile): UserProfile {
   return {
     ...u,
+    preferredName:
+      typeof u.preferredName === "string" && u.preferredName.trim()
+        ? u.preferredName.trim()
+        : undefined,
     sessionVersion: typeof u.sessionVersion === "number" ? u.sessionVersion : 0,
     twoFactorEnabled: Boolean(u.twoFactorEnabled && u.twoFactorSecret),
   };
@@ -229,6 +233,8 @@ export async function registerUser(input: {
   email: string;
   name: string;
   password: string;
+  /** Optional nickname used in coaching/plan copy */
+  preferredName?: string;
 }): Promise<{ user: UserProfile } | { error: string }> {
   const email = input.email.trim().toLowerCase();
   const password = input.password;
@@ -242,11 +248,14 @@ export async function registerUser(input: {
     return { error: "Password must be at most 128 characters." };
   }
   const name = sanitizeDisplayName(input.name, 80) || "Mover";
+  const preferredName =
+    sanitizeDisplayName(input.preferredName || "", 40) || undefined;
   const passwordHash = await hashPassword(password);
   const user: UserProfile = {
     id: uuid(),
     email,
     name,
+    preferredName,
     passwordHash,
     twoFactorEnabled: false,
     sessionVersion: 0,
@@ -296,10 +305,16 @@ export async function loginUser(input: {
 /** Minimal public user — no secrets, no full internal graph dump */
 export function publicUser(user: UserProfile) {
   const enrolled = Boolean(user.twoFactorSecret);
+  const preferred =
+    (typeof user.preferredName === "string" && user.preferredName.trim()) ||
+    undefined;
   return {
     id: user.id,
     email: user.email,
     name: user.name,
+    preferredName: preferred || null,
+    /** Best display name for coaching copy */
+    displayName: preferred || user.name,
     twoFactorEnabled: Boolean(user.twoFactorEnabled && enrolled),
     twoFactorEnrolled: enrolled,
     avatarKey: user.avatarKey || null,

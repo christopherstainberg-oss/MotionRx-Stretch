@@ -40,6 +40,7 @@ export async function POST(req: Request) {
       email: sanitizeText(String(body.email || ""), 254),
       password: String(body.password || ""),
       name: sanitizeText(String(body.name || ""), 80),
+      preferredName: sanitizeText(String(body.preferredName || ""), 40),
     });
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 400 });

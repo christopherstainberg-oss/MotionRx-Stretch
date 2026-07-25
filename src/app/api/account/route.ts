@@ -31,6 +31,8 @@ const AccountPatchSchema = z
     sessionLengthMinutes: z.number().finite().optional(),
     /** Display name — requires currentPassword */
     name: z.string().max(80).optional(),
+    /** Preferred/nickname for coaching — no re-auth required */
+    preferredName: z.string().max(40).optional(),
     /** Optional step-up for security-sensitive updates */
     currentPassword: z.string().min(8).max(128).optional(),
   })
@@ -122,6 +124,10 @@ export async function PATCH(req: Request) {
       }
       if (body.name !== undefined) {
         u.name = sanitizeDisplayName(body.name, 80) || u.name;
+      }
+      if (body.preferredName !== undefined) {
+        const pn = sanitizeDisplayName(body.preferredName, 40);
+        u.preferredName = pn || undefined;
       }
     });
 
