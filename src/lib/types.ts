@@ -298,6 +298,15 @@ export interface Routine {
     /** Clinical condition / injury / surgery IDs matched from intake */
     conditionIds?: string[];
     conditionSummary?: string[];
+    conditionCategories?: string[];
+    conditionSubcategories?: string[];
+    /** Evidence-informed outcome targets from matched conditions */
+    clinicalOutcomes?: Array<{
+      label: string;
+      evidenceNote: string;
+      timeframe: string;
+      measureHint: string;
+    }>;
     modalityPlanId?: string;
     suggestedModalityIds?: string[];
   };

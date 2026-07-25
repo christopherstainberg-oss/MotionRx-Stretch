@@ -16,6 +16,7 @@ import {
 import {
   CLINICAL_CONDITION_STATS,
   CLINICAL_CATEGORY_LABELS,
+  CLINICAL_SUBCATEGORY_LABELS,
   getConditionById,
   matchConditionsFromText,
   summarizeConditions,
@@ -300,8 +301,11 @@ export default function AssessmentPage() {
           Start with a short paragraph about your issue. We extract{" "}
           <strong>clinical pain descriptors</strong> and{" "}
           <strong>musculoskeletal injuries, surgeries, and complex medical conditions</strong>{" "}
-          from your words ({CLINICAL_CONDITION_STATS.capacity.toLocaleString()}+ catalog capacity)
-          and build stretch and exercise plans around them—then you can fine-tune.
+          from your words (
+          {CLINICAL_CONDITION_STATS.capacity.toLocaleString()}+ condition variations across{" "}
+          {CLINICAL_CONDITION_STATS.categories} categories /{" "}
+          {CLINICAL_CONDITION_STATS.subcategories} sub-categories)
+          and build stretch and exercise plans with realistic clinical outcomes—then you can fine-tune.
         </p>
       </div>
 
@@ -454,6 +458,12 @@ export default function AssessmentPage() {
                 .map((c) => CLINICAL_CATEGORY_LABELS[c] || c)
                 .slice(0, 6)
                 .join(", ")}
+              {conditionHints.subcategories.length
+                ? ` · Sub-categories: ${conditionHints.subcategories
+                    .map((s) => CLINICAL_SUBCATEGORY_LABELS[s] || s)
+                    .slice(0, 5)
+                    .join(", ")}`
+                : ""}
               {conditionHints.clearanceRequired
                 ? " · Clearance-sensitive: volume and intensity will be capped"
                 : ""}
@@ -468,10 +478,29 @@ export default function AssessmentPage() {
                     title={c?.plainLanguage || id}
                   >
                     {c?.label || id}
+                    {c?.subcategory && c.subcategory !== "general"
+                      ? ` · ${CLINICAL_SUBCATEGORY_LABELS[c.subcategory]}`
+                      : ""}
                   </span>
                 );
               })}
             </div>
+            {conditionHints.clinicalOutcomes.length > 0 && (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">
+                  Evidence-informed outcome targets for your routine
+                </p>
+                <ul className="space-y-1.5 text-xs text-brand-700">
+                  {conditionHints.clinicalOutcomes.slice(0, 4).map((o) => (
+                    <li key={o.label} className="rounded-lg bg-brand-50/80 px-2.5 py-1.5 dark:bg-brand-900/40">
+                      <strong>{o.label}</strong>
+                      <span className="text-brand-500"> · {o.timeframe}</span>
+                      <p className="mt-0.5 text-brand-600">{o.evidenceNote}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {conditionHints.redFlags.length > 0 && (
               <p className="mt-2 rounded-lg bg-rose-50 p-2 text-xs text-rose-900 dark:bg-rose-950/40 dark:text-rose-100">
                 {conditionHints.redFlags[0]}
@@ -699,6 +728,31 @@ export default function AssessmentPage() {
                   </span>
                 ))}
               </div>
+              {(generated.generatedFrom?.conditionSubcategories || []).length > 0 && (
+                <p className="mt-2 text-xs text-brand-600">
+                  Sub-categories:{" "}
+                  {generated.generatedFrom!.conditionSubcategories!
+                    .map((s) => CLINICAL_SUBCATEGORY_LABELS[s as keyof typeof CLINICAL_SUBCATEGORY_LABELS] || s)
+                    .join(", ")}
+                </p>
+              )}
+            </div>
+          )}
+          {(generated.generatedFrom?.clinicalOutcomes || []).length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">
+                Realistic clinical outcomes tied to this routine
+              </p>
+              <ul className="mt-2 space-y-2 text-sm text-brand-800">
+                {generated.generatedFrom!.clinicalOutcomes!.slice(0, 5).map((o) => (
+                  <li key={o.label} className="rounded-xl border border-brand-100 px-3 py-2 dark:border-brand-800">
+                    <p className="font-semibold text-brand-950">{o.label}</p>
+                    <p className="text-xs text-brand-600">{o.timeframe}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-brand-700">{o.evidenceNote}</p>
+                    <p className="mt-1 text-[11px] text-brand-500">Track: {o.measureHint}</p>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
           {(generated.generatedFrom?.descriptorSummary || []).length > 0 && (

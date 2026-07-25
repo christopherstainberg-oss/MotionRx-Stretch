@@ -1,8 +1,8 @@
 /**
  * Clinically significant conditions catalog for Assessment paragraph intake.
  * Bases cover MSK injuries, surgeries, and complex medical conditions.
- * Expanded to ~100k capacity via laterality × phase × severity × context editions.
- * Educational only — not a diagnostic system; clearance flags defer to licensed care.
+ * Expanded to 250k+ capacity via laterality × phase × severity × context × population.
+ * Sub-categories refine MSK/cardiac/neuro/etc. Educational only — not diagnostic.
  */
 
 import type { BodyPart, Difficulty } from "@/lib/types";
@@ -25,6 +25,42 @@ export type ClinicalCategory =
   | "multi-system-complex"
   | "pain-psychosocial";
 
+/** Finer sub-categories within each major clinical category */
+export type ClinicalSubcategory =
+  | "ligament"
+  | "tendon-overuse"
+  | "muscle-strain"
+  | "cartilage-meniscus"
+  | "bone-stress-fracture"
+  | "joint-capsule-instability"
+  | "spine-disc-nerve"
+  | "spine-mechanical"
+  | "joint-replacement"
+  | "soft-tissue-repair"
+  | "fracture-fixation"
+  | "arthroscopy"
+  | "cns"
+  | "pns-radicular"
+  | "neurodegenerative"
+  | "ischemic-heart"
+  | "heart-failure-rhythm"
+  | "post-cardiac-surgery"
+  | "obstructive-lung"
+  | "restrictive-pulmonary"
+  | "pediatric-ortho"
+  | "pediatric-neuro-dev"
+  | "inner-ear-balance"
+  | "inflammatory-arthritis"
+  | "degenerative-arthritis"
+  | "cancer-survivorship"
+  | "metabolic-bone"
+  | "metabolic-systemic"
+  | "arterial-venous"
+  | "wound-skin"
+  | "complex-multisystem"
+  | "nociplastic-pain"
+  | "general";
+
 export const CLINICAL_CATEGORY_LABELS: Record<ClinicalCategory, string> = {
   "musculoskeletal-injury": "Musculoskeletal injuries",
   "musculoskeletal-condition": "Musculoskeletal conditions",
@@ -43,11 +79,59 @@ export const CLINICAL_CATEGORY_LABELS: Record<ClinicalCategory, string> = {
   "pain-psychosocial": "Pain science / psychosocial",
 };
 
+export const CLINICAL_SUBCATEGORY_LABELS: Record<ClinicalSubcategory, string> = {
+  ligament: "Ligament injury",
+  "tendon-overuse": "Tendon / overuse",
+  "muscle-strain": "Muscle strain",
+  "cartilage-meniscus": "Cartilage / meniscus",
+  "bone-stress-fracture": "Bone stress / fracture",
+  "joint-capsule-instability": "Joint capsule / instability",
+  "spine-disc-nerve": "Spine disc / nerve",
+  "spine-mechanical": "Spine mechanical",
+  "joint-replacement": "Joint replacement",
+  "soft-tissue-repair": "Soft-tissue repair",
+  "fracture-fixation": "Fracture fixation (ORIF)",
+  arthroscopy: "Arthroscopic surgery",
+  cns: "Central nervous system",
+  "pns-radicular": "Peripheral / radicular nerve",
+  neurodegenerative: "Neurodegenerative",
+  "ischemic-heart": "Ischemic heart disease",
+  "heart-failure-rhythm": "Heart failure / rhythm",
+  "post-cardiac-surgery": "Post–cardiac surgery",
+  "obstructive-lung": "Obstructive lung disease",
+  "restrictive-pulmonary": "Restrictive / recovery lung",
+  "pediatric-ortho": "Pediatric orthopedics",
+  "pediatric-neuro-dev": "Pediatric neurodevelopment",
+  "inner-ear-balance": "Inner ear / balance",
+  "inflammatory-arthritis": "Inflammatory arthritis",
+  "degenerative-arthritis": "Degenerative arthritis (OA)",
+  "cancer-survivorship": "Cancer survivorship",
+  "metabolic-bone": "Metabolic bone",
+  "metabolic-systemic": "Metabolic / systemic",
+  "arterial-venous": "Arterial / venous",
+  "wound-skin": "Wound / skin",
+  "complex-multisystem": "Complex multi-system",
+  "nociplastic-pain": "Nociplastic / chronic pain",
+  general: "General",
+};
+
+export interface ClinicalOutcomeTarget {
+  /** Short outcome label used in routines / HEP */
+  label: string;
+  /** Evidence-informed outpatient framing (educational) */
+  evidenceNote: string;
+  /** Realistic timeframe language */
+  timeframe: string;
+  /** How success is observed clinically */
+  measureHint: string;
+}
+
 export interface ClinicalCondition {
   id: string;
   label: string;
   clinicalTerm: string;
   category: ClinicalCategory;
+  subcategory: ClinicalSubcategory;
   plainLanguage: string;
   kidFriendly: string;
   bodyPartsHint: BodyPart[];
@@ -62,27 +146,133 @@ export interface ClinicalCondition {
   /** Prefer professional clearance before progressive loading */
   clearanceRequired?: boolean;
   searchTerms: string[];
+  /** Short outcome labels (legacy + UI chips) */
   outcomeFocus: string[];
+  /** Richer evidence-based outcome targets for routines */
+  clinicalOutcomes?: ClinicalOutcomeTarget[];
 }
 
 type Seed = Omit<
   ClinicalCondition,
-  "searchTerms" | "avoidTags" | "preferTags"
+  "searchTerms" | "avoidTags" | "preferTags" | "subcategory" | "clinicalOutcomes"
 > & {
   searchTerms?: string[];
   avoidTags?: string[];
   preferTags?: string[];
+  subcategory?: ClinicalSubcategory;
+  clinicalOutcomes?: ClinicalOutcomeTarget[];
 };
 
+/** Infer a sensible subcategory when seed omitted one */
+export function inferSubcategory(c: {
+  id: string;
+  category: ClinicalCategory;
+  label: string;
+  searchTerms?: string[];
+}): ClinicalSubcategory {
+  const blob = `${c.id} ${c.label} ${(c.searchTerms || []).join(" ")}`.toLowerCase();
+  if (c.category === "post-surgical") {
+    if (/replacement|arthroplasty|tka|tha|tsa/.test(blob)) return "joint-replacement";
+    if (/orif|fracture|fixation/.test(blob)) return "fracture-fixation";
+    if (/arthroscopy/.test(blob)) return "arthroscopy";
+    if (/repair|reconstruction|aclr|cuff|tendon|menisc/.test(blob)) return "soft-tissue-repair";
+    return "soft-tissue-repair";
+  }
+  if (c.category === "neurological") {
+    if (/parkinson|multiple sclerosis|\bms\b/.test(blob)) return "neurodegenerative";
+    if (/radicul|neuropathy|nerve|carpal|sciatica|bell/.test(blob)) return "pns-radicular";
+    if (/stroke|cva|tbi|spinal cord|cerebral|concussion|guillain/.test(blob)) return "cns";
+    return "cns";
+  }
+  if (c.category === "cardiac") {
+    if (/cabg|sternal|bypass|valve surgery|open heart/.test(blob)) return "post-cardiac-surgery";
+    if (/failure|chf|afib|fibrillation|pacemaker|icd/.test(blob)) return "heart-failure-rhythm";
+    return "ischemic-heart";
+  }
+  if (c.category === "pulmonary") {
+    if (/copd|asthma|obstruct/.test(blob)) return "obstructive-lung";
+    return "restrictive-pulmonary";
+  }
+  if (c.category === "pediatric") {
+    if (/delay|cerebral palsy|motor/.test(blob)) return "pediatric-neuro-dev";
+    return "pediatric-ortho";
+  }
+  if (c.category === "vestibular") return "inner-ear-balance";
+  if (c.category === "rheumatologic") {
+    if (/oa|osteoarthritis|spondylosis/.test(blob)) return "degenerative-arthritis";
+    return "inflammatory-arthritis";
+  }
+  if (c.category === "oncologic") return "cancer-survivorship";
+  if (c.category === "endocrine-metabolic") {
+    if (/osteo|bone density/.test(blob)) return "metabolic-bone";
+    return "metabolic-systemic";
+  }
+  if (c.category === "vascular") return "arterial-venous";
+  if (c.category === "integumentary") return "wound-skin";
+  if (c.category === "pain-psychosocial") return "nociplastic-pain";
+  if (c.category === "multi-system-complex") return "complex-multisystem";
+  if (/tendon|tendin|epicondyl|achilles|plantar|de quervain|jumper/.test(blob))
+    return "tendon-overuse";
+  if (/ligament|acl|mcl|sprain|tfcc|collateral|bankart/.test(blob)) return "ligament";
+  if (/strain|pulled|contusion|hamstring|quad|calf|adductor/.test(blob)) return "muscle-strain";
+  if (/menisc|labral|cartilage|chondral/.test(blob)) return "cartilage-meniscus";
+  if (/fracture|stress fracture|orif|bone stress/.test(blob)) return "bone-stress-fracture";
+  if (/instability|dislocation|subluxation|frozen|adhesive/.test(blob))
+    return "joint-capsule-instability";
+  if (/disc|radicul|sciatica|stenosis|herniat/.test(blob)) return "spine-disc-nerve";
+  if (/lumbar|thoracic|cervical|back|neck|si joint|spondyl/.test(blob)) return "spine-mechanical";
+  return "general";
+}
+
+function defaultOutcomes(labels: string[], category: ClinicalCategory): ClinicalOutcomeTarget[] {
+  return labels.map((label) => ({
+    label,
+    evidenceNote:
+      category === "post-surgical"
+        ? "Outpatient protocols emphasize criterion-based progression, tissue healing timelines, and surgeon/PT co-management—not calendar-only milestones."
+        : category === "cardiac" || category === "pulmonary"
+          ? "Cardiac/pulmonary rehab principles use symptom-limited dosing (RPE/dyspnea scales), gradual aerobic progression, and medical clearance when indicated."
+          : category === "neurological"
+            ? "Neuro rehab outcomes favor task-specific practice, motor learning dose, and safety (falls, skin, autonomic) over aggressive passive stretching alone."
+            : category === "pain-psychosocial"
+              ? "For persistent pain, graded activity and self-efficacy often improve function even when pain scores change slowly."
+              : "Outpatient MSK care pairs load management with progressive capacity building; short-term comfort modalities support—not replace—active rehab.",
+    timeframe:
+      category === "post-surgical"
+        ? "Phase-dependent (often weeks to months; follow protocol)"
+        : category === "cardiac" || category === "pulmonary"
+          ? "Weeks of graded conditioning with medical oversight as needed"
+          : "Typically 2–6+ weeks of consistent practice for meaningful function change",
+    measureHint: label,
+  }));
+}
+
 function withSearch(c: Seed): ClinicalCondition {
+  const subcategory =
+    c.subcategory && c.subcategory !== "general"
+      ? c.subcategory
+      : inferSubcategory({
+          id: c.id,
+          category: c.category,
+          label: c.label,
+          searchTerms: c.searchTerms,
+        });
+  const outcomeFocus = c.outcomeFocus?.length ? c.outcomeFocus : ["Function", "Pain-aware activity"];
+  const clinicalOutcomes =
+    c.clinicalOutcomes?.length ? c.clinicalOutcomes : defaultOutcomes(outcomeFocus, c.category);
   const terms = new Set<string>([
     c.label.toLowerCase(),
     c.clinicalTerm.toLowerCase(),
+    subcategory.replace(/-/g, " "),
+    CLINICAL_SUBCATEGORY_LABELS[subcategory].toLowerCase(),
     ...(c.searchTerms || []),
     ...c.label.toLowerCase().split(/[\s,/()-]+/).filter((t) => t.length > 2),
   ]);
   return {
     ...c,
+    subcategory,
+    outcomeFocus,
+    clinicalOutcomes,
     avoidTags: c.avoidTags || [],
     preferTags: c.preferTags || [],
     searchTerms: Array.from(terms),
@@ -380,7 +570,10 @@ for (const [id, label, cat, terms] of MEDICAL_EXTRA) {
 
 export const BASE_CLINICAL_CONDITIONS: ClinicalCondition[] = SEEDS.map(withSearch);
 
-/** Expansion axes → ~100k virtual catalog capacity */
+/**
+ * Expansion axes → 250k+ virtual catalog capacity.
+ * laterality × phase × severity × context × population
+ */
 const LATERALITY = [
   { tag: "unspec", label: "", search: [] as string[] },
   { tag: "left", label: "left", search: ["left", "l "] },
@@ -414,15 +607,97 @@ const CONTEXTS = [
   { tag: "degenerative", label: "degenerative" },
 ] as const;
 
+/** Population / presentation variations */
+const POPULATIONS = [
+  {
+    tag: "typical",
+    label: "",
+    boost: 0,
+    biases: [] as ProgramBias[],
+    outcomeSuffix: "",
+  },
+  {
+    tag: "athletic",
+    label: "athletic presentation",
+    boost: 0.1,
+    biases: ["controlled-strength"] as ProgramBias[],
+    outcomeSuffix: "sport-specific capacity",
+  },
+  {
+    tag: "older-adult",
+    label: "older adult",
+    boost: 0.3,
+    biases: ["balance-focus", "short-volume"] as ProgramBias[],
+    outcomeSuffix: "fall-risk reduction and independence",
+  },
+  {
+    tag: "complex-comorbid",
+    label: "complex / comorbid",
+    boost: 0.5,
+    biases: ["short-volume", "defer-to-provider"] as ProgramBias[],
+    outcomeSuffix: "safe function with medical complexity",
+  },
+] as const;
+
 export const CLINICAL_CONDITION_CAPACITY =
   BASE_CLINICAL_CONDITIONS.length *
   LATERALITY.length *
   PHASES.length *
   SEVERITIES.length *
-  CONTEXTS.length;
+  CONTEXTS.length *
+  POPULATIONS.length;
 
 function mergeBiases(a: ProgramBias[], b: ProgramBias[]): ProgramBias[] {
   return Array.from(new Set([...a, ...b]));
+}
+
+function augmentOutcomes(
+  base: ClinicalCondition,
+  pop: (typeof POPULATIONS)[number],
+  phase: (typeof PHASES)[number],
+  sev: (typeof SEVERITIES)[number]
+): ClinicalOutcomeTarget[] {
+  const core = (base.clinicalOutcomes || defaultOutcomes(base.outcomeFocus, base.category)).map(
+    (o) => ({ ...o })
+  );
+  if (pop.outcomeSuffix) {
+    core.push({
+      label: pop.outcomeSuffix,
+      evidenceNote:
+        pop.tag === "older-adult"
+          ? "In older adults, balance + progressive strength reduce fall risk; avoid aggressive end-range loading without screening."
+          : pop.tag === "athletic"
+            ? "Return-to-sport decisions are criterion-based (strength symmetry, hop tests, confidence)—not pain absence alone."
+            : "With multi-morbidity, prioritize function, symptom stability, and medical red-flag surveillance over aggressive progressions.",
+      timeframe: pop.tag === "athletic" ? "Often 6–12+ weeks depending on tissue and sport demands" : "Graded over several weeks with reassessment",
+      measureHint: pop.outcomeSuffix,
+    });
+  }
+  if (phase.tag.startsWith("postop")) {
+    core.unshift({
+      label: "Protocol-phase adherence",
+      evidenceNote:
+        "Post-operative outcomes improve when load and ROM progress match tissue healing and surgeon/PT criteria rather than fixed calendars only.",
+      timeframe: phase.label || "phase-specific",
+      measureHint: "Meeting phase criteria (ROM, pain rules, WB status)",
+    });
+  }
+  if (sev.tag === "severe" || sev.tag === "high-irr") {
+    core.unshift({
+      label: "Irritability reduction & session tolerance",
+      evidenceNote:
+        "High-irritability presentations respond better to short, frequent, low-threat doses before capacity building.",
+      timeframe: "Often first 1–3 weeks of calm dosing",
+      measureHint: "24-hour symptom response, session completion",
+    });
+  }
+  // de-dupe by label
+  const seen = new Set<string>();
+  return core.filter((o) => {
+    if (seen.has(o.label)) return false;
+    seen.add(o.label);
+    return true;
+  });
 }
 
 /** Expand one base into editions (used for catalog generation / ID resolution) */
@@ -432,42 +707,60 @@ export function expandConditionEditions(base: ClinicalCondition): ClinicalCondit
     for (const phase of PHASES) {
       for (const sev of SEVERITIES) {
         for (const ctx of CONTEXTS) {
-          const isBase =
-            lat.tag === "unspec" &&
-            phase.tag === "unspec" &&
-            sev.tag === "mild" &&
-            ctx.tag === "primary";
-          if (isBase) {
-            out.push(base);
-            continue;
+          for (const pop of POPULATIONS) {
+            const isBase =
+              lat.tag === "unspec" &&
+              phase.tag === "unspec" &&
+              sev.tag === "mild" &&
+              ctx.tag === "primary" &&
+              pop.tag === "typical";
+            if (isBase) {
+              out.push(base);
+              continue;
+            }
+            const bits = [lat.label, phase.label, sev.label, ctx.label, pop.label].filter(
+              Boolean
+            );
+            const id = `${base.id}__${lat.tag}_${phase.tag}_${sev.tag}_${ctx.tag}_${pop.tag}`;
+            const label = bits.length ? `${base.label} (${bits.join(", ")})` : base.label;
+            const clinicalOutcomes = augmentOutcomes(base, pop, phase, sev);
+            out.push(
+              withSearch({
+                ...base,
+                id,
+                label,
+                subcategory: base.subcategory,
+                clinicalTerm: `${base.clinicalTerm}${bits.length ? ` — ${bits.join(", ")}` : ""}`,
+                plainLanguage: `${base.plainLanguage}${bits.length ? ` Variation: ${bits.join(", ")}.` : ""}`,
+                irritabilityBoost: Math.min(
+                  3,
+                  base.irritabilityBoost + phase.boost + sev.boost + pop.boost
+                ),
+                maxDifficulty: sev.maxDiff || base.maxDifficulty,
+                programBiases: mergeBiases(
+                  mergeBiases(base.programBiases, phase.biases),
+                  pop.biases
+                ),
+                clearanceRequired:
+                  base.clearanceRequired ||
+                  phase.tag.startsWith("postop") ||
+                  pop.tag === "complex-comorbid" ||
+                  base.category === "cardiac" ||
+                  base.category === "post-surgical",
+                outcomeFocus: clinicalOutcomes.map((o) => o.label),
+                clinicalOutcomes,
+                searchTerms: [
+                  ...(base.searchTerms || []),
+                  ...lat.search,
+                  phase.label,
+                  sev.label,
+                  ctx.label,
+                  pop.label,
+                  base.subcategory,
+                ].filter(Boolean),
+              })
+            );
           }
-          const bits = [lat.label, phase.label, sev.label, ctx.label].filter(Boolean);
-          const id = `${base.id}__${lat.tag}_${phase.tag}_${sev.tag}_${ctx.tag}`;
-          const label = bits.length ? `${base.label} (${bits.join(", ")})` : base.label;
-          out.push(
-            withSearch({
-              ...base,
-              id,
-              label,
-              clinicalTerm: `${base.clinicalTerm}${bits.length ? ` — ${bits.join(", ")}` : ""}`,
-              plainLanguage: `${base.plainLanguage}${bits.length ? ` Context: ${bits.join(", ")}.` : ""}`,
-              irritabilityBoost: Math.min(3, base.irritabilityBoost + phase.boost + sev.boost),
-              maxDifficulty: sev.maxDiff || base.maxDifficulty,
-              programBiases: mergeBiases(base.programBiases, phase.biases),
-              clearanceRequired:
-                base.clearanceRequired ||
-                phase.tag.startsWith("postop") ||
-                base.category === "cardiac" ||
-                base.category === "post-surgical",
-              searchTerms: [
-                ...(base.searchTerms || []),
-                ...lat.search,
-                phase.label,
-                sev.label,
-                ctx.label,
-              ].filter(Boolean),
-            })
-          );
         }
       }
     }
@@ -476,15 +769,23 @@ export function expandConditionEditions(base: ClinicalCondition): ClinicalCondit
 }
 
 /**
- * Expanded catalog is virtual (capacity math) to avoid loading 100k objects into RAM.
+ * Expanded catalog is virtual (capacity math) to avoid loading 250k+ objects into RAM.
  * Bases are used for matching; expanded IDs resolve on demand per base.
  */
 export const CLINICAL_CONDITION_STATS = {
   baseCount: BASE_CLINICAL_CONDITIONS.length,
-  /** Total virtual editions (bases × laterality × phase × severity × context) */
+  /** Total virtual editions */
   capacity: CLINICAL_CONDITION_CAPACITY,
   totalCount: CLINICAL_CONDITION_CAPACITY,
   categories: Object.keys(CLINICAL_CATEGORY_LABELS).length,
+  subcategories: Object.keys(CLINICAL_SUBCATEGORY_LABELS).length,
+  variationAxes: {
+    laterality: LATERALITY.length,
+    phase: PHASES.length,
+    severity: SEVERITIES.length,
+    context: CONTEXTS.length,
+    population: POPULATIONS.length,
+  },
 };
 
 const baseById = new Map(BASE_CLINICAL_CONDITIONS.map((c) => [c.id, c]));
@@ -547,6 +848,11 @@ export interface ConditionProgramHints {
   summaryLines: string[];
   bodyParts: BodyPart[];
   categories: ClinicalCategory[];
+  subcategories: ClinicalSubcategory[];
+  /** Distinct outcome labels for HEP / routine tracking */
+  outcomeFocus: string[];
+  /** Evidence-framed outcome targets */
+  clinicalOutcomes: ClinicalOutcomeTarget[];
   preferKinds: ("stretch" | "exercise")[] | "auto";
 }
 
@@ -565,6 +871,9 @@ export function summarizeConditions(ids: string[]): ConditionProgramHints {
       summaryLines: [],
       bodyParts: [],
       categories: [],
+      subcategories: [],
+      outcomeFocus: [],
+      clinicalOutcomes: [],
       preferKinds: "auto",
     };
   }
@@ -577,6 +886,9 @@ export function summarizeConditions(ids: string[]): ConditionProgramHints {
   const redFlags: string[] = [];
   const bodyParts = new Set<BodyPart>();
   const categories = new Set<ClinicalCategory>();
+  const subcategories = new Set<ClinicalSubcategory>();
+  const outcomeFocus = new Set<string>();
+  const outcomeByLabel = new Map<string, ClinicalOutcomeTarget>();
   let maxDiff: Difficulty | undefined;
   let clearance = false;
   const rank = { beginner: 1, intermediate: 2, advanced: 3 };
@@ -590,6 +902,11 @@ export function summarizeConditions(ids: string[]): ConditionProgramHints {
     c.programBiases.forEach((b) => biases.add(b));
     c.bodyPartsHint.forEach((bp) => bodyParts.add(bp));
     categories.add(c.category);
+    subcategories.add(c.subcategory);
+    c.outcomeFocus.forEach((o) => outcomeFocus.add(o));
+    for (const o of c.clinicalOutcomes || defaultOutcomes(c.outcomeFocus, c.category)) {
+      if (!outcomeByLabel.has(o.label)) outcomeByLabel.set(o.label, o);
+    }
     if (c.redFlagEducation) redFlags.push(`${c.label}: ${c.redFlagEducation}`);
     if (c.clearanceRequired) clearance = true;
     if (c.maxDifficulty) {
@@ -621,6 +938,9 @@ export function summarizeConditions(ids: string[]): ConditionProgramHints {
     summaryLines: list.slice(0, 10).map((c) => c.label),
     bodyParts: Array.from(bodyParts),
     categories: Array.from(categories),
+    subcategories: Array.from(subcategories),
+    outcomeFocus: Array.from(outcomeFocus).slice(0, 16),
+    clinicalOutcomes: Array.from(outcomeByLabel.values()).slice(0, 12),
     preferKinds,
   };
 }
@@ -628,6 +948,7 @@ export function summarizeConditions(ids: string[]): ConditionProgramHints {
 export function searchClinicalConditions(opts: {
   query?: string;
   category?: ClinicalCategory | "all";
+  subcategory?: ClinicalSubcategory | "all";
   limit?: number;
   /** Prefer bases for UI/search; set false to sample expanded editions of matched bases */
   basesOnly?: boolean;
@@ -637,19 +958,22 @@ export function searchClinicalConditions(opts: {
   const limit = Math.min(opts.limit ?? 40, 100);
   const baseHits = BASE_CLINICAL_CONDITIONS.filter((c) => {
     if (opts.category && opts.category !== "all" && c.category !== opts.category) return false;
+    if (opts.subcategory && opts.subcategory !== "all" && c.subcategory !== opts.subcategory)
+      return false;
     if (!q) return true;
     return (
       c.searchTerms.some((t) => t.includes(q)) ||
       c.label.toLowerCase().includes(q) ||
-      c.clinicalTerm.toLowerCase().includes(q)
+      c.clinicalTerm.toLowerCase().includes(q) ||
+      c.subcategory.includes(q)
     );
   });
   baseHits.sort((a, b) => a.label.localeCompare(b.label));
   if (basesOnly) return baseHits.slice(0, limit);
 
-  // Sample expanded editions for matched bases (not full 100k materialization)
+  // Sample expanded editions for matched bases (not full 250k materialization)
   const out: ClinicalCondition[] = [];
-  for (const b of baseHits.slice(0, 20)) {
+  for (const b of baseHits.slice(0, 12)) {
     const editions = expandConditionEditions(b);
     for (const e of editions) {
       if (out.length >= limit) break;
@@ -668,3 +992,5 @@ export function searchClinicalConditions(opts: {
   }
   return out.slice(0, limit);
 }
+
+

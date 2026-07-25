@@ -98,7 +98,7 @@ export function correlateInsights(input: {
     insights.push({
       id: uuid(),
       title: "Clinical conditions shaping your programs",
-      summary: `Matched conditions: ${clabels.join(", ")}. Categories: ${ch.categories.slice(0, 4).join(", ")}. Irritability contribution ~${ch.effectivePainBoost.toFixed(1)}.`,
+      summary: `Matched conditions: ${clabels.join(", ")}. Categories: ${ch.categories.slice(0, 4).join(", ")}. Sub-categories: ${ch.subcategories.slice(0, 4).join(", ")}. Irritability contribution ~${ch.effectivePainBoost.toFixed(1)}.`,
       severity: ch.clearanceRequired || ch.redFlags.length ? "caution" : "info",
       sources: ["routines", "pain", "descriptors"],
       recommendation: ch.clearanceRequired
@@ -106,6 +106,44 @@ export function correlateInsights(input: {
         : ch.biases.includes("neural-caution")
           ? "Neural caution is active—avoid aggressive end-range and favor controlled volume."
           : "Condition-matched biases are already influencing stretch/exercise mix and volume.",
+      at: now,
+    });
+    if (ch.clinicalOutcomes.length) {
+      insights.push({
+        id: uuid(),
+        title: "Evidence-informed outcomes linked to your conditions",
+        summary: ch.clinicalOutcomes
+          .slice(0, 4)
+          .map((o) => `${o.label} (${o.timeframe})`)
+          .join(" · "),
+        severity: "positive",
+        sources: ["routines", "goals", "pain"],
+        recommendation: ch.clinicalOutcomes[0]
+          ? `${ch.clinicalOutcomes[0].evidenceNote} Track: ${ch.clinicalOutcomes[0].measureHint}.`
+          : "Track function weekly alongside pain scores.",
+        at: now,
+      });
+    }
+  }
+
+  // Outcomes stored on latest personalized routine
+  const outcomeRoutine = input.routines.find(
+    (r) => (r.generatedFrom?.clinicalOutcomes || []).length > 0
+  );
+  if (outcomeRoutine?.generatedFrom?.clinicalOutcomes?.length) {
+    const outs = outcomeRoutine.generatedFrom.clinicalOutcomes;
+    insights.push({
+      id: uuid(),
+      title: `Outcomes for “${outcomeRoutine.name}”`,
+      summary: `This routine is optimized toward: ${outs
+        .slice(0, 5)
+        .map((o) => o.label)
+        .join("; ")}.`,
+      severity: "info",
+      sources: ["routines", "goals"],
+      recommendation: outs[0]
+        ? `Primary target — ${outs[0].label}: ${outs[0].evidenceNote}`
+        : undefined,
       at: now,
     });
   }

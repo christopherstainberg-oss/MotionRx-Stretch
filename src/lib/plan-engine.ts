@@ -506,6 +506,17 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     conditionIds.length > 0
       ? ` Clinical conditions: ${condHints.summaryLines.slice(0, 6).join("; ")}.`
       : "";
+  const subcatDetail =
+    condHints.subcategories.length > 0
+      ? ` Sub-categories: ${condHints.subcategories.slice(0, 5).join(", ")}.`
+      : "";
+  const outcomeDetail =
+    condHints.clinicalOutcomes.length > 0
+      ? ` Target outcomes: ${condHints.clinicalOutcomes
+          .slice(0, 4)
+          .map((o) => o.label)
+          .join("; ")}.`
+      : "";
   const biasDetail = combinedHints.biases.length
     ? ` Program biases: ${combinedHints.biases.slice(0, 5).join(", ")}.`
     : "";
@@ -515,11 +526,15 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   const clearanceDetail = condHints.clearanceRequired
     ? ` Clearance-sensitive condition(s) detected: volume and intensity capped; follow surgeon/physician/PT guidance.`
     : "";
+  const evidenceDetail =
+    condHints.clinicalOutcomes[0] != null
+      ? ` Evidence framing: ${condHints.clinicalOutcomes[0].evidenceNote}`
+      : "";
 
   const adjustment: RoutineAdjustment = {
     at: new Date().toISOString(),
     reason: conditionIds.length
-      ? "Generated from clinical conditions + descriptors + intake"
+      ? "Generated from clinical condition variations + descriptors + intake"
       : painDescriptorIds.length
         ? "Generated from clinical pain descriptors + intake"
         : input.concernParagraph
@@ -544,9 +559,12 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
           : "Pain tolerable: include mobility and progressive exercise dosing with warm-up/cool-down.") +
       descDetail +
       condDetail +
+      subcatDetail +
+      outcomeDetail +
       biasDetail +
       rfDetail +
-      clearanceDetail,
+      clearanceDetail +
+      evidenceDetail,
     source: "user",
   };
 
@@ -584,6 +602,9 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       descriptorSummary: descHints.summaryLines,
       conditionIds,
       conditionSummary: condHints.summaryLines,
+      conditionCategories: condHints.categories,
+      conditionSubcategories: condHints.subcategories,
+      clinicalOutcomes: condHints.clinicalOutcomes.slice(0, 10),
     },
     selfAdjustHistory: [adjustment],
     createdAt: new Date().toISOString(),

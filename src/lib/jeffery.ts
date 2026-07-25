@@ -251,7 +251,16 @@ export function jefferyLocalReply(
       ? `\n**Descriptor-driven dosing hints:** stretch bias ${descHints.stretchBias.toFixed(2)}, exercise bias ${descHints.exerciseBias.toFixed(2)}, irritability boost +${descHints.effectivePainBoost.toFixed(1)}.${descHints.biases.length ? ` Biases: ${descHints.biases.slice(0, 5).join(", ")}.` : ""}`
       : "",
     condIds.length
-      ? `\n**Clinical conditions detected:** ${condHints.summaryLines.slice(0, 6).join("; ")}.${condHints.clearanceRequired ? " Clearance-sensitive: keep volume conservative and follow licensed clinician guidance." : ""}`
+      ? `\n**Clinical conditions detected:** ${condHints.summaryLines.slice(0, 6).join("; ")}.${condHints.subcategories.length ? ` Sub-categories: ${condHints.subcategories.slice(0, 4).join(", ")}.` : ""}${condHints.clearanceRequired ? " Clearance-sensitive: keep volume conservative and follow licensed clinician guidance." : ""}`
+      : "",
+    condHints.clinicalOutcomes.length
+      ? `\n**Realistic outcome targets for your program:**\n${condHints.clinicalOutcomes
+          .slice(0, 4)
+          .map(
+            (o) =>
+              `• **${o.label}** (${o.timeframe}) — ${o.evidenceNote} _Track: ${o.measureHint}_`
+          )
+          .join("\n")}`
       : "",
     descHints.redFlags.length || condHints.redFlags.length
       ? `\n**Safety notes:** ${[...descHints.redFlags, ...condHints.redFlags][0]}`
