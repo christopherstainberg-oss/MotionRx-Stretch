@@ -37,6 +37,23 @@ export async function POST(req: Request) {
     ? body.conditionIds.map(String).slice(0, 24)
     : [];
 
+  const medications = Array.isArray(body.medications)
+    ? body.medications.slice(0, 24).map((m: Record<string, unknown>) => ({
+        medicationId: String(m.medicationId || "").slice(0, 160),
+        genericName: sanitizeText(String(m.genericName || ""), 120),
+        brandName: m.brandName ? sanitizeText(String(m.brandName), 80) : undefined,
+        strength: sanitizeText(String(m.strength || ""), 80),
+        route: String(m.route || "oral-tablet").slice(0, 40),
+        routeLabel: sanitizeText(String(m.routeLabel || m.route || ""), 80),
+        doseText: sanitizeText(String(m.doseText || ""), 80),
+        frequency: sanitizeText(String(m.frequency || ""), 80),
+        asNeeded: Boolean(m.asNeeded),
+        notes: m.notes ? sanitizeText(String(m.notes), 300) : undefined,
+        primaryUse: m.primaryUse ? sanitizeText(String(m.primaryUse), 300) : undefined,
+        classLabel: m.classLabel ? sanitizeText(String(m.classLabel), 80) : undefined,
+      }))
+    : undefined;
+
   const profile: PainProfile = {
     id: String(body.id || uuid()),
     userId,
@@ -47,6 +64,25 @@ export async function POST(req: Request) {
     overallPain: clampInt(Number(body.overallPain), 0, 10, 0),
     areas: (Array.isArray(body.areas) ? body.areas.slice(0, 15) : []) as BodyPart[],
     source: (body.source as PainProfile["source"]) || "manual",
+    ageYears: body.ageYears != null ? clampInt(Number(body.ageYears), 5, 110, 0) || undefined : undefined,
+    borgTargetId: body.borgTargetId ? String(body.borgTargetId).slice(0, 40) : undefined,
+    precautionIds: Array.isArray(body.precautionIds)
+      ? body.precautionIds.map(String).slice(0, 30)
+      : undefined,
+    implantIds: Array.isArray(body.implantIds) ? body.implantIds.map(String).slice(0, 20) : undefined,
+    orthoticIds: Array.isArray(body.orthoticIds) ? body.orthoticIds.map(String).slice(0, 20) : undefined,
+    prostheticIds: Array.isArray(body.prostheticIds)
+      ? body.prostheticIds.map(String).slice(0, 20)
+      : undefined,
+    assistiveDeviceIds: Array.isArray(body.assistiveDeviceIds)
+      ? body.assistiveDeviceIds.map(String).slice(0, 20)
+      : undefined,
+    protocolNotes: body.protocolNotes
+      ? sanitizeText(String(body.protocolNotes), 1000)
+      : undefined,
+    homeBasedProgram:
+      typeof body.homeBasedProgram === "boolean" ? body.homeBasedProgram : undefined,
+    medications: medications as PainProfile["medications"],
   };
 
   await updateDb((db) => {

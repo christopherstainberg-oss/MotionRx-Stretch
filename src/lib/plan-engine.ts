@@ -12,6 +12,7 @@ import {
 import { buildClinicalSafetyPlan } from "@/data/clinical-safety";
 import { analyzeAssessmentAdjectives } from "@/data/assessment-adjectives";
 import { pickHomeVariationId } from "@/data/home-variations";
+import { summarizeUserMedications } from "@/data/medications";
 import type {
   BodyPart,
   Difficulty,
@@ -350,6 +351,9 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     concernParagraph: input.concernParagraph,
   });
   const homeBased = Boolean(input.homeBasedProgram);
+  const userMeds = input.medications || [];
+  const medSummary =
+    userMeds.length > 0 ? summarizeUserMedications(userMeds) : null;
 
   const textMatched = input.concernParagraph
     ? matchDescriptorsFromText(input.concernParagraph, 8)
@@ -763,8 +767,15 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       areas[0] === "full-body"
         ? `Personalized ${kindsLabel} plan`
         : `Plan: ${areas.map((a) => a.replace("-", " ")).join(", ")}`,
-    description:
-      "Clinically styled plan from detailed Assessment: adjectives, descriptors, conditions, precautions/devices, age/Borg dosing, and home-based variations when selected. Warm-up → targeted mobility/strength → cool-down.",
+    description: medSummary
+      ? `Clinically styled plan from detailed Assessment including ${userMeds.length} current medication(s)${
+          medSummary.bleedingRisk
+            ? "; bleeding-risk meds noted—fall prevention prioritized"
+            : ""
+        }${
+          medSummary.hrBlunting ? "; beta-blocker: prefer RPE/Borg over HR targets" : ""
+        }. Warm-up → targeted mobility/strength → cool-down.`
+      : "Clinically styled plan from detailed Assessment: adjectives, descriptors, conditions, precautions/devices, age/Borg dosing, medications when listed, and home-based variations when selected. Warm-up → targeted mobility/strength → cool-down.",
     focusAreas: areas,
     stretchIds,
     exerciseIds,
@@ -804,6 +815,18 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       adjectiveHits: adj.wordsFound,
       adjectiveSummary: adj.summaryLines,
       homeBasedProgram: homeBased,
+      medications: userMeds.slice(0, 20),
+      medicationSummary: medSummary?.summaryLines,
+      medicationFlags: medSummary
+        ? {
+            bleedingRisk: medSummary.bleedingRisk,
+            fallSedationRisk: medSummary.fallSedationRisk,
+            hrBlunting: medSummary.hrBlunting,
+            hypoRisk: medSummary.hypoRisk,
+            tendonCaution: medSummary.tendonCaution,
+            steroidExposure: medSummary.steroidExposure,
+          }
+        : undefined,
     },
     selfAdjustHistory: [adjustment],
     createdAt: new Date().toISOString(),

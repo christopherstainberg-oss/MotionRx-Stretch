@@ -311,6 +311,8 @@ export interface PainProfile {
   homeBasedProgram?: boolean;
   /** Adjective analysis words from last assessment */
   adjectiveSummary?: string[];
+  /** Current medications with doses (Assessment) */
+  medications?: import("@/data/medications-types").UserMedicationEntry[];
 }
 
 export interface Routine {
@@ -376,6 +378,17 @@ export interface Routine {
     adjectiveHits?: string[];
     adjectiveSummary?: string[];
     homeBasedProgram?: boolean;
+    /** Current medications captured at plan generation */
+    medications?: import("@/data/medications-types").UserMedicationEntry[];
+    medicationSummary?: string[];
+    medicationFlags?: {
+      bleedingRisk?: boolean;
+      fallSedationRisk?: boolean;
+      hrBlunting?: boolean;
+      hypoRisk?: boolean;
+      tendonCaution?: boolean;
+      steroidExposure?: boolean;
+    };
   };
   selfAdjustHistory: RoutineAdjustment[];
   createdAt: string;
@@ -435,6 +448,8 @@ export interface SymptomInput {
   protocolNotes?: string;
   /** Prefer home-based variations for all catalog items */
   homeBasedProgram?: boolean;
+  /** Current medications with doses from Assessment */
+  medications?: import("@/data/medications-types").UserMedicationEntry[];
 }
 
 export interface JefferyMessage {

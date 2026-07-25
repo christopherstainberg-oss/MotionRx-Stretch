@@ -29,6 +29,7 @@ import {
   buildClinicalSafetyPlan,
 } from "@/data/clinical-safety";
 import { analyzeAssessmentAdjectives } from "@/data/assessment-adjectives";
+import type { UserMedicationEntry } from "@/data/medications";
 import { generateHybridPlan, parseConcernParagraph } from "@/lib/routine-engine";
 import { planFromSymptomInput } from "@/lib/modality-engine";
 import type {
@@ -40,6 +41,7 @@ import type {
 } from "@/lib/types";
 import { PainScale } from "@/components/PainScale";
 import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
+import { MedicationPicker } from "@/components/MedicationPicker";
 import { ModalityPlanPanels } from "@/components/ModalitySuggestions";
 import {
   averagePainFromAreas,
@@ -143,6 +145,7 @@ export default function AssessmentPage() {
   const [assistiveDeviceIds, setAssistiveDeviceIds] = useState<string[]>([]);
   const [protocolNotes, setProtocolNotes] = useState("");
   const [homeBasedProgram, setHomeBasedProgram] = useState(true);
+  const [medications, setMedications] = useState<UserMedicationEntry[]>([]);
   const [step, setStep] = useState(1);
   const [deviceTab, setDeviceTab] = useState<"precautions" | "implants" | "supports">("precautions");
   const [bodyGroupOpen, setBodyGroupOpen] = useState<string>("spine-head");
@@ -160,6 +163,7 @@ export default function AssessmentPage() {
     if (local?.assistiveDeviceIds) setAssistiveDeviceIds(local.assistiveDeviceIds);
     if (local?.protocolNotes) setProtocolNotes(local.protocolNotes);
     if (local?.homeBasedProgram != null) setHomeBasedProgram(local.homeBasedProgram);
+    if (local?.medications?.length) setMedications(local.medications);
     fetch("/api/pain-profile")
       .then((r) => r.json())
       .then((d) => {
@@ -174,6 +178,7 @@ export default function AssessmentPage() {
         if (d.profile?.assistiveDeviceIds) setAssistiveDeviceIds(d.profile.assistiveDeviceIds);
         if (d.profile?.protocolNotes) setProtocolNotes(d.profile.protocolNotes);
         if (d.profile?.homeBasedProgram != null) setHomeBasedProgram(d.profile.homeBasedProgram);
+        if (d.profile?.medications?.length) setMedications(d.profile.medications);
       })
       .catch(() => {});
   }, []);
@@ -320,6 +325,7 @@ export default function AssessmentPage() {
       assistiveDeviceIds,
       protocolNotes: protocolNotes.trim() || undefined,
       homeBasedProgram,
+      medications,
     };
   }, [
     areas,
@@ -341,6 +347,7 @@ export default function AssessmentPage() {
     assistiveDeviceIds,
     protocolNotes,
     homeBasedProgram,
+    medications,
   ]);
 
   async function createPlan() {
@@ -397,6 +404,7 @@ export default function AssessmentPage() {
       protocolNotes: protocolNotes.trim() || undefined,
       homeBasedProgram,
       adjectiveSummary: routine.generatedFrom?.adjectiveSummary,
+      medications,
     });
     try {
       localStorage.setItem(`routine:${routine.id}`, JSON.stringify(routine));
@@ -417,6 +425,7 @@ export default function AssessmentPage() {
           prostheticIds: profile.prostheticIds,
           assistiveDeviceIds: profile.assistiveDeviceIds,
           homeBasedProgram: profile.homeBasedProgram,
+          medications: profile.medications,
           at: new Date().toISOString(),
         })
       );
@@ -1158,6 +1167,20 @@ export default function AssessmentPage() {
             )}
           </SubSection>
 
+          <SubSection
+            title="Current medications"
+            hint="Optional. Search the clinical library, then set strength, route (pill, IM, IV…), and dose."
+            action={
+              medications.length > 0 ? (
+                <span className="text-xs font-semibold text-brand-600">
+                  {medications.length} listed
+                </span>
+              ) : null
+            }
+          >
+            <MedicationPicker value={medications} onChange={setMedications} />
+          </SubSection>
+
           <SubSection title="Protocol notes" hint="Optional free text from your surgeon or PT.">
             <textarea
               className="input min-h-[72px]"
@@ -1284,6 +1307,7 @@ export default function AssessmentPage() {
                   {precautionIds.length || implantIds.length
                     ? `${precautionIds.length} precautions · ${implantIds.length} implants`
                     : "None selected"}
+                  {medications.length ? ` · ${medications.length} meds` : ""}
                 </span>
               </li>
               <li className="flex gap-2">
