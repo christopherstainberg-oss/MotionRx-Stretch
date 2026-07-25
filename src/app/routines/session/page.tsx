@@ -515,7 +515,12 @@ function SessionInner() {
         </p>
 
         <div className="mt-4">
-          <InstitutionalVideoEmbed video={m.video} bodyParts={m.bodyParts} />
+          <InstitutionalVideoEmbed
+            video={m.video}
+            bodyParts={m.bodyParts}
+            tags={m.tags}
+            kind={item.kind === "exercise" ? "exercise" : "stretch"}
+          />
         </div>
 
         <ol className="mt-6 space-y-3">

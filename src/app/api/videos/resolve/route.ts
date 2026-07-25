@@ -24,6 +24,16 @@ export async function GET(req: Request) {
   const youtubeId = url.searchParams.get("youtubeId") || undefined;
   const region = (url.searchParams.get("region") || undefined) as VideoRegion | undefined;
   const title = url.searchParams.get("title") || undefined;
+  const kindRaw = url.searchParams.get("kind");
+  const kind =
+    kindRaw === "stretch" || kindRaw === "exercise" ? kindRaw : undefined;
+  const tagsRaw = url.searchParams.get("tags");
+  const tags = tagsRaw
+    ? tagsRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : undefined;
   const bodyPartsRaw = url.searchParams.get("bodyParts");
   const bodyParts = bodyPartsRaw
     ? bodyPartsRaw
@@ -38,6 +48,8 @@ export async function GET(req: Request) {
       region,
       titleOverride: title,
       bodyParts,
+      tags,
+      kind,
     });
 
     return NextResponse.json(

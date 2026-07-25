@@ -26,6 +26,9 @@ type Props = {
   /** Body region key (neck, hip, …) for fallback chain */
   region?: string;
   bodyParts?: string[];
+  /** Library tags for content-specific institutional matching */
+  tags?: string[];
+  kind?: "stretch" | "exercise";
   className?: string;
   /** Show institution attribution under the player (default true) */
   showAttribution?: boolean;
@@ -40,6 +43,8 @@ export function InstitutionalVideoEmbed({
   video,
   region,
   bodyParts,
+  tags,
+  kind,
   className = "",
   showAttribution = true,
 }: Props) {
@@ -49,18 +54,21 @@ export function InstitutionalVideoEmbed({
   const [attempt, setAttempt] = useState(0);
 
   const bodyPartsKey = bodyParts?.join(",") ?? "";
+  const tagsKey = tags?.join(",") ?? "";
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
     params.set("youtubeId", video.youtubeId);
     if (region) params.set("region", region);
-    // Prefer movement name from attribution for content-matched fallbacks
+    // Prefer movement name from attribution for content-matched institutional demos
     const matchFor = video.source?.match(/Educational match for:\s*(.+)$/i)?.[1]?.trim();
     const scoreName = matchFor || video.title;
     if (scoreName) params.set("title", scoreName);
     if (bodyPartsKey) params.set("bodyParts", bodyPartsKey);
+    if (tagsKey) params.set("tags", tagsKey);
+    if (kind) params.set("kind", kind);
     return params.toString();
-  }, [video.youtubeId, video.title, video.source, region, bodyPartsKey]);
+  }, [video.youtubeId, video.title, video.source, region, bodyPartsKey, tagsKey, kind]);
 
   const resolve = useCallback(async () => {
     setLoading(true);

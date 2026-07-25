@@ -64,10 +64,12 @@ export default function StretchDetailPage({ params }: { params: { slug: string }
             <InstitutionalVideoEmbed
               video={stretch.video}
               bodyParts={stretch.bodyParts}
+              tags={stretch.tags}
+              kind="stretch"
             />
             <p className="mt-2 text-xs text-brand-500">
-              Links auto-refresh against institutional oEmbed health checks. If a preferred
-              video is removed, MotionRx swaps to the next vetted educational source.
+              Institutional medical/university technique demos auto-match this stretch name.
+              Dead links swap to the next vetted educational source.
             </p>
           </section>
 

@@ -8,9 +8,12 @@ import {
   type VideoRegion,
   VIDEO_BY_REGION,
   allCatalogVideos,
+  bestCatalogVideoForMovement,
   candidatesForRegion,
+  enrichCatalogVideo,
   getCatalogVideoById,
   inferRegionFromBodyParts,
+  inferTechniqueFromMovement,
   scoreCatalogVideoMatch,
   videoForRegion,
 } from "@/data/video-catalog";
@@ -74,6 +77,8 @@ export async function resolveLiveVideo(opts: {
   bodyParts?: string[];
   /** Movement name / library title — used only for match scoring of fallbacks */
   titleOverride?: string;
+  tags?: string[];
+  kind?: "stretch" | "exercise";
   /** Skip background catalog refresh (e.g. during bulk resolve) */
   skipBackgroundRefresh?: boolean;
 }): Promise<ResolvedVideo> {
@@ -87,20 +92,37 @@ export async function resolveLiveVideo(opts: {
     inferRegionFromBodyParts(opts.bodyParts) ||
     "general";
 
+  const movementHint = opts.titleOverride;
+  const technique = inferTechniqueFromMovement({
+    name: movementHint,
+    tags: opts.tags,
+    kind: opts.kind,
+  });
+
+  // Content-best institutional match for written movement name (may beat library default)
+  const contentBest = movementHint
+    ? bestCatalogVideoForMovement({
+        name: movementHint,
+        technique,
+        region,
+        bodyParts: opts.bodyParts,
+        tags: opts.tags,
+        kind: opts.kind,
+      })
+    : undefined;
+
   const preferredId =
     opts.preferredId?.trim() ||
+    contentBest?.youtubeId ||
     VIDEO_BY_REGION[region]?.youtubeId ||
     VIDEO_BY_REGION.general.youtubeId;
-
-  // Never relabel a different YouTube video with the stretch name — use real catalog title
-  const movementHint = opts.titleOverride;
 
   const ordered: InstitutionalVideo[] = [];
   const seen = new Set<string>();
   const push = (v: InstitutionalVideo | undefined) => {
     if (!v || seen.has(v.youtubeId)) return;
     seen.add(v.youtubeId);
-    ordered.push(v);
+    ordered.push(enrichCatalogVideo(v));
   };
 
   // Prefer the library's chosen ID only if it is still in the institutional catalog.
@@ -109,16 +131,20 @@ export async function resolveLiveVideo(opts: {
   if (preferredMeta) {
     push(preferredMeta);
   }
+  // Lead with content-best match for written exercise/stretch title
+  if (contentBest) push(contentBest);
 
   // Rank remaining catalog by content match so swaps stay on-topic
   const ranked = allCatalogVideos()
     .map((v) => ({
-      v,
+      v: enrichCatalogVideo(v),
       score: scoreCatalogVideoMatch(v, {
         name: movementHint || preferredMeta?.title,
         region,
         bodyParts: opts.bodyParts,
-        technique: preferredMeta?.techniques?.[0],
+        technique: technique || preferredMeta?.techniques?.[0],
+        tags: opts.tags,
+        kind: opts.kind,
       }),
     }))
     .sort((a, b) => b.score - a.score);
@@ -179,16 +205,24 @@ export async function resolveLiveVideo(opts: {
 /** Resolve and merge into a library video object shape */
 export async function ensureLiveVideoField(
   video: VideoLike,
-  opts?: { region?: VideoRegion | string; bodyParts?: string[] }
+  opts?: {
+    region?: VideoRegion | string;
+    bodyParts?: string[];
+    tags?: string[];
+    kind?: "stretch" | "exercise";
+  }
 ): Promise<VideoLike & { swapped?: boolean; preferredId?: string }> {
+  const movementName = video.source?.includes("Educational match for:")
+    ? video.source.split("Educational match for:")[1]?.trim()
+    : video.title;
   const live = await resolveLiveVideo({
     preferredId: video.youtubeId,
     region: opts?.region,
     bodyParts: opts?.bodyParts,
-    // Pass movement attribution string for scoring only
-    titleOverride: video.source?.includes("Educational match for:")
-      ? video.source.split("Educational match for:")[1]?.trim()
-      : video.title,
+    tags: opts?.tags,
+    kind: opts?.kind,
+    // Pass written stretch/exercise name for intelligent institutional matching
+    titleOverride: movementName,
   });
   return {
     youtubeId: live.youtubeId,

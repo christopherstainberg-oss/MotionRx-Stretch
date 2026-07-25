@@ -60,10 +60,15 @@ export default function ExerciseDetailPage({ params }: { params: { slug: string 
       <div className="grid gap-6 lg:grid-cols-5">
         <div className="space-y-6 lg:col-span-3">
           <section className="card overflow-hidden p-4">
-            <InstitutionalVideoEmbed video={ex.video} bodyParts={ex.bodyParts} />
+            <InstitutionalVideoEmbed
+              video={ex.video}
+              bodyParts={ex.bodyParts}
+              tags={ex.tags}
+              kind="exercise"
+            />
             <p className="mt-2 text-xs text-brand-500">
-              Links auto-refresh against institutional oEmbed health checks. If a preferred
-              video is removed, MotionRx swaps to the next vetted educational source.
+              Institutional medical/university technique demos auto-match this exercise name.
+              Dead links swap to the next vetted educational source.
             </p>
           </section>
 
