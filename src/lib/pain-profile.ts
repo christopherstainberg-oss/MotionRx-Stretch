@@ -39,6 +39,9 @@ export function saveLocalPainProfile(
     medications: partial.medications,
     clinicalSymptomIds: partial.clinicalSymptomIds,
     adlEntries: partial.adlEntries,
+    sex: partial.sex,
+    pastMedicalHistory: partial.pastMedicalHistory,
+    currentMedicalHistory: partial.currentMedicalHistory,
     updatedAt: new Date().toISOString(),
   };
   try {

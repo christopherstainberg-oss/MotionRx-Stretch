@@ -73,6 +73,12 @@ export interface JefferyContext {
   favorites?: string[];
   thread?: JefferyThread | null;
   painDescriptorIds?: string[];
+  /** Correlated clinical intake from Assessment */
+  sex?: string;
+  pastMedicalHistory?: string;
+  currentMedicalHistory?: string;
+  freeText?: string;
+  preferredName?: string;
 }
 
 export interface JefferyReply {
@@ -139,6 +145,36 @@ export function jefferyLocalReply(
     }
   }
 
+  let historyBridge: {
+    sex?: string;
+    pastMedicalHistory?: string;
+    currentMedicalHistory?: string;
+    freeText?: string;
+    preferredName?: string;
+  } | null = null;
+  if (typeof globalThis !== "undefined" && "localStorage" in globalThis) {
+    try {
+      const raw = (globalThis as unknown as { localStorage?: Storage }).localStorage?.getItem(
+        "clinical-history-profile"
+      );
+      if (raw) historyBridge = JSON.parse(raw);
+    } catch {
+      historyBridge = null;
+    }
+  }
+  const sex = ctx.sex || historyBridge?.sex;
+  const pmh = ctx.pastMedicalHistory || historyBridge?.pastMedicalHistory;
+  const cmh = ctx.currentMedicalHistory || historyBridge?.currentMedicalHistory;
+  const story = ctx.freeText || historyBridge?.freeText;
+  const preferred =
+    ctx.preferredName ||
+    historyBridge?.preferredName ||
+    (typeof globalThis !== "undefined" && "localStorage" in globalThis
+      ? (globalThis as unknown as { localStorage?: Storage }).localStorage?.getItem(
+          "preferredName"
+        ) || undefined
+      : undefined);
+
   const known = [
     ...adjustments.slice(-8),
     ...ctx.journal.slice(0, 5).map((j) => {
@@ -164,6 +200,23 @@ export function jefferyLocalReply(
     ...(journalBridge?.question
       ? [`Open journal question: ${journalBridge.question}`]
       : []),
+    ...(preferred ? [`Preferred name: ${preferred}`] : []),
+    ...(sex ? [`Sex context: ${sex}`] : []),
+    ...(pmh ? [`Past medical history: ${pmh.slice(0, 160)}`] : []),
+    ...(cmh ? [`Current medical history: ${cmh.slice(0, 160)}`] : []),
+    ...(story ? [`Assessment story: ${story.slice(0, 160)}`] : []),
+    ...ctx.routines
+      .slice(0, 2)
+      .flatMap((r) => {
+        const g = r.generatedFrom;
+        if (!g) return [] as string[];
+        const bits: string[] = [];
+        if (g.writtenApproach) bits.push(`Plan approach: ${g.writtenApproach.slice(0, 140)}`);
+        if (g.pastMedicalHistory) bits.push(`Plan PMH: ${g.pastMedicalHistory.slice(0, 100)}`);
+        if (g.currentMedicalHistory)
+          bits.push(`Plan current Hx: ${g.currentMedicalHistory.slice(0, 100)}`);
+        return bits;
+      }),
   ];
 
   let adjustedRoutine: Routine | undefined;
@@ -273,16 +326,20 @@ export function jefferyLocalReply(
   });
   const modalityBlurb = modalityCoachBlurb(modalityPlan);
 
+  const greeting = preferred
+    ? `Hi **${preferred}**, I'm **Jeffery**, your MotionRx Stretch clinical mobility coach.`
+    : `Hi, I'm **Jeffery**, your MotionRx Stretch clinical mobility coach.`;
+
   const content = [
-    `Hi, I'm **Jeffery**, your MotionRx Stretch clinical mobility coach.`,
+    greeting,
     ``,
-    `I read what you shared and connected it with your app data (routines, adjustments, sessions, journal, clinical pain descriptors, and modality suggestions).`,
+    `I read what you shared and correlated it with your Assessment story, sex/medical history (when provided), routines, sessions, journal, pain descriptors, and modality suggestions.`,
     known.length
       ? `**What I already know about your program:**\n${known
-          .slice(0, 8)
+          .slice(0, 12)
           .map((k) => `• ${k}`)
           .join("\n")}`
-      : `I don't have much history yet—we'll build it as you train and journal.`,
+      : `I don't have much history yet—complete Assessment (including sex & medical history) and Journal so I can personalize more.`,
     descLabels.length
       ? `\n**Descriptor-driven dosing hints:** stretch bias ${descHints.stretchBias.toFixed(2)}, exercise bias ${descHints.exerciseBias.toFixed(2)}, irritability boost +${descHints.effectivePainBoost.toFixed(1)}.${descHints.biases.length ? ` Biases: ${descHints.biases.slice(0, 5).join(", ")}.` : ""}`
       : "",

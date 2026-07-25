@@ -9,6 +9,11 @@ import { getStretchById } from "@/data/stretch-library";
 import { getExerciseById } from "@/data/exercise-library";
 import { getConditionById } from "@/data/clinical-conditions";
 import { getDescriptorById } from "@/data/pain-descriptors";
+import {
+  sexLabel,
+  suggestedQuestionsForSex,
+  type SexSelection,
+} from "@/lib/clinical-history";
 
 export type AssessmentCoachContext = {
   paragraph: string;
@@ -27,6 +32,9 @@ export type AssessmentCoachContext = {
   implantIds: string[];
   homeBasedProgram: boolean;
   preferredName: string;
+  sex?: SexSelection;
+  pastMedicalHistory?: string;
+  currentMedicalHistory?: string;
 };
 
 export type CoachExchange = {
@@ -36,18 +44,8 @@ export type CoachExchange = {
   at: string;
 };
 
-const SUGGESTED_QUESTIONS = [
-  "What should I focus on first?",
-  "Is it okay to exercise with this pain?",
-  "How often should I practice?",
-  "What should I avoid right now?",
-  "How long until I feel better?",
-  "Should I use heat or ice?",
-  "What does my story suggest clinically?",
-];
-
-export function suggestedAssessmentQuestions(): string[] {
-  return [...SUGGESTED_QUESTIONS];
+export function suggestedAssessmentQuestions(sex?: SexSelection | null): string[] {
+  return suggestedQuestionsForSex(sex);
 }
 
 export function displayPreferredName(
@@ -201,11 +199,41 @@ export function answerAssessmentQuestion(
     }Medications help the clinical picture (e.g. blood thinners, pain meds) but dosing advice stays with your prescriber. Never change meds based on this app.${disclaimer}`;
   }
 
+  if (/medical history|pmh|past history|current history|comorbid|diagnos/.test(t)) {
+    const pmh = ctx.pastMedicalHistory?.trim();
+    const cmh = ctx.currentMedicalHistory?.trim();
+    if (!pmh && !cmh) {
+      return `${name}, add past and current medical history in the Assessment story section (or type conditions in your paragraph). History helps us pace intensity, choose safer variations, and flag when to clear changes with your clinician.${disclaimer}`;
+    }
+    return `${name}, with your history on file${pmh ? ` (past: ${pmh.slice(0, 160)})` : ""}${
+      cmh ? ` (current: ${cmh.slice(0, 160)})` : ""
+    }, we keep the plan graded, avoid aggressive end-range when tissues are irritable, and prioritize consistency. Systemic issues (heart, lungs, clotting, bone density, pregnancy, devices) always warrant clinician-aligned precautions over app defaults.${disclaimer}`;
+  }
+
+  if (/sex|gender|pelvic|pregnan|prostate|menopaus|bone density|osteopor/.test(t)) {
+    const sx = ctx.sex;
+    if (!sx || sx === "prefer-not-to-say") {
+      return `${name}, you can set sex in the Assessment story section (or write it in your paragraph). Optional—but it unlocks more tailored Q&A (e.g. pelvic/pregnancy or prostate/cardiac framing) without changing your identity.${disclaimer}`;
+    }
+    if (sx === "female") {
+      return `${name}, with a female sex context we emphasize pelvic comfort, bone-loading progressions when appropriate, and pregnancy/postpartum clearance rules when relevant. Still stop for red flags and follow your obstetric or PT clinician if you are pregnant or postpartum.${disclaimer}`;
+    }
+    if (sx === "male") {
+      return `${name}, with a male sex context we watch blood-pressure response to heavy straining, pelvic/prostate comfort with deep flexion or pressure, and cardiac history if present. Breath-holding under heavy load is discouraged.${disclaimer}`;
+    }
+    return `${name}, with sex marked as ${sexLabel(
+      sx
+    )}, we use inclusive language and universal safety (pain traffic lights, graded exposure, medical clearance for red flags) rather than binary-only assumptions.${disclaimer}`;
+  }
+
   // Generic contextual reply
   const summaryBits = [
     regions !== "the areas you care about most" ? `regions: ${regions}` : null,
     pain.level != null ? `top pain ~${pain.level}/10` : null,
     ctx.goals[0] ? `goal: ${ctx.goals[0]}` : null,
+    ctx.sex && ctx.sex !== "prefer-not-to-say" ? `sex: ${sexLabel(ctx.sex)}` : null,
+    ctx.pastMedicalHistory?.trim() ? "PMH on file" : null,
+    ctx.currentMedicalHistory?.trim() ? "current history on file" : null,
     story ? "story on file" : "add more to your story for richer answers",
   ].filter(Boolean);
 
@@ -279,16 +307,27 @@ export function buildWrittenPlanApproach(
   }
   if (descs.length) problemBits.push(`Sensation themes: ${descs.join(", ")}.`);
   if (conds.length) problemBits.push(`Clinical themes matched: ${conds.join(", ")}.`);
+  if (ctx.sex && ctx.sex !== "prefer-not-to-say") {
+    problemBits.push(`Sex context: ${sexLabel(ctx.sex)}.`);
+  }
+  if (ctx.pastMedicalHistory?.trim()) {
+    problemBits.push(`Past medical history: ${ctx.pastMedicalHistory.trim().slice(0, 200)}.`);
+  }
+  if (ctx.currentMedicalHistory?.trim()) {
+    problemBits.push(
+      `Current medical history: ${ctx.currentMedicalHistory.trim().slice(0, 200)}.`
+    );
+  }
   paragraphs.push(problemBits.join(" "));
 
   paragraphs.push(
     `Goal of care: support “${goals}” with a ${routine.difficulty} home program of about ${routine.estimatedMinutes} minutes (${routine.items.length} movements: ${stretchItems.length} mobility, ${exerciseItems.length} strength/control)${
       routine.homeBasedProgram ? ", using home-friendly variations" : ""
-    }.`
+    }. Your written story, sex context, and medical history are correlated so dosing stays realistic across Assessment, Plan, Journal, and Jeffery.`
   );
 
   paragraphs.push(
-    `Approach to attack the issue: (1) calm irritable tissues and restore comfortable range in ${regions}; (2) rebuild control and capacity so daily tasks feel safer; (3) progress only when symptoms settle within ~24 hours; (4) pair movement with simple pre/post strategies (pacing, optional heat/ice) rather than pushing through red-flag pain.`
+    `Approach to attack the issue: (1) calm irritable tissues and restore comfortable range in ${regions}; (2) rebuild control and capacity so daily tasks feel safer; (3) progress only when symptoms settle within ~24 hours; (4) respect systemic history (heart, lungs, clotting, bone, pregnancy, devices) with conservative progressions; (5) pair movement with simple pre/post strategies (pacing, optional heat/ice) rather than pushing through red-flag pain.`
   );
 
   if (sampleMoves.length) {

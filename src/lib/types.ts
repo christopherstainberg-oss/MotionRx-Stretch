@@ -326,6 +326,15 @@ export interface PainProfile {
   clinicalSymptomIds?: string[];
   /** ADL difficulty entries */
   adlEntries?: import("@/data/adls").UserAdlEntry[];
+  /**
+   * Sex for dosing education / Q&A (female | male | intersex | unspecified | prefer-not-to-say).
+   * Parsed from story or set manually — not a diagnosis field.
+   */
+  sex?: import("@/lib/clinical-history").SexSelection;
+  /** Free-text past medical history (PMH) */
+  pastMedicalHistory?: string;
+  /** Free-text current / active medical history */
+  currentMedicalHistory?: string;
 }
 
 export interface Routine {
@@ -391,6 +400,10 @@ export interface Routine {
     writtenApproach?: string;
     /** Preferred name used in plan copy */
     preferredName?: string;
+    /** Sex used for plan / Q&A correlation */
+    sex?: import("@/lib/clinical-history").SexSelection;
+    pastMedicalHistory?: string;
+    currentMedicalHistory?: string;
     /** Adjective / qualifier analysis from paragraph */
     adjectiveHits?: string[];
     adjectiveSummary?: string[];
@@ -479,6 +492,12 @@ export interface SymptomInput {
   clinicalSymptomIds?: string[];
   /** Activities of daily living with assistance levels */
   adlEntries?: import("@/data/adls").UserAdlEntry[];
+  /** Sex selection for inclusive dosing / Q&A */
+  sex?: import("@/lib/clinical-history").SexSelection;
+  /** Past medical history free text */
+  pastMedicalHistory?: string;
+  /** Current medical history free text */
+  currentMedicalHistory?: string;
 }
 
 export interface JefferyMessage {

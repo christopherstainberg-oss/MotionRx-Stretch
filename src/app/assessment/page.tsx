@@ -65,6 +65,13 @@ import {
   type CoachExchange,
 } from "@/lib/assessment-coach";
 import {
+  SEX_OPTIONS,
+  mergeHistoryText,
+  parseMedicalHistoryFromText,
+  parseSexFromText,
+  type SexSelection,
+} from "@/lib/clinical-history";
+import {
   Check,
   ChevronLeft,
   ChevronRight,
@@ -296,6 +303,11 @@ export default function AssessmentPage() {
   const [coachQuestion, setCoachQuestion] = useState("");
   const [coachLog, setCoachLog] = useState<CoachExchange[]>([]);
   const [writtenApproach, setWrittenApproach] = useState<string | null>(null);
+  const [sex, setSex] = useState<SexSelection | "">("");
+  const [pastMedicalHistory, setPastMedicalHistory] = useState("");
+  const [currentMedicalHistory, setCurrentMedicalHistory] = useState("");
+  /** When true, story paragraph can auto-fill sex / history fields */
+  const [autoApplyHistory, setAutoApplyHistory] = useState(true);
 
   /** Heavy clinical matching runs on debounced text so the textarea stays responsive */
   const debouncedParagraph = useDebouncedValue(paragraph, 400);
@@ -340,6 +352,9 @@ export default function AssessmentPage() {
     if (local?.medications?.length) setMedications(local.medications);
     if (local?.clinicalSymptomIds?.length) setClinicalSymptomIds(local.clinicalSymptomIds);
     if (local?.adlEntries?.length) setAdlEntries(local.adlEntries);
+    if (local?.sex) setSex(local.sex);
+    if (local?.pastMedicalHistory) setPastMedicalHistory(local.pastMedicalHistory);
+    if (local?.currentMedicalHistory) setCurrentMedicalHistory(local.currentMedicalHistory);
     fetch("/api/pain-profile")
       .then((r) => r.json())
       .then((d) => {
@@ -357,6 +372,11 @@ export default function AssessmentPage() {
         if (d.profile?.medications?.length) setMedications(d.profile.medications);
         if (d.profile?.clinicalSymptomIds?.length)
           setClinicalSymptomIds(d.profile.clinicalSymptomIds);
+        if (d.profile?.sex && !local?.sex) setSex(d.profile.sex);
+        if (d.profile?.pastMedicalHistory && !local?.pastMedicalHistory)
+          setPastMedicalHistory(d.profile.pastMedicalHistory);
+        if (d.profile?.currentMedicalHistory && !local?.currentMedicalHistory)
+          setCurrentMedicalHistory(d.profile.currentMedicalHistory);
         if (d.profile?.adlEntries?.length) setAdlEntries(d.profile.adlEntries);
       })
       .catch(() => {});
@@ -488,6 +508,22 @@ export default function AssessmentPage() {
     });
   }, [debouncedParagraph, autoApplyDesc]);
 
+  // Parse sex + past/current medical history from the story paragraph
+  useEffect(() => {
+    if (!autoApplyHistory || debouncedParagraph.trim().length < 8) return;
+    const parsedSex = parseSexFromText(debouncedParagraph);
+    if (parsedSex) {
+      setSex((prev) => prev || parsedSex);
+    }
+    const hist = parseMedicalHistoryFromText(debouncedParagraph);
+    if (hist.pastMedicalHistory) {
+      setPastMedicalHistory((prev) => mergeHistoryText(prev, hist.pastMedicalHistory));
+    }
+    if (hist.currentMedicalHistory) {
+      setCurrentMedicalHistory((prev) => mergeHistoryText(prev, hist.currentMedicalHistory));
+    }
+  }, [debouncedParagraph, autoApplyHistory]);
+
   useEffect(() => {
     if (ageYears !== "" && Number(ageYears) > 0) {
       setBorgTargetId(ageBasedDefaultBorg(Number(ageYears)));
@@ -540,6 +576,9 @@ export default function AssessmentPage() {
       medications,
       clinicalSymptomIds,
       adlEntries,
+      sex: sex || undefined,
+      pastMedicalHistory: pastMedicalHistory.trim() || undefined,
+      currentMedicalHistory: currentMedicalHistory.trim() || undefined,
     };
   }, [
     areas,
@@ -564,6 +603,9 @@ export default function AssessmentPage() {
     medications,
     clinicalSymptomIds,
     adlEntries,
+    sex,
+    pastMedicalHistory,
+    currentMedicalHistory,
   ]);
 
   const coachContext = useMemo((): AssessmentCoachContext => {
@@ -587,6 +629,9 @@ export default function AssessmentPage() {
       implantIds,
       homeBasedProgram,
       preferredName: displayPreferredName(preferredName),
+      sex: sex || undefined,
+      pastMedicalHistory: pastMedicalHistory.trim() || undefined,
+      currentMedicalHistory: currentMedicalHistory.trim() || undefined,
     };
   }, [
     paragraph,
@@ -605,6 +650,9 @@ export default function AssessmentPage() {
     implantIds,
     homeBasedProgram,
     preferredName,
+    sex,
+    pastMedicalHistory,
+    currentMedicalHistory,
   ]);
 
   function askCoach(question?: string) {
@@ -645,6 +693,9 @@ export default function AssessmentPage() {
       suggestedModalityIds,
       writtenApproach: approach,
       preferredName: displayPreferredName(preferredName),
+      sex: sex || undefined,
+      pastMedicalHistory: pastMedicalHistory.trim() || undefined,
+      currentMedicalHistory: currentMedicalHistory.trim() || undefined,
     };
     setWrittenApproach(approach);
     setGenerated(routine);
@@ -682,6 +733,9 @@ export default function AssessmentPage() {
       medications,
       clinicalSymptomIds,
       adlEntries,
+      sex: sex || undefined,
+      pastMedicalHistory: pastMedicalHistory.trim() || undefined,
+      currentMedicalHistory: currentMedicalHistory.trim() || undefined,
     });
     try {
       localStorage.setItem(`routine:${routine.id}`, JSON.stringify(routine));
@@ -696,6 +750,20 @@ export default function AssessmentPage() {
         JSON.stringify({
           clinicalSymptomIds,
           adlEntries,
+          sex: sex || undefined,
+          pastMedicalHistory: pastMedicalHistory.trim() || undefined,
+          currentMedicalHistory: currentMedicalHistory.trim() || undefined,
+          freeText: paragraph,
+          at: new Date().toISOString(),
+        })
+      );
+      localStorage.setItem(
+        "clinical-history-profile",
+        JSON.stringify({
+          sex: sex || undefined,
+          pastMedicalHistory: pastMedicalHistory.trim() || undefined,
+          currentMedicalHistory: currentMedicalHistory.trim() || undefined,
+          freeText: paragraph,
           at: new Date().toISOString(),
         })
       );
@@ -810,20 +878,94 @@ export default function AssessmentPage() {
               Auto-detect clinical details from my text (including medication names)
             </label>
             <p className="mt-2 text-xs text-brand-500">
-              Tip: you can write meds in the story (e.g. “I take metformin 500 mg twice daily and
-              Eliquis 5 mg”) or use the medication list below with exact doses.
+              Tip: you can write meds, sex (e.g. “I am a woman”), and history (e.g. “PMH:
+              hypertension; history of knee surgery”) in the story—we parse and correlate them.
             </p>
+          </SubSection>
+
+          <SubSection
+            title="Sex & medical history"
+            hint="Optional. Adjust sex for tailored Q&A. Past/current history is stored on your profile and used in Plan, Journal, and Jeffery."
+          >
+            <div className="space-y-4">
+              <div>
+                <label className="label" htmlFor="sex">
+                  Sex
+                </label>
+                <select
+                  id="sex"
+                  className="input"
+                  value={sex}
+                  onChange={(e) => {
+                    setAutoApplyHistory(false);
+                    setSex((e.target.value || "") as SexSelection | "");
+                  }}
+                >
+                  <option value="">Not set — parse from story or choose</option>
+                  {SEX_OPTIONS.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-brand-500">
+                  {SEX_OPTIONS.find((o) => o.id === sex)?.hint ||
+                    "You can also write “I am male/female…” in your paragraph."}
+                </p>
+              </div>
+              <div>
+                <label className="label" htmlFor="pmh">
+                  Past medical history
+                </label>
+                <textarea
+                  id="pmh"
+                  className="input min-h-[72px]"
+                  value={pastMedicalHistory}
+                  onChange={(e) => {
+                    setAutoApplyHistory(false);
+                    setPastMedicalHistory(e.target.value);
+                  }}
+                  placeholder="e.g. s/p right knee arthroscopy 2019; childhood asthma; remote ankle fracture…"
+                  autoComplete="off"
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="cmh">
+                  Current medical history
+                </label>
+                <textarea
+                  id="cmh"
+                  className="input min-h-[72px]"
+                  value={currentMedicalHistory}
+                  onChange={(e) => {
+                    setAutoApplyHistory(false);
+                    setCurrentMedicalHistory(e.target.value);
+                  }}
+                  placeholder="e.g. hypertension, type 2 diabetes, ongoing low-back pain, anxiety…"
+                  autoComplete="off"
+                />
+              </div>
+              <label className="flex items-center gap-2.5 text-sm text-brand-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-brand-600"
+                  checked={autoApplyHistory}
+                  onChange={(e) => setAutoApplyHistory(e.target.checked)}
+                />
+                Auto-detect sex & medical history from my story paragraph
+              </label>
+            </div>
           </SubSection>
 
           <SubSection
             title={`Ask a question${
               preferredName ? `, ${displayPreferredName(preferredName)}` : ""
             }`}
-            hint="Ask about your story, pain, practice schedule, or what to prioritize. Answers use what you have entered so far."
+            hint="Ask about your story, medical history, pain, or plan priorities. Sex changes suggested questions."
           >
             <div className="space-y-3">
               <div className="flex flex-wrap gap-1.5">
-                {suggestedAssessmentQuestions().map((q) => (
+                {suggestedAssessmentQuestions(sex || undefined).map((q) => (
                   <button
                     key={q}
                     type="button"

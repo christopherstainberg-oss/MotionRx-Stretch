@@ -4,6 +4,7 @@ import { readDb, updateDb } from "@/lib/storage";
 import type { BodyPart, PainProfile } from "@/lib/types";
 import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
 import { clampInt } from "@/lib/security";
+import { normalizeSex } from "@/lib/clinical-history";
 import { v4 as uuid } from "uuid";
 
 export async function GET() {
@@ -60,7 +61,14 @@ export async function POST(req: Request) {
     updatedAt: new Date().toISOString(),
     descriptorIds,
     conditionIds,
-    freeText: body.freeText ? sanitizeText(String(body.freeText), 2000) : undefined,
+    freeText: body.freeText ? sanitizeText(String(body.freeText), 4000) : undefined,
+    sex: normalizeSex(body.sex),
+    pastMedicalHistory: body.pastMedicalHistory
+      ? sanitizeText(String(body.pastMedicalHistory), 2000)
+      : undefined,
+    currentMedicalHistory: body.currentMedicalHistory
+      ? sanitizeText(String(body.currentMedicalHistory), 2000)
+      : undefined,
     overallPain: clampInt(Number(body.overallPain), 0, 10, 0),
     areas: (Array.isArray(body.areas) ? body.areas.slice(0, 15) : []) as BodyPart[],
     source: (body.source as PainProfile["source"]) || "manual",

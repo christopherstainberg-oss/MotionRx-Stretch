@@ -68,6 +68,10 @@ export async function POST(req: Request) {
     journal,
     thread,
     painDescriptorIds: painProfile?.descriptorIds,
+    sex: painProfile?.sex,
+    pastMedicalHistory: painProfile?.pastMedicalHistory,
+    currentMedicalHistory: painProfile?.currentMedicalHistory,
+    freeText: painProfile?.freeText,
   });
 
   thread.messages.push(reply.message);
