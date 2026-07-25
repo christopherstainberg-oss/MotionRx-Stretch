@@ -103,7 +103,9 @@ Deploy conditions (validated for Portainer stacks):
    - `GHCR_IO_USER` / `GHCR_IO_TOKEN` — same as registry (for Watchtower pulls)
 4. Deploy (**do not** enable Build, and **do not** use `docker-compose.build.yml`)
 
-If registration fails with “Check AUTH_SECRET and data volume permissions”, confirm `/api/health` returns `"auth.secretConfigured": true` and `"storage.writable": true`. The image entrypoint chowns the data volume for uid `1001` (nextjs) on startup.
+If registration fails with “Check AUTH_SECRET and data volume permissions”, confirm `/api/health` returns `"ready": true` (and `auth.secretConfigured` / `storage.writable`). The image entrypoint chowns the data volume for uid `1001` (nextjs) on startup.
+
+**Portainer health:** `/api/health` always returns HTTP 200 when the process is up (Docker liveness). Readiness is the JSON field `ready`. If a container stays Unhealthy, update the stack YAML healthcheck to the current `docker-compose.yml` and pull the latest image.
 
 If the stack already failed, **Editor** the stack, replace the YAML with the current `docker-compose.yml` (no `build:` block), ensure the registry is configured, then **Update the stack**.
 

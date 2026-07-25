@@ -6,9 +6,18 @@ import { assertDataDirWritable, getDataDir } from "@/lib/storage";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/** Liveness + auth/storage readiness + optional video catalog health */
+/**
+ * Liveness for Docker/Portainer healthchecks.
+ *
+ * Always returns HTTP 200 when the Node process can answer. BusyBox `wget` (used
+ * by the image HEALTHCHECK) treats non-2xx as failure, so returning 503 for
+ * degraded auth/storage made Portainer show the container as Unhealthy even
+ * when the app was up.
+ *
+ * Readiness is reported in the JSON body as `ready` / `auth` / `storage`.
+ */
 export async function GET() {
-  // Keep catalog warm on health probes (e.g. container orchestrators)
+  // Fire-and-forget catalog warm (must not block or fail the probe)
   void maybeBackgroundRefresh().catch(() => {});
 
   let videos: Awaited<ReturnType<typeof healthSummary>> | null = null;
@@ -18,7 +27,13 @@ export async function GET() {
     videos = null;
   }
 
-  const authOk = authSecretReady();
+  let authOk = false;
+  try {
+    authOk = authSecretReady();
+  } catch {
+    authOk = false;
+  }
+
   let storageOk = false;
   let storageError: string | null = null;
   try {
@@ -30,19 +45,18 @@ export async function GET() {
 
   const ready = authOk && storageOk;
 
-  return NextResponse.json(
-    {
-      ok: ready,
-      service: "motionrx-stretch",
-      time: new Date().toISOString(),
-      auth: { secretConfigured: authOk },
-      storage: {
-        writable: storageOk,
-        dataDir: getDataDir(),
-        ...(storageError ? { error: storageError } : {}),
-      },
-      videos,
+  // Always 200 once the server is listening — Docker/Portainer liveness.
+  return NextResponse.json({
+    ok: true,
+    ready,
+    service: "motionrx-stretch",
+    time: new Date().toISOString(),
+    auth: { secretConfigured: authOk },
+    storage: {
+      writable: storageOk,
+      dataDir: getDataDir(),
+      ...(storageError ? { error: storageError } : {}),
     },
-    { status: ready ? 200 : 503 }
-  );
+    videos,
+  });
 }

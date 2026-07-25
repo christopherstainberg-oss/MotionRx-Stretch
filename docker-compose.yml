@@ -50,11 +50,12 @@ services:
     networks:
       - motionrx-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      # CMD-SHELL + discard body: works with BusyBox wget on Portainer/Synology/Pi
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
       interval: 30s
-      timeout: 5s
+      timeout: 8s
       retries: 5
-      start_period: 45s
+      start_period: 60s
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
       - "com.motionrx.description=MotionRx Stretch Physical Therapy PWA"

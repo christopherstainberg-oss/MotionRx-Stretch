@@ -43,8 +43,10 @@ RUN chmod +x /docker-entrypoint.sh
 USER root
 EXPOSE 3000
 VOLUME ["/app/data"]
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
+# Liveness only: /api/health always returns 200 when Node is serving.
+# Use CMD-SHELL so BusyBox wget failures are reliable on Portainer/ARM hosts.
+HEALTHCHECK --interval=30s --timeout=8s --start-period=60s --retries=5 \
+  CMD wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["node", "server.js"]
