@@ -7,48 +7,7 @@ import type {
   StretchVariation,
 } from "@/lib/types";
 import { ADDITIONAL_STRETCH_SEEDS } from "@/data/stretch-clinical-expansion";
-
-/** Institutional / healthcare-professional educational sources only */
-const SOURCES = {
-  cleveland: {
-    institution: "Cleveland Clinic",
-    source: "Cleveland Clinic Patient Education",
-  },
-  mayo: {
-    institution: "Mayo Clinic",
-    source: "Mayo Clinic Health System Education",
-  },
-  hopkins: {
-    institution: "Johns Hopkins Medicine",
-    source: "Johns Hopkins Medicine",
-  },
-  nih: {
-    institution: "NIH / National Institute on Aging",
-    source: "NIH Senior Health / NIA",
-  },
-  va: {
-    institution: "U.S. Department of Veterans Affairs",
-    source: "VA Whole Health / Physical Therapy Education",
-  },
-  apta: {
-    institution: "APTA / ChoosePT Educational Partners",
-    source: "American Physical Therapy Association education partners",
-  },
-} as const;
-
-/** Public educational demo IDs from major health systems (replaceable via CMS) */
-const VIDEO = {
-  neck: "R2SCVIIsKe8",
-  shoulder: "sTxC3J3gQEU",
-  hip: "0n9o_vH2p-E",
-  hamstring: "FUd_KecFfVk",
-  lowerBack: "4BOTvaRaDjI",
-  calf: "i6TzP2COtow",
-  chest: "QkS5qJzJzJw",
-  full: "g_tea8ZNk5A",
-  thoracic: "2NODl4bGA_Y",
-  ankle: "8E4O8s4m1nY",
-};
+import { videoForRegion } from "@/data/video-catalog";
 
 function bucket(seconds: number): DurationBucket {
   if (seconds < 60) return "under-1-min";
@@ -157,11 +116,7 @@ const SEEDS: Seed[] = [
         painMax: 3,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.neck,
-      title: "Neck posture and chin tuck education",
-      ...SOURCES.cleveland,
-    },
+    video: videoForRegion("neck", "Neck posture and chin tuck education"),
     evidenceNotes:
       "Cervical retraction is commonly used in clinic for posture-related neck discomfort and deep neck flexor re-education.",
     equipment: ["optional towel", "optional light band"],
@@ -207,11 +162,7 @@ const SEEDS: Seed[] = [
         painMax: 3,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.neck,
-      title: "Neck and shoulder stretch education",
-      ...SOURCES.mayo,
-    },
+    video: videoForRegion("neck", "Neck and shoulder stretch education"),
     evidenceNotes:
       "Static upper trap stretching is a common self-management drill; dosing is short holds with low intensity.",
     equipment: [],
@@ -252,11 +203,7 @@ const SEEDS: Seed[] = [
         painMax: 5,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.neck,
-      title: "Cervical stretch technique",
-      ...SOURCES.hopkins,
-    },
+    video: videoForRegion("neck", "Cervical stretch technique"),
     evidenceNotes:
       "Often prescribed for desk-related upper quarter tightness in outpatient PT.",
     equipment: ["optional pillow"],
@@ -302,11 +249,7 @@ const SEEDS: Seed[] = [
         description: "Supine with arms in cactus on foam roller (if available).",
       },
     ]),
-    video: {
-      youtubeId: VIDEO.chest,
-      title: "Chest and posture mobility education",
-      ...SOURCES.va,
-    },
+    video: videoForRegion("chest", "Chest and posture mobility education"),
     evidenceNotes:
       "Anterior chest stretching is frequently combined with thoracic extension in postural programs.",
     equipment: ["doorway"],
@@ -358,11 +301,7 @@ const SEEDS: Seed[] = [
         painMax: 3,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.thoracic,
-      title: "Thoracic mobility education",
-      ...SOURCES.apta,
-    },
+    video: videoForRegion("thoracic", "Thoracic mobility education"),
     evidenceNotes:
       "Thoracic rotation drills are standard in outpatient care for stiff mid-back and rib mobility.",
     equipment: ["mat"],
@@ -406,11 +345,7 @@ const SEEDS: Seed[] = [
         description: "Reduce wrist load by placing hands on a counter.",
       },
     ]),
-    video: {
-      youtubeId: VIDEO.lowerBack,
-      title: "Gentle spinal mobility",
-      ...SOURCES.nih,
-    },
+    video: videoForRegion("lowerBack", "Gentle spinal mobility"),
     evidenceNotes:
       "Repeated flexion-extension in comfortable range is a staple warm-up and motor control primer.",
     equipment: ["mat or chair"],
@@ -456,11 +391,7 @@ const SEEDS: Seed[] = [
         description: "Walk hands to one side to bias lat stretch.",
       },
     ]),
-    video: {
-      youtubeId: VIDEO.lowerBack,
-      title: "Restorative back positions",
-      ...SOURCES.mayo,
-    },
+    video: videoForRegion("lowerBack", "Restorative back positions"),
     evidenceNotes:
       "Supported flexion postures are used for comfort and down-regulation; not ideal for every pathology—pain guide applies.",
     equipment: ["mat", "optional pillows"],
@@ -502,11 +433,7 @@ const SEEDS: Seed[] = [
         painMax: 5,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.lowerBack,
-      title: "Low back mobility basics",
-      ...SOURCES.cleveland,
-    },
+    video: videoForRegion("lowerBack", "Low back mobility basics"),
     evidenceNotes:
       "Supine flexion drills are common early-phase options when extension is irritable—individualize with pain scale.",
     equipment: ["mat"],
@@ -553,11 +480,7 @@ const SEEDS: Seed[] = [
         painMax: 3,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.hip,
-      title: "Hip and glute flexibility education",
-      ...SOURCES.hopkins,
-    },
+    video: videoForRegion("hip", "Hip and glute flexibility education"),
     evidenceNotes:
       "Figure-four variations are clinic staples for posterior hip mobility with clear regression options.",
     equipment: ["mat", "optional wall"],
@@ -606,11 +529,7 @@ const SEEDS: Seed[] = [
         description: "Thomas-test position with support—very controllable.",
       },
     ]),
-    video: {
-      youtubeId: VIDEO.hip,
-      title: "Hip flexor mobility education",
-      ...SOURCES.va,
-    },
+    video: videoForRegion("hip", "Hip flexor mobility education"),
     evidenceNotes:
       "Hip flexor mobility with pelvic control is a core outpatient cue for anterior hip tightness from sitting.",
     equipment: ["pad or mat"],
@@ -657,11 +576,7 @@ const SEEDS: Seed[] = [
         painMax: 3,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.hamstring,
-      title: "Hamstring flexibility education",
-      ...SOURCES.mayo,
-    },
+    video: videoForRegion("hamstring", "Hamstring flexibility education"),
     evidenceNotes:
       "Supine strap stretching allows gravity-reduced, measurable dosing commonly used in PT home programs.",
     equipment: ["strap or towel"],
@@ -702,11 +617,7 @@ const SEEDS: Seed[] = [
         description: "Lie face down; strap pulls ankle toward hip.",
       },
     ]),
-    video: {
-      youtubeId: VIDEO.hip,
-      title: "Quadriceps stretch education",
-      ...SOURCES.cleveland,
-    },
+    video: videoForRegion("hip", "Quadriceps stretch education"),
     evidenceNotes:
       "Standing and side-lying quad stretches are standard HEP items with balance safety cues.",
     equipment: ["wall"],
@@ -747,11 +658,7 @@ const SEEDS: Seed[] = [
         painMax: 3,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.calf,
-      title: "Calf and ankle mobility",
-      ...SOURCES.nih,
-    },
+    video: videoForRegion("calf", "Calf and ankle mobility"),
     evidenceNotes:
       "Differentiating gastroc vs soleus stretching is a classic PT teaching point for ankle mobility.",
     equipment: ["wall", "optional step"],
@@ -791,11 +698,7 @@ const SEEDS: Seed[] = [
         painMax: 3,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.ankle,
-      title: "Ankle mobility education",
-      ...SOURCES.va,
-    },
+    video: videoForRegion("ankle", "Ankle mobility education"),
     evidenceNotes:
       "Active ankle ROM is frequently prescribed post-sprain (when appropriate) and for general stiffness.",
     equipment: ["optional band"],
@@ -836,11 +739,7 @@ const SEEDS: Seed[] = [
         painMax: 3,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.full,
-      title: "Upper extremity mobility basics",
-      ...SOURCES.apta,
-    },
+    video: videoForRegion("full", "Upper extremity mobility basics"),
     evidenceNotes:
       "Short-duration wrist stretching is common for office-related forearm complaints alongside load management.",
     equipment: [],
@@ -882,11 +781,7 @@ const SEEDS: Seed[] = [
         painMax: 3,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.full,
-      title: "Dynamic mobility flow education",
-      ...SOURCES.hopkins,
-    },
+    video: videoForRegion("full", "Dynamic mobility flow education"),
     evidenceNotes:
       "Multi-planar dynamic mobility sequences are common pre-activity in sports and outpatient performance PT.",
     equipment: ["optional chair"],
@@ -928,11 +823,7 @@ const SEEDS: Seed[] = [
         painMax: 5,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.lowerBack,
-      title: "Core control and pelvic motion",
-      ...SOURCES.apta,
-    },
+    video: videoForRegion("lowerBack", "Core control and pelvic motion"),
     evidenceNotes:
       "Pelvic control drills are foundational in lumbar stabilization progressions in outpatient PT.",
     equipment: ["mat"],
@@ -975,11 +866,7 @@ const SEEDS: Seed[] = [
         painMax: 6,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.hamstring,
-      title: "Nerve mobility education (professional)",
-      ...SOURCES.va,
-    },
+    video: videoForRegion("hamstring", "Nerve mobility education (professional)"),
     evidenceNotes:
       "Neural sliders are used selectively in PT; intensity must stay non-aggravating. This app defaults to gentle dosing.",
     equipment: ["chair"],
@@ -1021,11 +908,7 @@ const SEEDS: Seed[] = [
         painMax: 3,
       },
     ]),
-    video: {
-      youtubeId: VIDEO.thoracic,
-      title: "Thoracic rotation mobility",
-      ...SOURCES.cleveland,
-    },
+    video: videoForRegion("thoracic", "Thoracic rotation mobility"),
     evidenceNotes:
       "Open-book drills are ubiquitous in outpatient thoracic and rib mobility programs.",
     equipment: ["mat", "pillow"],
@@ -1065,11 +948,7 @@ const SEEDS: Seed[] = [
         description: "Strength-mobility hybrid with light band.",
       },
     ]),
-    video: {
-      youtubeId: VIDEO.shoulder,
-      title: "Shoulder blade control education",
-      ...SOURCES.mayo,
-    },
+    video: videoForRegion("shoulder", "Shoulder blade control education"),
     evidenceNotes:
       "Scapular neuromuscular control is central to many shoulder rehab progressions.",
     equipment: ["optional light band"],
