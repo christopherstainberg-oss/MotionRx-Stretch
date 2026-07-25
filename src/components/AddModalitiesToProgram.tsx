@@ -153,8 +153,8 @@ export function AddModalitiesToProgram({
               Open Builder
             </Link>{" "}
             or{" "}
-            <Link href="/assess" className="font-semibold underline">
-              Assess
+            <Link href="/assessment" className="font-semibold underline">
+              Assessment
             </Link>{" "}
             first.
           </p>

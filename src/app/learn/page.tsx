@@ -37,8 +37,8 @@ export default function LearnPage() {
 
       <div className="card border-dashed p-5 text-sm text-brand-700">
         Want a plan built around your symptoms?{" "}
-        <Link href="/assess" className="font-semibold text-brand-800 underline">
-          Start the assessment
+        <Link href="/assessment" className="font-semibold text-brand-800 underline">
+          Start the Assessment
         </Link>
         .
       </div>

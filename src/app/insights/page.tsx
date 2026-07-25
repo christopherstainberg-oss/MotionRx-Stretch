@@ -98,8 +98,8 @@ export default function InsightsPage() {
               </span>
             ))}
           </div>
-          <Link href="/assess" className="btn-secondary mt-4 inline-flex text-xs">
-            Update on Assess
+          <Link href="/assessment" className="btn-secondary mt-4 inline-flex text-xs">
+            Update on Assessment
           </Link>
         </section>
       )}

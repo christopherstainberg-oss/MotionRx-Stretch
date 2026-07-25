@@ -46,9 +46,9 @@ export default function HomePage() {
               and clear—like a home program from clinic.
             </p>
             <div className="mt-5 grid grid-cols-1 gap-2.5 sm:mt-6 sm:flex sm:flex-wrap sm:gap-3">
-              <Link href="/assess" className="btn-primary w-full py-3 sm:w-auto">
+              <Link href="/assessment" className="btn-primary w-full py-3 sm:w-auto">
                 <Stethoscope className="h-4 w-4" />
-                Start from how I feel
+                Start Assessment
               </Link>
               <Link href="/jeffery" className="btn-secondary w-full py-3 sm:w-auto">
                 <Bot className="h-4 w-4" />
@@ -135,9 +135,9 @@ export default function HomePage() {
       <section className="grid gap-4 md:grid-cols-3">
         {[
           {
-            href: "/assess",
+            href: "/assessment",
             icon: Stethoscope,
-            title: "Describe how you feel",
+            title: "Assessment",
             text: "Write a short note about stiffness or pain—get a plan in plain language.",
           },
           {
@@ -195,10 +195,10 @@ export default function HomePage() {
             text: "Install the app, set reminders, manage your account.",
           },
           {
-            href: "/assess",
+            href: "/assessment",
             icon: Gauge,
             title: "Pain-scale dosing",
-            text: "We use your 0–10 ratings to keep plans comfortable.",
+            text: "We use your 0–10 ratings from Assessment to keep plans comfortable.",
           },
           {
             href: "/learn",

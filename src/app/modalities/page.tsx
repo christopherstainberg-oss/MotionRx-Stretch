@@ -171,9 +171,9 @@ function ModalitiesInner() {
         title="Physical therapy modalities"
         description={`Evidence-informed suggestions for pre-visit, post-visit, sessions, and flares—matched to your pain rating, descriptors, and experience. ${MODALITY_STATS.total} modalities · ${MODALITY_STATS.home} home-capable · ${MODALITY_STATS.clinic} clinic education.`}
         actions={
-          <Link href="/assess" className="btn-secondary text-sm">
+          <Link href="/assessment" className="btn-secondary text-sm">
             <Stethoscope className="h-4 w-4" />
-            Update Assess
+            Update Assessment
           </Link>
         }
       />
@@ -228,7 +228,7 @@ function ModalitiesInner() {
             <h2 className="text-lg font-bold text-brand-950">Your reported experience</h2>
             <p className="text-sm text-brand-700/85">
               Suggestions use your pain score, clinical descriptors, free-text experience, and
-              recent sessions/journal when available—same data thread as Assess, sessions, and
+              recent sessions/journal when available—same data thread as Assessment, sessions, and
               Jeffery.
             </p>
             <PainScale

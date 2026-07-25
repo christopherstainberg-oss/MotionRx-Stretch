@@ -82,7 +82,7 @@ export default function JefferyPage() {
           id: `e-${Date.now()}`,
           role: "jeffery",
           content:
-            "I couldn't reach the server. Try again online—or use Assess to build a plan from a written paragraph.",
+            "I couldn't reach the server. Try again online—or use Assessment to build a plan from a written paragraph.",
           createdAt: new Date().toISOString(),
         },
       ]);

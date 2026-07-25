@@ -8,6 +8,15 @@ const nextConfig = {
       { protocol: "https", hostname: "img.youtube.com" },
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: "/assess",
+        destination: "/assessment",
+        permanent: true,
+      },
+    ];
+  },
   headers: async () => [
     {
       source: "/(.*)",

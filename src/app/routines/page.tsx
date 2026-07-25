@@ -20,8 +20,8 @@ export default function RoutinesPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/assess" className="btn-primary">
-            Build personalized plan
+          <Link href="/assessment" className="btn-primary">
+            Start Assessment
           </Link>
           <Link href="/builder" className="btn-secondary">
             Open builder

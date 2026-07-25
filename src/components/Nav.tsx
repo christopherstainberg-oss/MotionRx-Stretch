@@ -26,7 +26,7 @@ const links = [
   { href: "/home", label: "Home", icon: Home, short: "Home" },
   { href: "/library", label: "Stretches", icon: Library, short: "Stretch" },
   { href: "/exercises", label: "Exercises", icon: Dumbbell, short: "Exercise" },
-  { href: "/assess", label: "Assess", icon: Stethoscope, short: "Assess" },
+  { href: "/assessment", label: "Assessment", icon: Stethoscope, short: "Assess" },
   { href: "/modalities", label: "Modalities", icon: Sparkles, short: "Mods" },
   { href: "/builder", label: "Builder", icon: ListPlus, short: "Build" },
   { href: "/routines", label: "Routines", icon: ListChecks, short: "Routines" },
@@ -41,7 +41,7 @@ const links = [
 const mobileTabs = [
   links[0], // Home
   links[6], // Routines
-  links[3], // Assess
+  links[3], // Assessment
   links[7], // Jeffery
   links[11], // Account
 ];

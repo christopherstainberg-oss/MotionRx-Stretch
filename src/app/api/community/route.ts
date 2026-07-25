@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getActorId } from "@/lib/auth";
+import { getActorId, getSessionUser } from "@/lib/auth";
 import { readDb, updateDb } from "@/lib/storage";
 import { v4 as uuid } from "uuid";
 import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
@@ -30,16 +30,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Post is too short." }, { status: 400 });
   }
 
-  const { userId } = await getActorId();
-  const displayName = sanitizeText(
-    String(body.displayName || "Anonymous mover"),
-    60
-  );
+  const { userId, isGuest } = await getActorId();
+  const sessionUser = await getSessionUser();
+  // Prefer authenticated profile name; block free-form spoofing when signed in
+  const displayName = sessionUser
+    ? sanitizeText(sessionUser.name || sessionUser.email.split("@")[0] || "Member", 60)
+    : sanitizeText(String(body.displayName || "Anonymous mover"), 60);
 
+  // Guests may post but are labeled clearly
   const post = {
     id: uuid(),
     userId,
-    displayName: displayName || "Anonymous mover",
+    displayName: isGuest
+      ? `Guest · ${displayName || "Anonymous mover"}`.slice(0, 60)
+      : displayName || "Member",
     body: text,
     createdAt: new Date().toISOString(),
     tips: Boolean(body.tips),

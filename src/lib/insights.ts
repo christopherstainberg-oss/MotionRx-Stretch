@@ -52,7 +52,7 @@ export function correlateInsights(input: {
     insights.push({
       id: uuid(),
       title: "Pain descriptors across your app data",
-      summary: `Most consistent descriptors: ${labels.join(", ")}. These appear across assess, sessions, journal, and/or Jeffery. Effective irritability boost ~${hints.effectivePainBoost.toFixed(1)}.`,
+      summary: `Most consistent descriptors: ${labels.join(", ")}. These appear across Assessment, sessions, journal, and/or Jeffery. Effective irritability boost ~${hints.effectivePainBoost.toFixed(1)}.`,
       severity: hints.redFlags.length || hints.effectivePainBoost >= 2 ? "caution" : "info",
       sources: ["descriptors", "pain", "sessions", "journal", "routines"],
       recommendation: hints.biases.includes("defer-to-provider")
@@ -89,10 +89,10 @@ export function correlateInsights(input: {
       insights.push({
         id: uuid(),
         title: "Descriptor pattern is shifting",
-        summary: `Your latest session descriptors differ from your saved profile (${onlySession.length} new, ${onlyProfile.length} no longer selected). Recalibrate plans on Assess when the story changes.`,
+        summary: `Your latest session descriptors differ from your saved profile (${onlySession.length} new, ${onlyProfile.length} no longer selected). Recalibrate plans on Assessment when the story changes.`,
         severity: "info",
         sources: ["descriptors", "sessions", "pain"],
-        recommendation: "Update Assess descriptors and regenerate your plan if symptoms changed.",
+        recommendation: "Update Assessment descriptors and regenerate your plan if symptoms changed.",
         at: now,
       });
     }
@@ -161,7 +161,7 @@ export function correlateInsights(input: {
       summary: `${descRoutines.length} routine(s) were built using clinical descriptors. Latest: “${latest.name}” — ${(latest.generatedFrom?.descriptorSummary || []).slice(0, 4).join(", ") || "custom descriptors"}.`,
       severity: "positive",
       sources: ["routines", "descriptors"],
-      recommendation: "If descriptors change, regenerate on Assess so the program stays matched.",
+      recommendation: "If descriptors change, regenerate on Assessment so the program stays matched.",
       relatedDescriptorIds: latest.generatedFrom?.painDescriptorIds,
       at: now,
     });
@@ -323,10 +323,10 @@ export function correlateInsights(input: {
       id: uuid(),
       title: "Start correlating your story",
       summary:
-        "Select clinical pain descriptors on Assess, complete a session, journal, or talk with Jeffery—MotionRx Stretch weaves those signals into clinically styled insights.",
+        "Select clinical pain descriptors on Assessment, complete a session, journal, or talk with Jeffery—MotionRx Stretch weaves those signals into clinically styled insights.",
       severity: "info",
       sources: ["sessions", "journal", "goals", "jeffery", "descriptors"],
-      recommendation: "Begin on Assess: write concerns and choose pain descriptors.",
+      recommendation: "Begin on Assessment: write concerns and choose pain descriptors.",
       at: now,
     });
   }
