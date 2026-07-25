@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { sameStringArray, useDebouncedValue } from "@/lib/hooks";
 import { BODY_PART_LABELS, getStretchById } from "@/data/stretch-library";
@@ -57,11 +57,17 @@ import {
   saveLocalPainProfile,
 } from "@/lib/pain-profile";
 import {
-  answerAssessmentQuestion,
+  answerAssessmentConversation,
+  buildStoryPriorPrompt,
   displayPreferredName,
-  suggestedAssessmentQuestions,
+  formatQuestionForStoryBox,
+  nextStoryBoxQuestion,
+  selectAutoAppearingQuestions,
+  storyEndsWithOpenQuestion,
+  suggestedAssessmentConversation,
   type AssessmentCoachContext,
   type CoachExchange,
+  type ConversationPrompt,
 } from "@/lib/assessment-coach";
 import {
   SEX_OPTIONS,
@@ -312,6 +318,11 @@ export default function AssessmentPage() {
   const [preferredName, setPreferredName] = useState("");
   const [coachQuestion, setCoachQuestion] = useState("");
   const [coachLog, setCoachLog] = useState<CoachExchange[]>([]);
+  /** Progressive Q&A guide inserts open-ended questions into free text */
+  const [guideStoryQa, setGuideStoryQa] = useState(true);
+  const storyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  /** Only auto-append after the user has typed (not on first load of saved story) */
+  const storyUserEditedRef = useRef(false);
   const [writtenApproach, setWrittenApproach] = useState<string | null>(null);
   const [prescribed, setPrescribed] = useState<PrescribedPlanDocument | null>(null);
   const [planAgreed, setPlanAgreed] = useState(false);
@@ -709,6 +720,114 @@ export default function AssessmentPage() {
     currentMedicalHistory,
   ]);
 
+  const storyPromptCtx = useMemo(
+    () => ({
+      paragraph,
+      areas,
+      preferredName: displayPreferredName(preferredName),
+      sex: sex || undefined,
+      pastMedicalHistory,
+      currentMedicalHistory,
+      descriptorIds,
+      conditionIds: paragraphConditions,
+      goals,
+    }),
+    [
+      paragraph,
+      areas,
+      preferredName,
+      sex,
+      pastMedicalHistory,
+      currentMedicalHistory,
+      descriptorIds,
+      paragraphConditions,
+      goals,
+    ]
+  );
+
+  const storyPriorPrompt = useMemo(
+    () => buildStoryPriorPrompt(storyPromptCtx),
+    [storyPromptCtx]
+  );
+
+  const autoAppearingQuestions = useMemo(
+    () => selectAutoAppearingQuestions(storyPromptCtx, 7),
+    [storyPromptCtx]
+  );
+
+  const conversationPrompts = useMemo(
+    () => suggestedAssessmentConversation(storyPromptCtx),
+    [storyPromptCtx]
+  );
+
+  const nextGuidedQuestion = useMemo(
+    () => nextStoryBoxQuestion(storyPromptCtx),
+    [storyPromptCtx]
+  );
+
+  /** Insert an open-ended Q into the free-text story box and focus for the answer */
+  function insertQuestionIntoStory(prompt: ConversationPrompt) {
+    setParagraph((prev) => {
+      const needle = prompt.question.slice(0, Math.min(40, prompt.question.length));
+      if (prev.includes(needle)) return prev;
+      const block = formatQuestionForStoryBox(prompt);
+      const base = prev.trimEnd();
+      return base ? `${base}${block}` : block.trimStart();
+    });
+    requestAnimationFrame(() => {
+      const el = storyTextareaRef.current;
+      if (!el) return;
+      el.focus();
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+      el.scrollTop = el.scrollHeight;
+    });
+  }
+
+  /** Progressive guide: after user types and pauses, auto-append next unanswered Q into free text */
+  useEffect(() => {
+    if (!guideStoryQa) return;
+    if (!storyUserEditedRef.current) return;
+    const story = debouncedParagraph;
+    if (story.trim().length < 28) return;
+    if (storyEndsWithOpenQuestion(story)) return;
+    const next = nextStoryBoxQuestion({
+      paragraph: story,
+      areas,
+      preferredName: displayPreferredName(preferredName),
+      sex: sex || undefined,
+      pastMedicalHistory,
+      currentMedicalHistory,
+      descriptorIds,
+      conditionIds: paragraphConditions,
+      goals,
+    });
+    if (!next) return;
+    // Only auto-append when the last non-empty line looks like a finished answer
+    const lines = story.trimEnd().split(/\n/).filter((l) => l.trim());
+    const last = lines[lines.length - 1] || "";
+    if (last.includes("?")) return;
+    if (last.length < 18) return;
+    const needle = next.question.slice(0, Math.min(40, next.question.length));
+    if (story.includes(needle)) return;
+    setParagraph((prev) => {
+      if (storyEndsWithOpenQuestion(prev)) return prev;
+      if (prev.includes(needle)) return prev;
+      return `${prev.trimEnd()}${formatQuestionForStoryBox(next)}`;
+    });
+  }, [
+    guideStoryQa,
+    debouncedParagraph,
+    areas,
+    preferredName,
+    sex,
+    pastMedicalHistory,
+    currentMedicalHistory,
+    descriptorIds,
+    paragraphConditions,
+    goals,
+  ]);
+
   function askCoach(question?: string) {
     const q = (question ?? coachQuestion).trim();
     if (!q) return;
@@ -727,17 +846,15 @@ export default function AssessmentPage() {
         mergeHistoryText(prev, fromAnswerHist.currentMedicalHistory)
       );
     }
-    // If the user typed a clarifying detail (not a short canned chip), fold into story
-    const isChip = suggestedAssessmentQuestions(sex || undefined, {
-      pastMedicalHistory,
-      currentMedicalHistory,
-      paragraph,
-    }).includes(q);
-    if (!isChip && q.length >= 24 && !paragraph.toLowerCase().includes(q.toLowerCase().slice(0, 40))) {
+    // Fold personal details into the story (not when tapping a full interview prompt)
+    const isPrompt = conversationPrompts.some(
+      (p) => p.question === q || p.label === q
+    );
+    if (!isPrompt && q.length >= 24 && !paragraph.toLowerCase().includes(q.toLowerCase().slice(0, 40))) {
       setParagraph((p) => (p.trim() ? `${p.trim()}\n\n${q.trim()}` : q.trim()));
     }
 
-    const answer = answerAssessmentQuestion(q, {
+    const { answer, followUp } = answerAssessmentConversation(q, {
       ...coachContext,
       sex: fromAnswerSex || coachContext.sex,
       pastMedicalHistory:
@@ -755,6 +872,7 @@ export default function AssessmentPage() {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       question: q,
       answer,
+      followUp,
       at: new Date().toISOString(),
     };
     setCoachLog((prev) => {
@@ -1111,58 +1229,296 @@ export default function AssessmentPage() {
         <section className="card space-y-0 p-5 sm:p-6">
           <SubSection
             title="Describe your issue"
-            hint="Feel free to write naturally. Include location, sensations, and any surgeries if you know them."
+            hint="Friendly clinical interview in one free-text box. Prior prompt first; open-ended questions auto-appear and can drop into the box as you write."
+            action={
+              coachLog.length > 0 ? (
+                <span className="text-xs font-semibold text-brand-600">
+                  {coachLog.length} coach turns
+                </span>
+              ) : null
+            }
           >
-            <textarea
-              className="input min-h-[150px] resize-y text-base leading-relaxed"
-              value={paragraph}
-              onChange={(e) => setParagraph(e.target.value)}
-              placeholder="Example: I’m a woman with dull low-back ache worse at my desk. Past: right knee arthroscopy 2019, childhood asthma. Currently manage hypertension and take metformin 500 mg twice daily and naproxen 220 mg as needed. Pain about 4/10. Want to move easier at work."
-              aria-label="Describe your issue"
-              autoComplete="off"
-              spellCheck
-            />
-            <label className="mt-3 flex items-center gap-2.5 text-sm text-brand-700">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-brand-600"
-                checked={autoApplyDesc}
-                onChange={(e) => setAutoApplyDesc(e.target.checked)}
-              />
-              Auto-detect clinical details from my text (meds, conditions, pain language)
-            </label>
-            <label className="mt-2 flex items-center gap-2.5 text-sm text-brand-700">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-brand-600"
-                checked={autoApplyHistory}
-                onChange={(e) => setAutoApplyHistory(e.target.checked)}
-              />
-              Auto-detect sex and past/current medical history from this paragraph
-            </label>
-            <p className="mt-2 text-xs text-brand-500">
-              One story box is enough — include past surgeries/diagnoses and current conditions in
-              plain language. The app parses PMH/CMH, meds, and sex cues for Plan, Q&amp;A, and
-              Jeffery.
-            </p>
-            {(pastMedicalHistory || currentMedicalHistory || sex) && (
-              <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/50 px-3 py-2.5 text-xs text-brand-800 dark:border-brand-800 dark:bg-brand-950/40 dark:text-brand-100">
-                <p className="font-semibold text-brand-900 dark:text-brand-50">
-                  Detected from your story
+            <div className="space-y-3">
+              {/* Prior prompt — opening “what’s bothering you” style invitation */}
+              <div className="rounded-xl border border-brand-200 bg-gradient-to-br from-brand-600/10 via-white to-brand-50/80 px-3.5 py-3 dark:border-brand-700 dark:from-brand-900/60 dark:via-brand-950 dark:to-brand-950 sm:px-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                  Prior prompt · start here
                 </p>
-                {sex ? (
-                  <p className="mt-1">
-                    Sex: {SEX_OPTIONS.find((o) => o.id === sex)?.label || sex}
-                  </p>
-                ) : null}
-                {pastMedicalHistory ? (
-                  <p className="mt-1">Past medical history: {pastMedicalHistory}</p>
-                ) : null}
-                {currentMedicalHistory ? (
-                  <p className="mt-1">Current medical history: {currentMedicalHistory}</p>
+                <p className="mt-1 text-base font-semibold leading-snug text-brand-950 dark:text-brand-50">
+                  {storyPriorPrompt.heading}
+                </p>
+                <p className="mt-1.5 text-sm leading-relaxed text-brand-800 dark:text-brand-100">
+                  {storyPriorPrompt.question}
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-brand-600 dark:text-brand-300">
+                  {storyPriorPrompt.coachLine}
+                </p>
+                {!paragraph.trim() && nextGuidedQuestion ? (
+                  <button
+                    type="button"
+                    className="btn-secondary mt-3 text-xs"
+                    onClick={() => insertQuestionIntoStory(nextGuidedQuestion)}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Put this question in the box
+                  </button>
                 ) : null}
               </div>
-            )}
+
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium text-brand-800 dark:text-brand-100">
+                  Free-text story &amp; Q&amp;A
+                  {preferredName ? (
+                    <span className="font-normal text-brand-500">
+                      {" "}
+                      · {displayPreferredName(preferredName)}
+                    </span>
+                  ) : null}
+                </span>
+                <textarea
+                  ref={storyTextareaRef}
+                  className="input min-h-[200px] resize-y text-base leading-relaxed"
+                  value={paragraph}
+                  onChange={(e) => {
+                    storyUserEditedRef.current = true;
+                    setParagraph(e.target.value);
+                  }}
+                  placeholder={storyPriorPrompt.placeholder}
+                  aria-label="Describe your issue"
+                  autoComplete="off"
+                  spellCheck
+                />
+              </label>
+
+              {/* Auto-appearing open-ended questions (context-aware) */}
+              <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 p-3 dark:border-brand-700 dark:bg-brand-900/30">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                    Auto-appearing questions
+                    {autoAppearingQuestions.length > 0
+                      ? ` · ${autoAppearingQuestions.length} open`
+                      : " · story looks complete"}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700 dark:text-brand-200">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 accent-brand-600"
+                        checked={guideStoryQa}
+                        onChange={(e) => setGuideStoryQa(e.target.checked)}
+                      />
+                      Auto-populate next Q in box
+                    </label>
+                    {nextGuidedQuestion ? (
+                      <button
+                        type="button"
+                        className="rounded-full border border-brand-300 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-brand-800 shadow-sm hover:border-brand-500 hover:bg-brand-50 dark:border-brand-600 dark:bg-brand-950 dark:text-brand-100"
+                        onClick={() => insertQuestionIntoStory(nextGuidedQuestion)}
+                      >
+                        Add next question
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                {autoAppearingQuestions.length > 0 ? (
+                  <ul className="space-y-2">
+                    {autoAppearingQuestions.map((p) => (
+                      <li key={p.id}>
+                        <button
+                          type="button"
+                          title="Insert into free-text box and answer there"
+                          className="group flex w-full items-start gap-2 rounded-lg border border-brand-100 bg-white px-2.5 py-2 text-left text-sm shadow-sm transition hover:border-brand-400 hover:bg-brand-50 dark:border-brand-800 dark:bg-brand-950 dark:hover:bg-brand-900"
+                          onClick={() => insertQuestionIntoStory(p)}
+                        >
+                          <MessageCircleQuestion className="mt-0.5 h-4 w-4 shrink-0 text-brand-500 group-hover:text-brand-700" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[11px] font-bold uppercase tracking-wide text-brand-500">
+                              {p.label}
+                              <span className="ml-1.5 font-medium normal-case tracking-normal text-brand-400">
+                                {p.category}
+                              </span>
+                            </span>
+                            <span className="mt-0.5 block leading-snug text-brand-900 dark:text-brand-50">
+                              {p.question}
+                            </span>
+                            <span className="mt-1 block text-[10px] font-semibold text-brand-600 opacity-80 group-hover:opacity-100">
+                              Tap to drop into free text → answer below the ▸ line
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs leading-relaxed text-brand-600 dark:text-brand-300">
+                    Nice work—your free text already covers the main interview themes. Keep editing
+                    anytime, or ask the coach below for a friendly clinical reflection.
+                  </p>
+                )}
+              </div>
+
+              <label className="flex items-center gap-2.5 text-sm text-brand-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-brand-600"
+                  checked={autoApplyDesc}
+                  onChange={(e) => setAutoApplyDesc(e.target.checked)}
+                />
+                Auto-detect clinical details from my text (meds, conditions, pain language)
+              </label>
+              <label className="flex items-center gap-2.5 text-sm text-brand-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-brand-600"
+                  checked={autoApplyHistory}
+                  onChange={(e) => setAutoApplyHistory(e.target.checked)}
+                />
+                Auto-detect sex and past/current medical history from this paragraph
+              </label>
+              <p className="text-xs text-brand-500">
+                One story box is enough — guided questions and free narrative live together. The app
+                parses PMH/CMH, meds, and sex cues for Plan, coach Q&amp;A, and Jeffery.
+              </p>
+              {(pastMedicalHistory || currentMedicalHistory || sex) && (
+                <div className="rounded-xl border border-brand-100 bg-brand-50/50 px-3 py-2.5 text-xs text-brand-800 dark:border-brand-800 dark:bg-brand-950/40 dark:text-brand-100">
+                  <p className="font-semibold text-brand-900 dark:text-brand-50">
+                    Detected from your story
+                  </p>
+                  {sex ? (
+                    <p className="mt-1">
+                      Sex: {SEX_OPTIONS.find((o) => o.id === sex)?.label || sex}
+                    </p>
+                  ) : null}
+                  {pastMedicalHistory ? (
+                    <p className="mt-1">Past medical history: {pastMedicalHistory}</p>
+                  ) : null}
+                  {currentMedicalHistory ? (
+                    <p className="mt-1">Current medical history: {currentMedicalHistory}</p>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Lightweight coach reflection on the free-text story */}
+              <div className="rounded-xl border border-brand-200 bg-white p-3 dark:border-brand-700 dark:bg-brand-950/50 sm:p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                  Coach reflection (optional)
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-brand-600 dark:text-brand-300">
+                  Prefer typing everything above? You still can. Use this for a medically specific
+                  read-back of your free text, or to answer one more open-ended question.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-800 hover:border-brand-400 dark:border-brand-700 dark:bg-brand-900 dark:text-brand-100"
+                    disabled={!paragraph.trim()}
+                    onClick={() =>
+                      askCoach(
+                        paragraph.trim().length > 400
+                          ? paragraph.trim().slice(-400)
+                          : paragraph.trim() || "What’s bothering me is in my story above."
+                      )
+                    }
+                  >
+                    Reflect on my story
+                  </button>
+                  {conversationPrompts.slice(0, 4).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      title={p.question}
+                      className="rounded-full border border-brand-200 bg-white px-2.5 py-1 text-[11px] font-medium text-brand-800 hover:border-brand-400 hover:bg-brand-50 dark:border-brand-700 dark:bg-brand-950 dark:text-brand-100"
+                      onClick={() => {
+                        insertQuestionIntoStory(p);
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    className="input flex-1"
+                    value={coachQuestion}
+                    onChange={(e) => setCoachQuestion(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        askCoach();
+                      }
+                    }}
+                    placeholder="Ask the coach anything—or paste a free-text answer for a clinical reflection…"
+                    aria-label="Continue the assessment conversation"
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    className="btn-primary shrink-0 px-3"
+                    onClick={() => askCoach()}
+                    disabled={!coachQuestion.trim()}
+                    aria-label="Send reply"
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                </div>
+                {coachLog.length > 0 ? (
+                  <ul className="mt-3 max-h-64 space-y-3 overflow-y-auto rounded-xl border border-brand-100 bg-brand-50/50 p-3 dark:border-brand-800 dark:bg-brand-900/30">
+                    {coachLog.map((ex) => (
+                      <li key={ex.id} className="space-y-2 text-sm">
+                        <div className="ml-6 rounded-2xl bg-brand-600 px-3 py-2 text-white">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-brand-100">
+                            You
+                          </p>
+                          <p className="mt-0.5 leading-relaxed">{ex.question}</p>
+                        </div>
+                        <div className="mr-4 rounded-2xl border border-brand-100 bg-white px-3 py-2 dark:border-brand-800 dark:bg-brand-950">
+                          <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-brand-500">
+                            <MessageCircleQuestion className="h-3 w-3" />
+                            Coach
+                          </p>
+                          <p className="mt-1 whitespace-pre-wrap leading-relaxed text-brand-900 dark:text-brand-50">
+                            {ex.answer}
+                          </p>
+                          {ex.followUp ? (
+                            <button
+                              type="button"
+                              className="mt-2 text-left text-xs font-semibold text-brand-700 underline-offset-2 hover:underline"
+                              onClick={() => {
+                                const match = autoAppearingQuestions.find(
+                                  (p) => p.question === ex.followUp
+                                );
+                                if (match) insertQuestionIntoStory(match);
+                                else {
+                                  setParagraph((prev) => {
+                                    const line = `\n\n▸ ${ex.followUp}\n`;
+                                    if (prev.includes(ex.followUp || "")) return prev;
+                                    return `${prev.trimEnd()}${line}`;
+                                  });
+                                  requestAnimationFrame(() => {
+                                    const el = storyTextareaRef.current;
+                                    if (!el) return;
+                                    el.focus();
+                                    const len = el.value.length;
+                                    el.setSelectionRange(len, len);
+                                  });
+                                }
+                              }}
+                            >
+                              Put follow-up in free text: {ex.followUp.slice(0, 72)}
+                              {ex.followUp.length > 72 ? "…" : ""}
+                            </button>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <p className="mt-2 text-[11px] leading-relaxed text-brand-500">
+                  Educational only—not a diagnosis. Free text + coach thread save with your story for
+                  Plan, Jeffery, Journal, Insights, and Modalities.
+                </p>
+              </div>
+            </div>
           </SubSection>
 
           <SubSection
@@ -1189,92 +1545,6 @@ export default function AssessmentPage() {
               {SEX_OPTIONS.find((o) => o.id === sex)?.hint ||
                 "Example in story: “I am a woman…” or “sex: male”."}
             </p>
-          </SubSection>
-
-          <SubSection
-            title={`Questions & answers${
-              preferredName ? ` · ${displayPreferredName(preferredName)}` : ""
-            }`}
-            hint="Ask about your story, history, or plan. Q&A is saved and correlated into Plan, Jeffery, Journal, Insights, and Modalities."
-            action={
-              coachLog.length > 0 ? (
-                <span className="text-xs font-semibold text-brand-600">
-                  {coachLog.length} saved
-                </span>
-              ) : null
-            }
-          >
-            <div className="space-y-3 rounded-xl border border-brand-200 bg-white/80 p-3 dark:border-brand-700 dark:bg-brand-950/60 sm:p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-brand-900">
-                <MessageCircleQuestion className="h-4 w-4 text-brand-600" />
-                Assessment Story Q&amp;A
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {suggestedAssessmentQuestions(sex || undefined, {
-                  pastMedicalHistory,
-                  currentMedicalHistory,
-                  paragraph,
-                }).map((q) => (
-                  <button
-                    key={q}
-                    type="button"
-                    className="rounded-full border border-brand-200 bg-brand-50/80 px-2.5 py-1 text-left text-[11px] font-medium text-brand-800 hover:border-brand-400 hover:bg-brand-100 dark:border-brand-700 dark:bg-brand-950 dark:text-brand-100"
-                    onClick={() => askCoach(q)}
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  className="input flex-1"
-                  value={coachQuestion}
-                  onChange={(e) => setCoachQuestion(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      askCoach();
-                    }
-                  }}
-                  placeholder="Type a question or add a clarifying detail…"
-                  aria-label="Ask a question about your assessment story"
-                  autoComplete="off"
-                />
-                <button
-                  type="button"
-                  className="btn-primary shrink-0 px-3"
-                  onClick={() => askCoach()}
-                  disabled={!coachQuestion.trim()}
-                  aria-label="Send question"
-                >
-                  <Send className="h-4 w-4" />
-                </button>
-              </div>
-              {coachLog.length > 0 ? (
-                <ul className="max-h-72 space-y-2.5 overflow-y-auto rounded-xl border border-brand-100 bg-brand-50/40 p-3 dark:border-brand-800 dark:bg-brand-950/40">
-                  {coachLog.map((ex) => (
-                    <li key={ex.id} className="text-sm">
-                      <p className="flex items-start gap-1.5 font-semibold text-brand-900">
-                        <MessageCircleQuestion className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-600" />
-                        {ex.question}
-                      </p>
-                      <p className="mt-1 leading-relaxed text-brand-700 dark:text-brand-200">
-                        {ex.answer}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="rounded-lg bg-brand-50/80 px-3 py-2 text-xs text-brand-600 dark:bg-brand-900/40">
-                  No questions yet. Tap a chip or type your own — answers use your paragraph, sex,
-                  and medical history, then sync across the app.
-                </p>
-              )}
-              <p className="text-[11px] leading-relaxed text-brand-500">
-                Educational only — not a diagnosis. Q&amp;A threads travel with your story to Plan,
-                Jeffery, Journal, Insights, and Modalities.
-              </p>
-            </div>
           </SubSection>
 
           <SubSection

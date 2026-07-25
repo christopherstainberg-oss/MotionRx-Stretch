@@ -9,11 +9,27 @@ import { getStretchById } from "@/data/stretch-library";
 import { getExerciseById } from "@/data/exercise-library";
 import { getConditionById } from "@/data/clinical-conditions";
 import { getDescriptorById } from "@/data/pain-descriptors";
+import { sexLabel, type SexSelection } from "@/lib/clinical-history";
 import {
-  sexLabel,
-  suggestedQuestionsForSex,
-  type SexSelection,
-} from "@/lib/clinical-history";
+  answerStoryConversation,
+  buildStoryPriorPrompt,
+  formatQuestionForStoryBox,
+  nextStoryBoxQuestion,
+  selectAutoAppearingQuestions,
+  storyEndsWithOpenQuestion,
+  suggestedConversationChips,
+  type ConversationPrompt,
+  type StoryPriorPrompt,
+} from "@/lib/assessment-story-conversation";
+
+export type { ConversationPrompt, StoryPriorPrompt };
+export {
+  buildStoryPriorPrompt,
+  formatQuestionForStoryBox,
+  nextStoryBoxQuestion,
+  selectAutoAppearingQuestions,
+  storyEndsWithOpenQuestion,
+};
 
 export type AssessmentCoachContext = {
   paragraph: string;
@@ -42,17 +58,50 @@ export type CoachExchange = {
   question: string;
   answer: string;
   at: string;
+  /** Optional follow-up the coach is asking next */
+  followUp?: string;
 };
 
+/** Open-ended conversational prompts for Assessment Story Q&A */
+export function suggestedAssessmentConversation(ctx: {
+  paragraph?: string;
+  areas?: BodyPart[];
+  preferredName?: string;
+  sex?: SexSelection | null;
+  pastMedicalHistory?: string;
+  currentMedicalHistory?: string;
+  descriptorIds?: string[];
+  conditionIds?: string[];
+  goals?: string[];
+}): ConversationPrompt[] {
+  return suggestedConversationChips(ctx);
+}
+
+/** @deprecated Prefer suggestedAssessmentConversation for full prompt objects */
 export function suggestedAssessmentQuestions(
   sex?: SexSelection | null,
   opts?: {
     pastMedicalHistory?: string;
     currentMedicalHistory?: string;
     paragraph?: string;
+    areas?: BodyPart[];
+    preferredName?: string;
+    descriptorIds?: string[];
+    conditionIds?: string[];
+    goals?: string[];
   }
 ): string[] {
-  return suggestedQuestionsForSex(sex, opts);
+  return suggestedAssessmentConversation({
+    sex,
+    paragraph: opts?.paragraph,
+    pastMedicalHistory: opts?.pastMedicalHistory,
+    currentMedicalHistory: opts?.currentMedicalHistory,
+    areas: opts?.areas,
+    preferredName: opts?.preferredName,
+    descriptorIds: opts?.descriptorIds,
+    conditionIds: opts?.conditionIds,
+    goals: opts?.goals,
+  }).map((p) => p.question);
 }
 
 export function displayPreferredName(
@@ -102,151 +151,22 @@ function conditionLabels(ids: string[]): string[] {
 }
 
 /**
- * Answer a free-text question using the current assessment context.
+ * Answer a free-text question or story reply using conversational clinical coaching.
+ * Returns a friendly, medically specific reply that ends with an open-ended follow-up.
  */
 export function answerAssessmentQuestion(
   question: string,
   ctx: AssessmentCoachContext
 ): string {
-  const name = displayPreferredName(ctx.preferredName);
-  const q = question.trim();
-  if (!q) {
-    return `${name}, ask anything about your story, pain, practice schedule, or what the plan should prioritize.`;
-  }
+  return answerStoryConversation(question, ctx).answer;
+}
 
-  const t = q.toLowerCase();
-  const pain = topPain(ctx);
-  const regions = areaLabels(ctx.areas);
-  const story = ctx.paragraph.trim();
-  const descs = descriptorLabels(ctx.descriptorIds);
-  const conds = conditionLabels(ctx.conditionIds);
-  const meds = ctx.medications
-    .slice(0, 4)
-    .map((m) => (m.strength ? `${m.genericName} ${m.strength}` : m.genericName))
-    .join(", ");
-
-  const disclaimer =
-    " This is educational guidance only—not a diagnosis or a substitute for care from your PT or clinician.";
-
-  if (/focus|first|start|priority|priorit/.test(t)) {
-    const focus =
-      pain.area && pain.level != null
-        ? `${pain.area} (about ${pain.level}/10)`
-        : regions;
-    return `${name}, start with calm control and comfort in ${focus}. Keep sessions near ${ctx.minutes} minutes at a ${ctx.difficulty} effort, protect sharp pain spikes, and build consistency before intensity.${disclaimer}`;
-  }
-
-  if (/pain|hurt|sore|okay to (move|exercise)|safe to/.test(t)) {
-    const levelNote =
-      pain.level != null
-        ? `You reported about ${pain.level}/10${pain.area ? ` in the ${pain.area}` : ""}. `
-        : "";
-    return `${name}, ${levelNote}mild productive discomfort (often ≤3/10 and settling within ~24 hours) can be okay during mobility work. Sharp, escalating, or lingering pain—especially if worse hours later—means ease range, slow the dose, or swap the movement. Traffic-light rule: green = proceed, yellow = modify, red = stop and reassess.${disclaimer}`;
-  }
-
-  if (/how often|frequency|schedule|how many|days/.test(t)) {
-    return `${name}, most home mobility plans work best with short practice most days (about ${ctx.minutes} minutes). Aim for quality technique over heroic volume. If symptoms flare for more than a day, cut volume by ~30–50% and keep gentle movement rather than full rest when possible.${disclaimer}`;
-  }
-
-  if (/avoid|don.?t|contraindic|precaut|surgery|implant/.test(t)) {
-    const safetyBits: string[] = [];
-    if (ctx.precautionIds.length || ctx.implantIds.length) {
-      safetyBits.push(
-        "honor any post-op, weight-bearing, or implant precautions you listed"
-      );
-    }
-    if (conds.some((c) => /post|surg|replace|fracture/i.test(c))) {
-      safetyBits.push("respect surgical/healing timelines from your care team");
-    }
-    safetyBits.push("avoid forcing end-range into sharp pain");
-    safetyBits.push("skip ballistic bouncing and breath-holding");
-    return `${name}, for now: ${safetyBits.join("; ")}. Your clinician’s protocol always overrides this app.${disclaimer}`;
-  }
-
-  if (/how long|recover|better|weeks|timeline|progress/.test(t)) {
-    return `${name}, meaningful change often shows in 2–6 weeks of consistent, well-dosed practice—not overnight. Track how daily tasks feel (sit, stand, walk, sleep) more than a single session. If red-flag symptoms appear (unexplained weakness, bowel/bladder change, fever with severe pain, trauma with inability to bear weight), seek in-person care promptly.${disclaimer}`;
-  }
-
-  if (/heat|ice|cold|modalit|tens|foam/.test(t)) {
-    return `${name}, stiffness often pairs with brief heat then mobility; irritable or post-load flares often pair with relative rest and optional short cold. Modalities should enable movement—not replace progressive loading. Check your Modalities hub for timing relative to sessions and visits.${disclaimer}`;
-  }
-
-  if (/story|suggest|mean|clinical|what.?s wrong|diagnos/.test(t) || /what does/.test(t)) {
-    const parts: string[] = [];
-    if (story) {
-      parts.push(
-        `from your words, we hear a focus on ${regions}${
-          descs.length ? ` with sensations like ${descs.slice(0, 3).join(", ")}` : ""
-        }`
-      );
-    } else {
-      parts.push(`you have not written much yet—add location, sensations, and goals`);
-    }
-    if (conds.length) parts.push(`matched themes include ${conds.slice(0, 3).join(", ")}`);
-    if (meds) parts.push(`you noted medications such as ${meds}`);
-    if (ctx.goals.length) parts.push(`your goals include ${ctx.goals.slice(0, 3).join(", ")}`);
-    return `${name}, ${parts.join("; ")}. That guides a graded plan of care—not a medical diagnosis. Complete the body/pain and safety steps so dosing stays realistic.${disclaimer}`;
-  }
-
-  if (/stretch|exercise|strength|movement|kinds?/.test(t)) {
-    const kinds =
-      ctx.preferKinds === "auto"
-        ? "a mix of mobility and controlled strength based on your story"
-        : ctx.preferKinds.join(" + ");
-    return `${name}, this assessment builds ${kinds} around ${regions}, dosed for about ${ctx.minutes} minutes at ${ctx.difficulty} difficulty${
-      ctx.homeBasedProgram ? " with home-friendly variations" : ""
-    }. Quality form and symptom response matter more than max intensity.${disclaimer}`;
-  }
-
-  if (/med|medication|drug|pill/.test(t)) {
-    return `${name}, ${
-      meds
-        ? `you listed ${meds}. `
-        : "you can name medications in your story or the medication list. "
-    }Medications help the clinical picture (e.g. blood thinners, pain meds) but dosing advice stays with your prescriber. Never change meds based on this app.${disclaimer}`;
-  }
-
-  if (/medical history|pmh|past history|current history|comorbid|diagnos/.test(t)) {
-    const pmh = ctx.pastMedicalHistory?.trim();
-    const cmh = ctx.currentMedicalHistory?.trim();
-    if (!pmh && !cmh) {
-      return `${name}, add past and current medical history in the Assessment story section (or type conditions in your paragraph). History helps us pace intensity, choose safer variations, and flag when to clear changes with your clinician.${disclaimer}`;
-    }
-    return `${name}, with your history on file${pmh ? ` (past: ${pmh.slice(0, 160)})` : ""}${
-      cmh ? ` (current: ${cmh.slice(0, 160)})` : ""
-    }, we keep the plan graded, avoid aggressive end-range when tissues are irritable, and prioritize consistency. Systemic issues (heart, lungs, clotting, bone density, pregnancy, devices) always warrant clinician-aligned precautions over app defaults.${disclaimer}`;
-  }
-
-  if (/sex|gender|pelvic|pregnan|prostate|menopaus|bone density|osteopor/.test(t)) {
-    const sx = ctx.sex;
-    if (!sx || sx === "prefer-not-to-say") {
-      return `${name}, you can set sex in the Assessment story section (or write it in your paragraph). Optional—but it unlocks more tailored Q&A (e.g. pelvic/pregnancy or prostate/cardiac framing) without changing your identity.${disclaimer}`;
-    }
-    if (sx === "female") {
-      return `${name}, with a female sex context we emphasize pelvic comfort, bone-loading progressions when appropriate, and pregnancy/postpartum clearance rules when relevant. Still stop for red flags and follow your obstetric or PT clinician if you are pregnant or postpartum.${disclaimer}`;
-    }
-    if (sx === "male") {
-      return `${name}, with a male sex context we watch blood-pressure response to heavy straining, pelvic/prostate comfort with deep flexion or pressure, and cardiac history if present. Breath-holding under heavy load is discouraged.${disclaimer}`;
-    }
-    return `${name}, with sex marked as ${sexLabel(
-      sx
-    )}, we use inclusive language and universal safety (pain traffic lights, graded exposure, medical clearance for red flags) rather than binary-only assumptions.${disclaimer}`;
-  }
-
-  // Generic contextual reply
-  const summaryBits = [
-    regions !== "the areas you care about most" ? `regions: ${regions}` : null,
-    pain.level != null ? `top pain ~${pain.level}/10` : null,
-    ctx.goals[0] ? `goal: ${ctx.goals[0]}` : null,
-    ctx.sex && ctx.sex !== "prefer-not-to-say" ? `sex: ${sexLabel(ctx.sex)}` : null,
-    ctx.pastMedicalHistory?.trim() ? "PMH on file" : null,
-    ctx.currentMedicalHistory?.trim() ? "current history on file" : null,
-    story ? "story on file" : "add more to your story for richer answers",
-  ].filter(Boolean);
-
-  return `${name}, thanks for asking. With what we know (${summaryBits.join(
-    "; "
-  )}), keep the plan graded, pain-aware, and consistent. Try a suggested question below or rephrase with more detail about what you want to understand.${disclaimer}`;
+/** Structured answer + follow-up for richer UI */
+export function answerAssessmentConversation(
+  question: string,
+  ctx: AssessmentCoachContext
+): { answer: string; followUp: string } {
+  return answerStoryConversation(question, ctx);
 }
 
 /**
