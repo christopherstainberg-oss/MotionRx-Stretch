@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PainScale } from "@/components/PainScale";
 import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
+import { ClinicalSymptomPicker } from "@/components/ClinicalSymptomPicker";
+import { AdlPicker } from "@/components/AdlPicker";
 import { ModalityMiniList } from "@/components/ModalitySuggestions";
 import type {
   BodyPart,
@@ -13,6 +15,7 @@ import type {
 } from "@/lib/types";
 import { BODY_PART_LABELS } from "@/data/stretch-library";
 import { getDescriptorById } from "@/data/pain-descriptors";
+import type { UserAdlEntry } from "@/data/adls";
 import { recommendModalities } from "@/lib/modality-engine";
 import { loadLocalPainProfile, saveLocalPainProfile } from "@/lib/pain-profile";
 import {
@@ -64,6 +67,8 @@ export default function JournalPage() {
   const [share, setShare] = useState(false);
   const [adjustPlan, setAdjustPlan] = useState(true);
   const [descriptorIds, setDescriptorIds] = useState<string[]>([]);
+  const [clinicalSymptomIds, setClinicalSymptomIds] = useState<string[]>([]);
+  const [adlEntries, setAdlEntries] = useState<UserAdlEntry[]>([]);
   const [suggestedMods, setSuggestedMods] = useState<ModalityRecommendation[]>([]);
   const [promptId, setPromptId] = useState<string | undefined>();
   const [lastSaved, setLastSaved] = useState<JournalEntry | null>(null);
@@ -115,6 +120,8 @@ export default function JournalPage() {
     if (profile?.descriptorIds?.length) setDescriptorIds(profile.descriptorIds);
     if (profile?.areas?.length) setParts(profile.areas.slice(0, 6));
     if (typeof profile?.overallPain === "number") setPain(profile.overallPain);
+    if (profile?.clinicalSymptomIds?.length) setClinicalSymptomIds(profile.clinicalSymptomIds);
+    if (profile?.adlEntries?.length) setAdlEntries(profile.adlEntries);
 
     fetch("/api/journal")
       .then((r) => r.json())
@@ -154,6 +161,8 @@ export default function JournalPage() {
         flexibilityNote,
         sessionCompleted,
         previousEntries: entries,
+        clinicalSymptomIds,
+        adlEntries,
       }),
     [
       title,
@@ -167,6 +176,8 @@ export default function JournalPage() {
       flexibilityNote,
       sessionCompleted,
       entries,
+      clinicalSymptomIds,
+      adlEntries,
     ]
   );
 
@@ -245,6 +256,8 @@ export default function JournalPage() {
         ...(adjustPlan ? ["plan-linked"] : []),
       ],
       painDescriptorIds: descriptorIds,
+      clinicalSymptomIds,
+      adlEntries,
       modalityIds: suggestedMods.map((m) => m.modalityId).slice(0, 8),
       progressionSignal: analysis.signal,
       jefferySummary: analysis.jefferySummary,
@@ -293,6 +306,8 @@ export default function JournalPage() {
       overallPain: pain,
       areas: parts.length ? parts : loadLocalPainProfile()?.areas || [],
       source: "journal",
+      clinicalSymptomIds,
+      adlEntries,
     });
 
     // Seed Jeffery thread snippet for correlation
@@ -557,6 +572,55 @@ export default function JournalPage() {
               ))}
             </div>
           </div>
+
+          <div className="border-t border-brand-100 pt-4 dark:border-brand-800">
+            <h3 className="mb-1 text-sm font-semibold text-brand-950">
+              Clinical symptoms today
+            </h3>
+            <p className="mb-2 text-xs text-brand-500">
+              Same symptom library as Assessment—these adjust your active routine when you save.
+            </p>
+            <ClinicalSymptomPicker
+              value={clinicalSymptomIds}
+              onChange={setClinicalSymptomIds}
+              areas={parts}
+              concernParagraph={`${title} ${body}`}
+              compact
+              onInsertParagraph={(snippet) => {
+                setBody((b) => (b.trim() ? `${b.trim()}\n\n${snippet}` : snippet));
+              }}
+            />
+          </div>
+
+          <div className="border-t border-brand-100 pt-4 dark:border-brand-800">
+            <h3 className="mb-1 text-sm font-semibold text-brand-950">ADLs today</h3>
+            <p className="mb-2 text-xs text-brand-500">
+              Rate daily activities. Limited ADLs bias the plan toward home-safe, shorter dosing.
+            </p>
+            <AdlPicker
+              value={adlEntries}
+              onChange={setAdlEntries}
+              areas={parts}
+              concernParagraph={`${title} ${body}`}
+              onInsertParagraph={(snippet) => {
+                setBody((b) => (b.trim() ? `${b.trim()}\n\n${snippet}` : snippet));
+              }}
+            />
+          </div>
+
+          {(analysis.symptomSuggestions.length > 0 || analysis.adlTips.length > 0) && (
+            <div className="rounded-xl border border-brand-200 bg-brand-50/60 p-3 text-xs text-brand-800 dark:border-brand-700 dark:bg-brand-950/50 dark:text-brand-100">
+              <p className="font-semibold">Live plan cues from symptoms/ADLs</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {[...analysis.symptomSuggestions, ...analysis.adlTips].slice(0, 4).map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-brand-600 dark:text-brand-300">
+                Today&apos;s signal so far: <strong>{analysis.signal}</strong>
+              </p>
+            </div>
+          )}
 
           <div className="flex justify-between">
             <button type="button" className="btn-ghost" onClick={() => setStep(1)}>

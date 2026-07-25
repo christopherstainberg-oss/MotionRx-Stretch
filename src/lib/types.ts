@@ -283,6 +283,10 @@ export interface JournalEntry {
   planAdjustmentNote?: string;
   /** Prompt starter used (if any) */
   promptId?: string;
+  /** Clinical symptom IDs reported today */
+  clinicalSymptomIds?: string[];
+  /** ADL difficulty snapshot for the day */
+  adlEntries?: import("@/data/adls").UserAdlEntry[];
 }
 
 /** Saved pain description profile correlated across the app */
@@ -313,6 +317,10 @@ export interface PainProfile {
   adjectiveSummary?: string[];
   /** Current medications with doses (Assessment) */
   medications?: import("@/data/medications-types").UserMedicationEntry[];
+  /** Clinical symptom IDs (Assessment / Journal) */
+  clinicalSymptomIds?: string[];
+  /** ADL difficulty entries */
+  adlEntries?: import("@/data/adls").UserAdlEntry[];
 }
 
 export interface Routine {
@@ -389,6 +397,14 @@ export interface Routine {
       tendonCaution?: boolean;
       steroidExposure?: boolean;
     };
+    /** Clinical symptoms driving dosing */
+    clinicalSymptomIds?: string[];
+    clinicalSymptomSummary?: string[];
+    clinicalSymptomSuggestions?: string[];
+    /** ADL function entries */
+    adlEntries?: import("@/data/adls").UserAdlEntry[];
+    adlSummary?: string[];
+    adlCoachingTips?: string[];
   };
   selfAdjustHistory: RoutineAdjustment[];
   createdAt: string;
@@ -450,6 +466,10 @@ export interface SymptomInput {
   homeBasedProgram?: boolean;
   /** Current medications with doses from Assessment */
   medications?: import("@/data/medications-types").UserMedicationEntry[];
+  /** Clinically significant symptom IDs */
+  clinicalSymptomIds?: string[];
+  /** Activities of daily living with assistance levels */
+  adlEntries?: import("@/data/adls").UserAdlEntry[];
 }
 
 export interface JefferyMessage {

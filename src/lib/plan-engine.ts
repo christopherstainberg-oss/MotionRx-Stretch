@@ -13,6 +13,8 @@ import { buildClinicalSafetyPlan } from "@/data/clinical-safety";
 import { analyzeAssessmentAdjectives } from "@/data/assessment-adjectives";
 import { pickHomeVariationId } from "@/data/home-variations";
 import { summarizeUserMedications } from "@/data/medications";
+import { summarizeAdlEntries } from "@/data/adls";
+import { summarizeClinicalSymptoms } from "@/data/clinical-symptoms";
 import type {
   BodyPart,
   Difficulty,
@@ -350,10 +352,18 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     protocolNotes: input.protocolNotes,
     concernParagraph: input.concernParagraph,
   });
-  const homeBased = Boolean(input.homeBasedProgram);
   const userMeds = input.medications || [];
   const medSummary =
     userMeds.length > 0 ? summarizeUserMedications(userMeds) : null;
+  const adlEntries = input.adlEntries || [];
+  const adlSummary = adlEntries.length ? summarizeAdlEntries(adlEntries) : null;
+  const clinicalSymptomIds = input.clinicalSymptomIds || [];
+  const sxSummary = clinicalSymptomIds.length
+    ? summarizeClinicalSymptoms(clinicalSymptomIds)
+    : null;
+  // Limited ADLs / seated preference force home-friendly variations
+  const homeBased =
+    Boolean(input.homeBasedProgram) || Boolean(adlSummary?.preferHome);
 
   const textMatched = input.concernParagraph
     ? matchDescriptorsFromText(input.concernParagraph, 8)
@@ -371,15 +381,21 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   );
   const condHints = summarizeConditions(conditionIds);
 
-  // Merge program biases: descriptors + conditions + adjectives + safety
+  // Merge program biases: descriptors + conditions + adjectives + safety + ADLs + symptoms
   const mergedBiases = Array.from(
     new Set([
       ...descHints.biases,
       ...condHints.biases,
       ...adj.programBiases,
       ...(safety.programBiases as ProgramBias[]),
+      ...((sxSummary?.programBiases || []) as ProgramBias[]),
     ])
   ) as ProgramBias[];
+  const extraBiases = new Set<string>([
+    ...(safety.programBiases || []),
+    ...(adlSummary?.programBiases || []),
+    ...(sxSummary?.extraBiases || []),
+  ]);
   const mergedAvoid = Array.from(
     new Set([
       ...descHints.avoidTags,
@@ -413,24 +429,36 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     effectivePainBoost:
       descHints.effectivePainBoost +
       condHints.effectivePainBoost +
-      adj.irritabilityBoost,
+      adj.irritabilityBoost +
+      (sxSummary?.irritabilityBoost ?? 0),
     biases: mergedBiases,
     avoidTags: mergedAvoid,
     preferTags: mergedPrefer,
     stretchBias:
-      (descHints.stretchBias + condHints.stretchBias + adj.stretchBias) / 3,
+      (descHints.stretchBias +
+        condHints.stretchBias +
+        adj.stretchBias +
+        (sxSummary?.stretchBias ?? 0)) /
+      3,
     exerciseBias:
-      (descHints.exerciseBias + condHints.exerciseBias + adj.exerciseBias) / 3,
+      (descHints.exerciseBias +
+        condHints.exerciseBias +
+        adj.exerciseBias +
+        (sxSummary?.exerciseBias ?? 0)) /
+      3,
     redFlags: [
       ...descHints.redFlags,
       ...condHints.redFlags,
       ...safety.redFlags,
+      ...(sxSummary?.redFlags || []),
     ],
     maxDifficulty: pickMaxDiff(
       descHints.maxDifficulty,
       condHints.maxDifficulty,
       adj.maxDifficulty,
-      safety.maxDifficulty
+      safety.maxDifficulty,
+      adlSummary?.maxDifficulty,
+      sxSummary?.maxDifficulty
     ),
     preferKinds: descHints.preferKinds,
   };
@@ -460,15 +488,33 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   if (safety.programBiases.includes("sternal-precautions")) difficulty = "beginner";
   if (safety.programBiases.includes("nwb") || safety.programBiases.includes("ttwb"))
     difficulty = "beginner";
+  if (sxSummary?.redFlags.length || sxSummary?.maxDifficulty === "beginner")
+    difficulty = "beginner";
+  if (adlSummary?.maxDifficulty === "beginner") difficulty = "beginner";
+
+  // Fold clinical symptom labels into free-text symptom chips for scoring
+  const symptomLabels = Array.from(
+    new Set([
+      ...symptoms,
+      ...(sxSummary?.labels || []),
+      ...(adlSummary?.limitedCount
+        ? adlEntries
+            .filter((e) => e.assistance !== "independent")
+            .map((e) => e.label)
+        : []),
+    ])
+  );
 
   const merged: SymptomInput = {
     ...input,
     areas,
-    symptoms,
+    symptoms: symptomLabels,
     goals,
     difficulty,
     painDescriptorIds,
     conditionIds,
+    clinicalSymptomIds,
+    adlEntries,
     painLevels: {
       ...Object.fromEntries(areas.map((a) => [a, input.painLevels[a] ?? parsed?.estimatedPain ?? 3])),
       ...input.painLevels,
@@ -543,6 +589,23 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     ) {
       return false;
     }
+    // ADLs / symptoms: prefer lower impact when fall risk or seated program
+    if (
+      (extraBiases.has("fall-prevention") || extraBiases.has("seated-program")) &&
+      (e.tags.includes("single-leg") ||
+        blob.includes("jump") ||
+        blob.includes("hop") ||
+        blob.includes("run") ||
+        blob.includes("plyo"))
+    ) {
+      return false;
+    }
+    if (
+      extraBiases.has("seated-program") &&
+      (blob.includes("standing balance") || blob.includes("tandem"))
+    ) {
+      return false;
+    }
     return true;
   })
     .map((e) => ({
@@ -565,11 +628,25 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   const exerciseIds: string[] = [];
   let minutes = 0;
   let target = Math.max(8, Math.min(45, input.availableMinutes));
-  target = Math.round(target * safety.minutesScale * adj.minutesScale);
-  if (combinedHints.biases.includes("short-volume")) {
+  target = Math.round(
+    target *
+      safety.minutesScale *
+      adj.minutesScale *
+      (adlSummary?.minutesScale ?? 1) *
+      (sxSummary?.minutesScale ?? 1)
+  );
+  if (
+    combinedHints.biases.includes("short-volume") ||
+    extraBiases.has("short-volume") ||
+    extraBiases.has("seated-program")
+  ) {
     target = Math.min(target, Math.max(8, Math.round(target * 0.7)));
   }
-  if (combinedHints.biases.includes("defer-to-provider") || condHints.clearanceRequired) {
+  if (
+    combinedHints.biases.includes("defer-to-provider") ||
+    condHints.clearanceRequired ||
+    (sxSummary?.redFlags.length ?? 0) > 0
+  ) {
     target = Math.min(target, 10);
   }
   target = Math.max(6, Math.min(45, target));
@@ -827,6 +904,12 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
             steroidExposure: medSummary.steroidExposure,
           }
         : undefined,
+      clinicalSymptomIds,
+      clinicalSymptomSummary: sxSummary?.summaryLines,
+      clinicalSymptomSuggestions: sxSummary?.suggestions?.slice(0, 8),
+      adlEntries: adlEntries.slice(0, 20),
+      adlSummary: adlSummary?.summaryLines,
+      adlCoachingTips: adlSummary?.coachingTips,
     },
     selfAdjustHistory: [adjustment],
     createdAt: new Date().toISOString(),

@@ -37,6 +37,8 @@ export function saveLocalPainProfile(
     homeBasedProgram: partial.homeBasedProgram,
     adjectiveSummary: partial.adjectiveSummary,
     medications: partial.medications,
+    clinicalSymptomIds: partial.clinicalSymptomIds,
+    adlEntries: partial.adlEntries,
     updatedAt: new Date().toISOString(),
   };
   try {

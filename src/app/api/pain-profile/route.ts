@@ -83,6 +83,29 @@ export async function POST(req: Request) {
     homeBasedProgram:
       typeof body.homeBasedProgram === "boolean" ? body.homeBasedProgram : undefined,
     medications: medications as PainProfile["medications"],
+    clinicalSymptomIds: Array.isArray(body.clinicalSymptomIds)
+      ? body.clinicalSymptomIds.map(String).slice(0, 24)
+      : undefined,
+    adlEntries: Array.isArray(body.adlEntries)
+      ? body.adlEntries.slice(0, 24).map((raw: unknown) => {
+          const a = raw as {
+            adlId?: string;
+            label?: string;
+            domain?: string;
+            assistance?: string;
+            notes?: string;
+          };
+          return {
+            adlId: String(a.adlId || "").slice(0, 80),
+            label: sanitizeText(String(a.label || ""), 120),
+            domain: String(a.domain || "self-care") as import("@/data/adls").UserAdlEntry["domain"],
+            assistance: String(
+              a.assistance || "independent"
+            ) as import("@/data/adls").UserAdlEntry["assistance"],
+            notes: a.notes ? sanitizeText(String(a.notes), 200) : undefined,
+          };
+        })
+      : undefined,
   };
 
   await updateDb((db) => {

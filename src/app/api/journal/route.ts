@@ -58,6 +58,33 @@ export async function POST(req: Request) {
     painDescriptorIds: Array.isArray(body.painDescriptorIds)
       ? body.painDescriptorIds.map(String).slice(0, 24)
       : [],
+    clinicalSymptomIds: Array.isArray(body.clinicalSymptomIds)
+      ? body.clinicalSymptomIds.map(String).slice(0, 24)
+      : undefined,
+    adlEntries: Array.isArray(body.adlEntries)
+      ? body.adlEntries.slice(0, 24).map((raw) => {
+          const a = raw as {
+            adlId?: string;
+            label?: string;
+            domain?: string;
+            assistance?: string;
+            notes?: string;
+          };
+          return {
+            adlId: String(a.adlId || "").slice(0, 80),
+            label: sanitizeText(String(a.label || ""), 120),
+            domain: String(a.domain || "self-care").slice(
+              0,
+              40
+            ) as import("@/data/adls").UserAdlEntry["domain"],
+            assistance: String(a.assistance || "independent").slice(
+              0,
+              40
+            ) as import("@/data/adls").UserAdlEntry["assistance"],
+            notes: a.notes ? sanitizeText(String(a.notes), 200) : undefined,
+          };
+        })
+      : undefined,
     modalityIds: Array.isArray(body.modalityIds)
       ? body.modalityIds.map(String).slice(0, 24)
       : undefined,

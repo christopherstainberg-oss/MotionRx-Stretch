@@ -42,7 +42,10 @@ import type {
 import { PainScale } from "@/components/PainScale";
 import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
 import { MedicationPicker } from "@/components/MedicationPicker";
+import { ClinicalSymptomPicker } from "@/components/ClinicalSymptomPicker";
+import { AdlPicker } from "@/components/AdlPicker";
 import { ModalityPlanPanels } from "@/components/ModalitySuggestions";
+import type { UserAdlEntry } from "@/data/adls";
 import {
   averagePainFromAreas,
   loadLocalPainProfile,
@@ -91,19 +94,6 @@ const BODY_AREA_GROUPS: Array<{ id: string; label: string; parts: BodyPart[] }> 
 
 const AREAS: BodyPart[] = BODY_AREA_GROUPS.flatMap((g) => g.parts);
 
-const SYMPTOM_GROUPS: Array<{ id: string; label: string; items: string[] }> = [
-  {
-    id: "feel",
-    label: "How it feels",
-    items: ["stiffness", "morning tightness", "stress tension", "weakness"],
-  },
-  {
-    id: "when",
-    label: "When it shows up",
-    items: ["desk posture", "after workout soreness", "walking discomfort", "limited mobility"],
-  },
-];
-
 const GOAL_CHIPS = [
   "improve flexibility",
   "build strength",
@@ -146,6 +136,8 @@ export default function AssessmentPage() {
   const [protocolNotes, setProtocolNotes] = useState("");
   const [homeBasedProgram, setHomeBasedProgram] = useState(true);
   const [medications, setMedications] = useState<UserMedicationEntry[]>([]);
+  const [clinicalSymptomIds, setClinicalSymptomIds] = useState<string[]>([]);
+  const [adlEntries, setAdlEntries] = useState<UserAdlEntry[]>([]);
   const [step, setStep] = useState(1);
   const [deviceTab, setDeviceTab] = useState<"precautions" | "implants" | "supports">("precautions");
   const [bodyGroupOpen, setBodyGroupOpen] = useState<string>("spine-head");
@@ -164,6 +156,8 @@ export default function AssessmentPage() {
     if (local?.protocolNotes) setProtocolNotes(local.protocolNotes);
     if (local?.homeBasedProgram != null) setHomeBasedProgram(local.homeBasedProgram);
     if (local?.medications?.length) setMedications(local.medications);
+    if (local?.clinicalSymptomIds?.length) setClinicalSymptomIds(local.clinicalSymptomIds);
+    if (local?.adlEntries?.length) setAdlEntries(local.adlEntries);
     fetch("/api/pain-profile")
       .then((r) => r.json())
       .then((d) => {
@@ -179,6 +173,9 @@ export default function AssessmentPage() {
         if (d.profile?.protocolNotes) setProtocolNotes(d.profile.protocolNotes);
         if (d.profile?.homeBasedProgram != null) setHomeBasedProgram(d.profile.homeBasedProgram);
         if (d.profile?.medications?.length) setMedications(d.profile.medications);
+        if (d.profile?.clinicalSymptomIds?.length)
+          setClinicalSymptomIds(d.profile.clinicalSymptomIds);
+        if (d.profile?.adlEntries?.length) setAdlEntries(d.profile.adlEntries);
       })
       .catch(() => {});
   }, []);
@@ -326,6 +323,8 @@ export default function AssessmentPage() {
       protocolNotes: protocolNotes.trim() || undefined,
       homeBasedProgram,
       medications,
+      clinicalSymptomIds,
+      adlEntries,
     };
   }, [
     areas,
@@ -348,6 +347,8 @@ export default function AssessmentPage() {
     protocolNotes,
     homeBasedProgram,
     medications,
+    clinicalSymptomIds,
+    adlEntries,
   ]);
 
   async function createPlan() {
@@ -405,6 +406,8 @@ export default function AssessmentPage() {
       homeBasedProgram,
       adjectiveSummary: routine.generatedFrom?.adjectiveSummary,
       medications,
+      clinicalSymptomIds,
+      adlEntries,
     });
     try {
       localStorage.setItem(`routine:${routine.id}`, JSON.stringify(routine));
@@ -413,6 +416,14 @@ export default function AssessmentPage() {
       localStorage.setItem(
         "clinical-conditions",
         JSON.stringify({ ids: finalConditions, at: new Date().toISOString() })
+      );
+      localStorage.setItem(
+        "clinical-function-profile",
+        JSON.stringify({
+          clinicalSymptomIds,
+          adlEntries,
+          at: new Date().toISOString(),
+        })
       );
       localStorage.setItem(
         "clinical-safety-profile",
@@ -426,6 +437,8 @@ export default function AssessmentPage() {
           assistiveDeviceIds: profile.assistiveDeviceIds,
           homeBasedProgram: profile.homeBasedProgram,
           medications: profile.medications,
+          clinicalSymptomIds,
+          adlEntries,
           at: new Date().toISOString(),
         })
       );
@@ -829,57 +842,74 @@ export default function AssessmentPage() {
             </SubSection>
           )}
 
-          <SubSection title="Symptoms" hint="How it shows up day to day.">
-            <div className="space-y-3">
-              {SYMPTOM_GROUPS.map((group) => (
-                <div key={group.id}>
-                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                    {group.label}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {group.items.map((s) => {
-                      const on = symptoms.includes(s);
-                      return (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => setSymptoms(toggle(symptoms, s))}
-                          className={`rounded-full border px-3 py-1.5 text-sm transition ${chipClass(on)}`}
-                        >
-                          {s}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-              <div className="flex gap-2 pt-1">
-                <input
-                  className="input"
-                  placeholder="Other symptom…"
-                  value={customSymptom}
-                  onChange={(e) => setCustomSymptom(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && customSymptom.trim()) {
-                      setSymptoms((s) => [...s, customSymptom.trim()]);
-                      setCustomSymptom("");
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  className="btn-secondary shrink-0"
-                  onClick={() => {
-                    if (customSymptom.trim()) {
-                      setSymptoms((s) => [...s, customSymptom.trim()]);
-                      setCustomSymptom("");
-                    }
-                  }}
-                >
-                  Add
-                </button>
-              </div>
+          <SubSection
+            title="Clinical symptoms"
+            hint="Evidence-based symptoms that change dosing. Suggestions appear as you select."
+            action={
+              clinicalSymptomIds.length ? (
+                <span className="text-xs font-semibold text-brand-600">
+                  {clinicalSymptomIds.length} selected
+                </span>
+              ) : null
+            }
+          >
+            <ClinicalSymptomPicker
+              value={clinicalSymptomIds}
+              onChange={setClinicalSymptomIds}
+              areas={areas}
+              concernParagraph={paragraph}
+              onInsertParagraph={(snippet) => {
+                setParagraph((p) => (p.trim() ? `${p.trim()}\n\n${snippet}` : snippet));
+              }}
+            />
+            <div className="mt-3 flex gap-2">
+              <input
+                className="input"
+                placeholder="Other free-text symptom…"
+                value={customSymptom}
+                onChange={(e) => setCustomSymptom(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && customSymptom.trim()) {
+                    setSymptoms((s) => [...s, customSymptom.trim()]);
+                    setCustomSymptom("");
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="btn-secondary shrink-0"
+                onClick={() => {
+                  if (customSymptom.trim()) {
+                    setSymptoms((s) => [...s, customSymptom.trim()]);
+                    setCustomSymptom("");
+                  }
+                }}
+              >
+                Add
+              </button>
             </div>
+          </SubSection>
+
+          <SubSection
+            title="Activities of daily living (ADLs)"
+            hint="Rate function. Suggestions use your areas, pain, story, and devices. Limited ADLs reshape the routine."
+            action={
+              adlEntries.length ? (
+                <span className="text-xs font-semibold text-brand-600">{adlEntries.length} rated</span>
+              ) : null
+            }
+          >
+            <AdlPicker
+              value={adlEntries}
+              onChange={setAdlEntries}
+              areas={areas}
+              painLevels={painLevels}
+              assistiveDeviceIds={assistiveDeviceIds}
+              concernParagraph={paragraph}
+              onInsertParagraph={(snippet) => {
+                setParagraph((p) => (p.trim() ? `${p.trim()}\n\n${snippet}` : snippet));
+              }}
+            />
           </SubSection>
 
           <SubSection title="Goals" hint="What you want this plan to help with.">
@@ -1308,6 +1338,8 @@ export default function AssessmentPage() {
                     ? `${precautionIds.length} precautions · ${implantIds.length} implants`
                     : "None selected"}
                   {medications.length ? ` · ${medications.length} meds` : ""}
+                  {clinicalSymptomIds.length ? ` · ${clinicalSymptomIds.length} symptoms` : ""}
+                  {adlEntries.length ? ` · ${adlEntries.length} ADLs` : ""}
                 </span>
               </li>
               <li className="flex gap-2">

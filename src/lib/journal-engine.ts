@@ -10,10 +10,12 @@ import type {
   Routine,
   SessionLog,
 } from "@/lib/types";
-import { adjustRoutineFromFeedback } from "@/lib/plan-engine";
+import { adjustRoutineFromFeedback, applyHomeBasedProgram } from "@/lib/plan-engine";
 import { analyzeAssessmentAdjectives } from "@/data/assessment-adjectives";
 import { matchDescriptorsFromText } from "@/data/pain-descriptors";
 import { matchConditionsFromText } from "@/data/clinical-conditions";
+import { summarizeClinicalSymptoms } from "@/data/clinical-symptoms";
+import { summarizeAdlEntries, type UserAdlEntry } from "@/data/adls";
 import { BODY_PART_LABELS } from "@/data/stretch-library";
 
 export type JournalPrompt = {
@@ -77,6 +79,8 @@ export const JOURNAL_STARTERS: JournalPrompt[] = [
 export const JOURNAL_IMPORTANT_FIELDS = [
   "Overall pain (0–10) and where it is",
   "What you did for movement today (session or daily life)",
+  "ADLs that were hard today (stairs, dressing, walking, desk work)",
+  "Clinically notable symptoms (swelling, radiating pain, night pain, fatigue)",
   "What went well — even small wins",
   "What still bothers you or what to change next",
   "Mood, energy, and sleep (they change dosing)",
@@ -95,6 +99,10 @@ export type JournalAnalysis = {
   difficultyFelt: 1 | 2 | 3 | 4 | 5;
   painForPlan: number;
   tags: string[];
+  symptomSuggestions: string[];
+  adlTips: string[];
+  clinicalSymptomIds: string[];
+  adlEntries: UserAdlEntry[];
 };
 
 const THERAPIST_QUESTIONS = [
@@ -127,10 +135,14 @@ export function analyzeJournalEntry(input: {
   sessionCompleted?: boolean;
   previousEntries?: JournalEntry[];
   recentSessions?: SessionLog[];
+  clinicalSymptomIds?: string[];
+  adlEntries?: UserAdlEntry[];
 }): JournalAnalysis {
   const text = `${input.title} ${input.body} ${input.didWell || ""} ${input.improveNext || ""} ${input.flexibilityNote || ""}`;
   const lower = text.toLowerCase();
   const adj = analyzeAssessmentAdjectives(text);
+  const sx = summarizeClinicalSymptoms(input.clinicalSymptomIds || []);
+  const adl = summarizeAdlEntries(input.adlEntries || []);
   const reasons: string[] = [];
   let signal: JournalProgressionSignal = "maintain";
   let difficultyFelt: 1 | 2 | 3 | 4 | 5 = 3;
@@ -186,6 +198,32 @@ export function analyzeJournalEntry(input: {
     reasons.push("Irritable descriptive language → avoid aggressive progression today.");
   }
 
+  if (sx.redFlags.length) {
+    signal = "flare";
+    difficultyFelt = 5;
+    reasons.push(
+      `Urgent symptom screen (${sx.redFlags.join(", ")}) → protective dosing and medical review.`
+    );
+  } else if (sx.irritabilityBoost >= 1.2 || sx.minutesScale <= 0.75) {
+    if (signal === "progress") signal = "maintain";
+    if (signal === "maintain" && (input.painOverall >= 4 || sx.irritabilityBoost >= 1.5)) {
+      signal = "regress";
+      difficultyFelt = 4;
+    }
+    reasons.push("Selected clinical symptoms raise irritability → ease volume/intensity.");
+  }
+
+  if (adl.limitedCount >= 3) {
+    if (signal === "progress") signal = "maintain";
+    reasons.push(
+      `${adl.limitedCount} limited ADLs → prefer functional, shorter, home-safe dosing.`
+    );
+    if (difficultyFelt < 4 && input.painOverall >= 5) difficultyFelt = 4;
+  } else if (adl.limitedCount >= 1 && signal === "progress") {
+    signal = "maintain";
+    reasons.push("ADL limitations present → hold progression while function rebuilds.");
+  }
+
   const wins: string[] = [];
   if (input.sessionCompleted) wins.push("You showed up for movement today—that consistency drives adaptation.");
   if (input.didWell?.trim()) wins.push(`You named a win: “${input.didWell.trim().slice(0, 120)}”.`);
@@ -217,6 +255,8 @@ export function analyzeJournalEntry(input: {
     improvements.push("If able, schedule a brief mobility bout (even 5–8 minutes) to keep the plan alive.");
   }
   improvements.push("Note one functional task (stairs, desk hour, walk) to track like a mini outcome measure.");
+  for (const tip of sx.suggestions.slice(0, 2)) improvements.push(tip);
+  for (const tip of adl.coachingTips.slice(0, 2)) improvements.push(tip);
 
   const jefferyQuestion = hashPick(THERAPIST_QUESTIONS, text.slice(0, 40) + String(input.painOverall));
 
@@ -224,6 +264,12 @@ export function analyzeJournalEntry(input: {
     `I hear you. From today's journal, the plan signal is **${signal}**.`,
     reasons.slice(0, 2).join(" "),
     `Pain logged at **${input.painOverall}/10** (mood ${input.mood}/5${input.energy ? `, energy ${input.energy}/5` : ""}).`,
+    sx.labels.length
+      ? `Symptoms noted: ${sx.labels.slice(0, 4).join(", ")}.`
+      : "",
+    adl.limitedCount
+      ? `ADL load: ${adl.limitedCount} limited daily activit${adl.limitedCount === 1 ? "y" : "ies"}.`
+      : "",
     signal === "flare"
       ? "We'll treat this as a protective day: easier mobility, less load, and check-in with licensed care if red flags appear."
       : signal === "regress"
@@ -231,24 +277,32 @@ export function analyzeJournalEntry(input: {
         : signal === "progress"
           ? "You're showing readiness cues—we can nudge challenge carefully if the next 24 hours stay calm."
           : "Holding steady is a valid clinical choice; maintenance builds durable capacity.",
-  ].join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const tags = [
     signal,
     input.sessionCompleted ? "session-day" : "reflection-day",
     input.painOverall >= 6 ? "high-pain" : input.painOverall <= 2 ? "low-pain" : "mod-pain",
+    ...(sx.labels.length ? ["symptoms-logged"] : []),
+    ...(adl.limitedCount ? ["adl-limited"] : []),
   ];
 
   return {
     signal,
     reasons,
     wins: wins.slice(0, 4),
-    improvements: improvements.slice(0, 4),
+    improvements: Array.from(new Set(improvements)).slice(0, 6),
     jefferySummary,
     jefferyQuestion,
     difficultyFelt,
     painForPlan: input.painOverall,
     tags,
+    symptomSuggestions: sx.suggestions.slice(0, 6),
+    adlTips: adl.coachingTips.slice(0, 4),
+    clinicalSymptomIds: input.clinicalSymptomIds || [],
+    adlEntries: input.adlEntries || [],
   };
 }
 
@@ -305,6 +359,25 @@ export function applyJournalToRoutine(
 
   next = {
     ...next,
+    // Prefer home variations when journal ADLs show functional limits
+    homeBasedProgram:
+      next.homeBasedProgram ||
+      analysis.adlEntries.some((e) => e.assistance !== "independent") ||
+      undefined,
+    generatedFrom: next.generatedFrom
+      ? {
+          ...next.generatedFrom,
+          clinicalSymptomIds: analysis.clinicalSymptomIds,
+          clinicalSymptomSummary: analysis.symptomSuggestions.slice(0, 4),
+          adlEntries: analysis.adlEntries,
+          adlSummary: analysis.adlEntries.map(
+            (e) => `${e.label}: ${e.assistance}`
+          ),
+          homeBasedProgram:
+            next.homeBasedProgram ||
+            analysis.adlEntries.some((e) => e.assistance !== "independent"),
+        }
+      : next.generatedFrom,
     selfAdjustHistory: [
       ...next.selfAdjustHistory,
       {
@@ -318,6 +391,10 @@ export function applyJournalToRoutine(
     ],
     updatedAt: new Date().toISOString(),
   };
+
+  if (analysis.adlEntries.some((e) => e.assistance !== "independent")) {
+    next = applyHomeBasedProgram(next, true);
+  }
 
   const note =
     analysis.signal === "progress"
