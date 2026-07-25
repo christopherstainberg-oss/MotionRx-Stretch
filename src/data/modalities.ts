@@ -2,7 +2,10 @@
  * Physical therapy modalities catalog — educational, clinically informed.
  * Distinguishes home-safe self-care from clinic-only interventions.
  * Suggestions are adjuncts to movement plans, not replacements for licensed care.
+ * Detailed setup/settings/types live in modality-guides (attached via getModalityGuide).
  */
+
+import type { ModalityGuide } from "@/data/modality-guide-types";
 
 export type ModalitySetting = "home" | "clinic" | "either";
 export type ModalityTiming =
@@ -25,6 +28,8 @@ export type ModalityCategory =
   | "aquatic"
   | "mind-body"
   | "clinic-procedure";
+
+export type { ModalityGuide, InstructionStep, ModalityTypeOption, ModalityControl } from "@/data/modality-guide-types";
 
 export interface Modality {
   id: string;
@@ -64,6 +69,9 @@ export interface Modality {
   outcomeLinks: string[];
   tags: string[];
 }
+
+/** Modality with full proficiency guide (types, settings, setup steps). */
+export type ModalityWithGuide = Modality & { guide: ModalityGuide };
 
 export const MODALITY_CATEGORY_LABELS: Record<ModalityCategory, string> = {
   thermal: "Heat / Thermal",

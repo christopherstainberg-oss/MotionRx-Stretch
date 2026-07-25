@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   MODALITY_CATEGORY_LABELS,
   MODALITY_STATS,
@@ -13,12 +14,14 @@ import {
 import { loadLocalPainProfile } from "@/lib/pain-profile";
 import type { ModalityPlan } from "@/lib/types";
 import { ModalityCard, ModalityPlanPanels } from "@/components/ModalitySuggestions";
+import { AddModalitiesToProgram } from "@/components/AddModalitiesToProgram";
 import { PageHeader } from "@/components/PageHeader";
 import { PainScale } from "@/components/PainScale";
 import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
 import {
   BookOpen,
   Filter,
+  ListPlus,
   Sparkles,
   Stethoscope,
 } from "lucide-react";
@@ -41,8 +44,12 @@ const SETTINGS: Array<{ id: ModalitySetting | "all"; label: string }> = [
   { id: "either", label: "Either setting" },
 ];
 
-export default function ModalitiesPage() {
-  const [tab, setTab] = useState<"suggest" | "browse">("suggest");
+function ModalitiesInner() {
+  const searchParams = useSearchParams();
+  const initialTab = (searchParams.get("tab") as "suggest" | "browse" | "program") || "suggest";
+  const [tab, setTab] = useState<"suggest" | "browse" | "program">(
+    initialTab === "program" || initialTab === "browse" ? initialTab : "suggest"
+  );
   const [pain, setPain] = useState(4);
   const [experience, setExperience] = useState("");
   const [descriptorIds, setDescriptorIds] = useState<string[]>([]);
@@ -182,6 +189,14 @@ export default function ModalitiesPage() {
         </button>
         <button
           type="button"
+          className={tab === "program" ? "btn-primary" : "btn-secondary"}
+          onClick={() => setTab("program")}
+        >
+          <ListPlus className="h-4 w-4" />
+          Add to program
+        </button>
+        <button
+          type="button"
           className={tab === "browse" ? "btn-primary" : "btn-secondary"}
           onClick={() => setTab("browse")}
         >
@@ -193,6 +208,19 @@ export default function ModalitiesPage() {
           Safety & learn
         </Link>
       </div>
+
+      {tab === "program" && (
+        <AddModalitiesToProgram
+          presetIds={
+            plan
+              ? [
+                  ...plan.preVisit.map((m) => m.modalityId),
+                  ...plan.postVisit.map((m) => m.modalityId),
+                ].slice(0, 12)
+              : undefined
+          }
+        />
+      )}
 
       {tab === "suggest" && (
         <div className="space-y-5">
@@ -324,28 +352,35 @@ export default function ModalitiesPage() {
 
           <div className="grid gap-3 sm:grid-cols-2">
             {catalog.map((m) => (
-              <ModalityCard
-                key={m.id}
-                rec={{
-                  modalityId: m.id,
-                  name: m.name,
-                  category: m.category,
-                  setting: m.setting,
-                  timing: m.timings[0] || "between-visits",
-                  score: 0,
-                  confidence: "exploratory",
-                  reasons: m.outcomeLinks.slice(0, 2),
-                  plainLanguage: m.plainLanguage,
-                  howTo: m.howTo,
-                  evidenceNotes: m.evidenceNotes,
-                  durationMinutes: m.durationMinutes,
-                  frequency: m.frequency,
-                  precautions: m.precautions,
-                  contraindications: m.contraindications,
-                  outcomeLinks: m.outcomeLinks,
-                  homeSafe: m.setting === "home" || m.setting === "either",
-                }}
-              />
+              <div key={m.id} className="space-y-2">
+                <ModalityCard
+                  rec={{
+                    modalityId: m.id,
+                    name: m.name,
+                    category: m.category,
+                    setting: m.setting,
+                    timing: m.timings[0] || "between-visits",
+                    score: 0,
+                    confidence: "exploratory",
+                    reasons: m.outcomeLinks.slice(0, 2),
+                    plainLanguage: m.plainLanguage,
+                    howTo: m.howTo,
+                    evidenceNotes: m.evidenceNotes,
+                    durationMinutes: m.durationMinutes,
+                    frequency: m.frequency,
+                    precautions: m.precautions,
+                    contraindications: m.contraindications,
+                    outcomeLinks: m.outcomeLinks,
+                    homeSafe: m.setting === "home" || m.setting === "either",
+                  }}
+                />
+                <Link
+                  href={`/modalities/${m.id}`}
+                  className="inline-flex text-sm font-semibold text-brand-700 hover:underline"
+                >
+                  Full set-up, settings & kid-friendly guide →
+                </Link>
+              </div>
             ))}
           </div>
         </div>
@@ -356,5 +391,13 @@ export default function ModalitiesPage() {
         care drive durable outcomes. Not medical advice.
       </p>
     </div>
+  );
+}
+
+export default function ModalitiesPage() {
+  return (
+    <Suspense fallback={<div className="card p-8 text-center">Loading modalities…</div>}>
+      <ModalitiesInner />
+    </Suspense>
   );
 }

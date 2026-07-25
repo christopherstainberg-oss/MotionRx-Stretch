@@ -697,7 +697,8 @@ export default function AssessPage() {
               </h2>
               <p className="text-sm text-brand-700/80">
                 Matched to your pain rating, descriptors, and written experience—same clinical
-                data that shaped your movement plan.
+                data that shaped your movement plan. Add any of these to your program with pre/post
+                visit flags.
               </p>
             </div>
             <Link href="/modalities" className="text-sm font-semibold text-brand-700 hover:underline">
@@ -705,6 +706,10 @@ export default function AssessPage() {
             </Link>
           </div>
           <ModalityPlanPanels plan={modalityPlan} showLink />
+          <Link href="/modalities?tab=program" className="btn-secondary inline-flex">
+            <Sparkles className="h-4 w-4" />
+            Multi-select & add modalities to program
+          </Link>
         </section>
       )}
     </div>

@@ -56,6 +56,19 @@ export async function POST(req: Request) {
     stretchIds: body.stretchIds.slice(0, 40),
     exerciseIds: (body.exerciseIds || []).slice(0, 40),
     items: body.items.slice(0, 40),
+    modalities: Array.isArray(body.modalities)
+      ? body.modalities.slice(0, 30).map((m) => ({
+          id: String(m.id),
+          modalityId: String(m.modalityId),
+          preVisit: Boolean(m.preVisit),
+          postVisit: Boolean(m.postVisit),
+          preSession: m.preSession !== undefined ? Boolean(m.preSession) : undefined,
+          postSession: m.postSession !== undefined ? Boolean(m.postSession) : undefined,
+          variantId: m.variantId ? String(m.variantId) : undefined,
+          notes: m.notes ? String(m.notes).slice(0, 500) : undefined,
+          order: typeof m.order === "number" ? m.order : undefined,
+        }))
+      : [],
   };
 
   await updateDb((d) => {

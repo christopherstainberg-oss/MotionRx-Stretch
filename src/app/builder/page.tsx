@@ -9,12 +9,16 @@ import {
   addMovementToRoutine,
   ensureRoutineItems,
   removeItemFromRoutine,
+  removeModalityFromRoutine,
   rotateEntireRoutine,
   rotateRoutineItem,
+  updateRoutineModality,
   STARTER_ROUTINES,
 } from "@/lib/routine-engine";
 import type { Routine } from "@/lib/types";
-import { ListPlus, RefreshCw, Trash2 } from "lucide-react";
+import { getModalityById } from "@/data/modalities";
+import { AddModalitiesToProgram } from "@/components/AddModalitiesToProgram";
+import { ListPlus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { v4 as uuid } from "uuid";
 
 function BuilderInner() {
@@ -118,8 +122,8 @@ function BuilderInner() {
             Routine builder
           </h1>
           <p className="mt-1 text-sm text-brand-700/85">
-            Add stretches or exercises from the libraries, rotate one item or the whole routine, and
-            keep a clinically balanced plan.
+            Add stretches, exercises, and PT modalities (with pre-visit / post-visit flags). Rotate
+            movements and keep a clinically balanced plan.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -170,8 +174,105 @@ function BuilderInner() {
         />
         <p className="mt-2 text-xs text-brand-600">
           ~{routine.estimatedMinutes} min · {routine.difficulty} · rotations:{" "}
-          {routine.rotationCount ?? 0} · {resolved.length} movements
+          {routine.rotationCount ?? 0} · {resolved.length} movements ·{" "}
+          {(routine.modalities || []).length} modalities
         </p>
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 font-semibold text-brand-900">
+            <Sparkles className="h-5 w-5 text-brand-600" />
+            Program modalities (pre / post visit)
+          </h2>
+          <Link href="/modalities" className="text-sm font-semibold text-brand-700 hover:underline">
+            Modality hub
+          </Link>
+        </div>
+        {(routine.modalities || []).length === 0 ? (
+          <p className="card p-4 text-sm text-brand-600">
+            No modalities on this program yet—use the picker below to multi-select and flag
+            pre-visit and/or post-visit.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {(routine.modalities || []).map((rm) => {
+              const mod = getModalityById(rm.modalityId);
+              return (
+                <li
+                  key={rm.id}
+                  className="card flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="font-semibold text-brand-900">{mod?.name || rm.modalityId}</p>
+                    <p className="text-xs text-brand-600">
+                      {[
+                        rm.preVisit && "Pre-visit",
+                        rm.postVisit && "Post-visit",
+                        rm.preSession && "Pre-session",
+                        rm.postSession && "Post-session",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "No timing flagged"}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href={`/modalities/${rm.modalityId}`}
+                      className="btn-secondary px-2 py-1 text-xs"
+                    >
+                      Set-up guide
+                    </Link>
+                    <button
+                      type="button"
+                      className="btn-ghost px-2 py-1 text-xs text-red-700"
+                      onClick={() => {
+                        persist(removeModalityFromRoutine(routine, rm.id));
+                        setMsg("Modality removed from program.");
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Remove
+                    </button>
+                  </div>
+                  <div className="flex w-full flex-wrap gap-3 text-xs sm:w-auto">
+                    {(
+                      [
+                        ["preVisit", "Pre-visit"],
+                        ["postVisit", "Post-visit"],
+                        ["preSession", "Pre-session"],
+                        ["postSession", "Post-session"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <label key={key} className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          className="accent-brand-600"
+                          checked={Boolean(rm[key])}
+                          onChange={(e) =>
+                            persist(
+                              updateRoutineModality(routine, rm.id, {
+                                [key]: e.target.checked,
+                              })
+                            )
+                          }
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <AddModalitiesToProgram
+          showProgramList={false}
+          onRoutineChange={(r) => {
+            setRoutine(r);
+            setMsg("Program modalities updated.");
+          }}
+        />
       </section>
 
       <section className="space-y-3">

@@ -8,16 +8,71 @@ import { getExerciseById } from "@/data/exercise-library";
 import {
   adjustRoutineFromFeedback,
   ensureRoutineItems,
+  modalitiesForPhase,
   STARTER_ROUTINES,
 } from "@/lib/routine-engine";
-import type { ModalityRecommendation, Routine } from "@/lib/types";
+import type { ModalityRecommendation, Routine, RoutineModality } from "@/lib/types";
 import { postSessionModalitySuggestions } from "@/lib/modality-engine";
+import { getModalityById } from "@/data/modalities";
+import { getModalityGuide } from "@/data/modality-guides";
 import { PainScale } from "@/components/PainScale";
 import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
 import { ModalityMiniList } from "@/components/ModalitySuggestions";
 import { loadLocalPainProfile, saveLocalPainProfile } from "@/lib/pain-profile";
-import { CheckCircle2, ChevronRight } from "lucide-react";
+import { CheckCircle2, ChevronRight, Sparkles } from "lucide-react";
 import { v4 as uuid } from "uuid";
+
+function ProgramModalityBlock({
+  title,
+  items,
+}: {
+  title: string;
+  items: RoutineModality[];
+}) {
+  if (!items.length) return null;
+  return (
+    <div className="card space-y-3 p-5">
+      <h2 className="flex items-center gap-2 font-semibold text-brand-950">
+        <Sparkles className="h-5 w-5 text-brand-600" />
+        {title}
+      </h2>
+      <ul className="space-y-3">
+        {items.map((rm) => {
+          const mod = getModalityById(rm.modalityId);
+          const guide = mod ? getModalityGuide(mod) : null;
+          const type =
+            guide?.types.find((t) => t.id === rm.variantId) || guide?.types[0];
+          return (
+            <li key={rm.id} className="rounded-xl border border-brand-100 p-3">
+              <p className="font-semibold text-brand-900">{mod?.name || rm.modalityId}</p>
+              <p className="text-xs text-brand-600">{mod?.plainLanguage}</p>
+              {type && (
+                <p className="mt-1 text-[11px] text-brand-500">
+                  Type: {type.name}
+                </p>
+              )}
+              {type && (
+                <ol className="mt-2 list-decimal space-y-1 pl-4 text-xs text-brand-800">
+                  {type.setupSteps.slice(0, 5).map((s) => (
+                    <li key={s.order}>
+                      <strong>{s.title}:</strong> {s.kidFriendly || s.instruction}
+                    </li>
+                  ))}
+                </ol>
+              )}
+              <Link
+                href={`/modalities/${rm.modalityId}`}
+                className="mt-2 inline-block text-xs font-semibold text-brand-700 hover:underline"
+              >
+                Full set-up & settings →
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 function SessionInner() {
   const params = useSearchParams();
@@ -26,7 +81,7 @@ function SessionInner() {
   const [painBefore, setPainBefore] = useState(3);
   const [painAfter, setPainAfter] = useState(2);
   const [difficultyFelt, setDifficultyFelt] = useState<1 | 2 | 3 | 4 | 5>(3);
-  const [phase, setPhase] = useState<"intro" | "active" | "done">("intro");
+  const [phase, setPhase] = useState<"intro" | "pre-mod" | "active" | "post-mod" | "done">("intro");
   const [adjusted, setAdjusted] = useState<Routine | null>(null);
   const [notes, setNotes] = useState("");
   const [descriptorIds, setDescriptorIds] = useState<string[]>([]);
@@ -123,7 +178,12 @@ function SessionInner() {
       notes,
       completed: true,
       painDescriptorIds: descriptorIds,
-      modalityIds: mods.map((m) => m.modalityId),
+      modalityIds: Array.from(
+        new Set([
+          ...mods.map((m) => m.modalityId),
+          ...(routine.modalities || []).map((m) => m.modalityId),
+        ])
+      ),
     };
     localStorage.setItem(`session:${session.id}`, JSON.stringify(session));
     localStorage.setItem(`routine:${next.id}`, JSON.stringify(next));
@@ -174,6 +234,11 @@ function SessionInner() {
     );
   }
 
+  const preSessionMods = modalitiesForPhase(routine, "pre-session");
+  const postSessionMods = modalitiesForPhase(routine, "post-session");
+  const preVisitMods = modalitiesForPhase(routine, "pre-visit");
+  const postVisitMods = modalitiesForPhase(routine, "post-visit");
+
   if (phase === "intro") {
     return (
       <div className="mx-auto max-w-lg space-y-4">
@@ -187,6 +252,24 @@ function SessionInner() {
             id="pain-before"
           />
         </div>
+        {(routine.modalities || []).length > 0 && (
+          <div className="card space-y-2 p-4 text-sm">
+            <p className="font-semibold text-brand-900">Program modalities</p>
+            <p className="text-xs text-brand-600">
+              Pre-session: {preSessionMods.length} · Post-session: {postSessionMods.length} ·
+              Pre-visit flags: {preVisitMods.length} · Post-visit flags: {postVisitMods.length}
+            </p>
+            <ul className="text-xs text-brand-700">
+              {(routine.modalities || []).slice(0, 6).map((rm) => (
+                <li key={rm.id}>
+                  • {getModalityById(rm.modalityId)?.name || rm.modalityId}
+                  {rm.preVisit ? " (pre-visit)" : ""}
+                  {rm.postVisit ? " (post-visit)" : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {(routine.generatedFrom?.descriptorSummary || []).length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {routine.generatedFrom!.descriptorSummary!.map((d) => (
@@ -207,8 +290,51 @@ function SessionInner() {
             </li>
           ))}
         </ol>
+        <button
+          type="button"
+          className="btn-primary w-full"
+          onClick={() => setPhase(preSessionMods.length ? "pre-mod" : "active")}
+        >
+          {preSessionMods.length ? "Continue to pre-session modalities" : "Begin session"}
+        </button>
+      </div>
+    );
+  }
+
+  if (phase === "pre-mod") {
+    return (
+      <div className="mx-auto max-w-lg space-y-4">
+        <ProgramModalityBlock
+          title="Pre-session / pre-visit prep modalities"
+          items={preSessionMods.length ? preSessionMods : preVisitMods}
+        />
         <button type="button" className="btn-primary w-full" onClick={() => setPhase("active")}>
-          Begin session
+          Start stretch & exercise program
+          <ChevronRight className="h-4 w-4" />
+        </button>
+        <button type="button" className="btn-ghost w-full" onClick={() => setPhase("active")}>
+          Skip modalities this time
+        </button>
+      </div>
+    );
+  }
+
+  if (phase === "post-mod") {
+    return (
+      <div className="mx-auto max-w-lg space-y-4">
+        <ProgramModalityBlock
+          title="Post-session / post-visit modalities"
+          items={postSessionMods.length ? postSessionMods : postVisitMods}
+        />
+        <button
+          type="button"
+          className="btn-primary w-full"
+          onClick={() => {
+            setStep(movements.length);
+            setPhase("active");
+          }}
+        >
+          Continue to session feedback
         </button>
       </div>
     );
@@ -392,7 +518,21 @@ function SessionInner() {
         >
           Back
         </button>
-        <button type="button" className="btn-primary flex-1" onClick={() => setStep((s) => s + 1)}>
+        <button
+          type="button"
+          className="btn-primary flex-1"
+          onClick={() => {
+            if (step + 1 >= movements.length) {
+              const hasPost =
+                modalitiesForPhase(routine, "post-session").length > 0 ||
+                modalitiesForPhase(routine, "post-visit").length > 0;
+              if (hasPost) setPhase("post-mod");
+              else setStep((s) => s + 1);
+            } else {
+              setStep((s) => s + 1);
+            }
+          }}
+        >
           {step + 1 >= movements.length ? "Finish" : "Next"}
           <ChevronRight className="h-4 w-4" />
         </button>

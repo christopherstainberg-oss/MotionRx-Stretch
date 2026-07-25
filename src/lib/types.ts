@@ -153,6 +153,27 @@ export interface RoutineItem {
   rotationSeed?: number;
 }
 
+/**
+ * Modality attached to a stretch/exercise program.
+ * User can flag pre-visit and/or post-visit (and optional session phases).
+ */
+export interface RoutineModality {
+  id: string;
+  modalityId: string;
+  /** User selected: use before PT visit */
+  preVisit: boolean;
+  /** User selected: use after PT visit */
+  postVisit: boolean;
+  /** Also run before home stretch/exercise session */
+  preSession?: boolean;
+  /** Also run after home stretch/exercise session */
+  postSession?: boolean;
+  /** Selected multi-type option (e.g. conventional vs burst TENS) */
+  variantId?: string;
+  notes?: string;
+  order?: number;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -252,6 +273,8 @@ export interface Routine {
   stretchIds: string[];
   exerciseIds?: string[];
   items: RoutineItem[];
+  /** Modalities included in this stretch/exercise program */
+  modalities?: RoutineModality[];
   estimatedMinutes: number;
   difficulty: Difficulty;
   isPersonalized: boolean;

@@ -49,7 +49,12 @@ export function ModalityCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
-            <h3 className="font-semibold text-brand-950">{rec.name}</h3>
+            <Link
+              href={`/modalities/${rec.modalityId}`}
+              className="font-semibold text-brand-950 hover:underline"
+            >
+              {rec.name}
+            </Link>
             <ConfidenceChip c={rec.confidence} />
           </div>
           <p className="mt-1 text-sm text-brand-700/90">{rec.plainLanguage}</p>
@@ -120,6 +125,15 @@ export function ModalityCard({
           )}
         </div>
       )}
+
+      <div className="mt-2">
+        <Link
+          href={`/modalities/${rec.modalityId}`}
+          className="text-xs font-semibold text-brand-700 hover:underline"
+        >
+          Full set-up & settings guide →
+        </Link>
+      </div>
 
       {onLog && (
         <div className="mt-3 flex flex-wrap items-center gap-2">

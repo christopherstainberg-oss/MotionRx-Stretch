@@ -11,6 +11,7 @@ import type {
   Routine,
   RoutineAdjustment,
   RoutineItem,
+  RoutineModality,
   SymptomInput,
 } from "@/lib/types";
 import { v4 as uuid } from "uuid";
@@ -715,12 +716,143 @@ export function adjustRoutineFromFeedback(
 }
 
 export function ensureRoutineItems(routine: Routine): Routine {
-  if (routine.items?.length) return routine;
-  const items: RoutineItem[] = [
-    ...(routine.stretchIds || []).map((id) => toItem(id, "stretch" as const)),
-    ...(routine.exerciseIds || []).map((id) => toItem(id, "exercise" as const)),
-  ];
-  return { ...routine, items };
+  const withItems = routine.items?.length
+    ? routine
+    : {
+        ...routine,
+        items: [
+          ...(routine.stretchIds || []).map((id) => toItem(id, "stretch" as const)),
+          ...(routine.exerciseIds || []).map((id) => toItem(id, "exercise" as const)),
+        ] as RoutineItem[],
+      };
+  return {
+    ...withItems,
+    modalities: Array.isArray(withItems.modalities) ? withItems.modalities : [],
+  };
+}
+
+export function addModalityToRoutine(
+  routine: Routine,
+  modalityId: string,
+  opts: {
+    preVisit?: boolean;
+    postVisit?: boolean;
+    preSession?: boolean;
+    postSession?: boolean;
+    variantId?: string;
+    notes?: string;
+  } = {}
+): Routine {
+  const r = ensureRoutineItems(routine);
+  const preVisit = opts.preVisit ?? true;
+  const postVisit = opts.postVisit ?? false;
+  const existing = (r.modalities || []).find((m) => m.modalityId === modalityId);
+  if (existing) {
+    const modalities = (r.modalities || []).map((m) =>
+      m.modalityId === modalityId
+        ? {
+            ...m,
+            preVisit: opts.preVisit !== undefined ? opts.preVisit : m.preVisit || preVisit,
+            postVisit: opts.postVisit !== undefined ? opts.postVisit : m.postVisit || postVisit,
+            preSession: opts.preSession !== undefined ? opts.preSession : m.preSession,
+            postSession: opts.postSession !== undefined ? opts.postSession : m.postSession,
+            variantId: opts.variantId ?? m.variantId,
+            notes: opts.notes ?? m.notes,
+          }
+        : m
+    );
+    return {
+      ...r,
+      modalities,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  const entry: RoutineModality = {
+    id: uuid(),
+    modalityId,
+    preVisit,
+    postVisit,
+    preSession: opts.preSession ?? preVisit,
+    postSession: opts.postSession ?? postVisit,
+    variantId: opts.variantId,
+    notes: opts.notes,
+    order: (r.modalities || []).length,
+  };
+  return {
+    ...r,
+    modalities: [...(r.modalities || []), entry],
+    updatedAt: new Date().toISOString(),
+    selfAdjustHistory: [
+      ...r.selfAdjustHistory,
+      {
+        at: new Date().toISOString(),
+        reason: "User added modality to program",
+        painFactor: 0,
+        action: "modify",
+        details: `Added modality ${modalityId} (pre-visit: ${preVisit}, post-visit: ${postVisit}).`,
+        source: "builder",
+      },
+    ],
+  };
+}
+
+export function addModalitiesToRoutine(
+  routine: Routine,
+  modalityIds: string[],
+  opts: {
+    preVisit?: boolean;
+    postVisit?: boolean;
+    preSession?: boolean;
+    postSession?: boolean;
+  } = {}
+): Routine {
+  return modalityIds.reduce(
+    (r, id) => addModalityToRoutine(r, id, opts),
+    ensureRoutineItems(routine)
+  );
+}
+
+export function updateRoutineModality(
+  routine: Routine,
+  instanceId: string,
+  patch: Partial<
+    Pick<
+      RoutineModality,
+      "preVisit" | "postVisit" | "preSession" | "postSession" | "variantId" | "notes" | "order"
+    >
+  >
+): Routine {
+  const r = ensureRoutineItems(routine);
+  return {
+    ...r,
+    modalities: (r.modalities || []).map((m) =>
+      m.id === instanceId ? { ...m, ...patch } : m
+    ),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function removeModalityFromRoutine(routine: Routine, instanceId: string): Routine {
+  const r = ensureRoutineItems(routine);
+  return {
+    ...r,
+    modalities: (r.modalities || []).filter((m) => m.id !== instanceId),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function modalitiesForPhase(
+  routine: Routine,
+  phase: "pre-visit" | "post-visit" | "pre-session" | "post-session"
+): RoutineModality[] {
+  const list = ensureRoutineItems(routine).modalities || [];
+  return list.filter((m) => {
+    if (phase === "pre-visit") return m.preVisit;
+    if (phase === "post-visit") return m.postVisit;
+    if (phase === "pre-session") return m.preSession ?? m.preVisit;
+    if (phase === "post-session") return m.postSession ?? m.postVisit;
+    return false;
+  });
 }
 
 export { generateHybridPlan as generateRoutine };
