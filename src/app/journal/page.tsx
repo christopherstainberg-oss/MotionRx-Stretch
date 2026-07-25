@@ -26,6 +26,7 @@ import {
   buildJournalJefferyReply,
   painTrendLabel,
 } from "@/lib/journal-engine";
+import { ClinicalCorrelationCard } from "@/components/ClinicalCorrelationCard";
 import {
   BookOpen,
   Bot,
@@ -382,6 +383,8 @@ export default function JournalPage() {
           plan from today&apos;s pattern.
         </p>
       </header>
+
+      <ClinicalCorrelationCard section="journal" variant="compact" />
 
       {/* Step indicator */}
       <nav aria-label="Journal steps">

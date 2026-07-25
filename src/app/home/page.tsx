@@ -13,6 +13,7 @@ import { DEFAULT_APP_NAME } from "@/data/names";
 import { STARTER_ROUTINES } from "@/lib/routine-engine";
 import { AppLogo } from "@/components/Icons";
 import { HomeSearch } from "@/components/HomeSearch";
+import { ClinicalCorrelationCard } from "@/components/ClinicalCorrelationCard";
 
 export const metadata = { title: "Home" };
 
@@ -90,6 +91,8 @@ export default function HomePage() {
           </Link>
         </div>
       </section>
+
+      <ClinicalCorrelationCard section="home" />
 
       {/* Plan path */}
       <section>

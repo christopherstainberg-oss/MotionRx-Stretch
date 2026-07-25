@@ -50,6 +50,43 @@ export function correlateInsights(input: {
     .slice(0, 8)
     .map(([id]) => id);
 
+  // Assessment story free-text correlation
+  if (input.painProfile?.freeText?.trim()) {
+    const story = input.painProfile.freeText.trim();
+    insights.push({
+      id: uuid(),
+      title: "Assessment story is the source of truth",
+      summary: `Your Assessment free-text story is correlated into Plan, modalities, Jeffery, and this Insights board: “${story.slice(0, 180)}${story.length > 180 ? "…" : ""}”`,
+      severity: "info",
+      sources: ["pain", "routines", "journal"],
+      recommendation:
+        "Update Assessment Story (including Q&A) when symptoms or medical history change so every section stays aligned.",
+      at: now,
+    });
+    if (input.painProfile.pastMedicalHistory || input.painProfile.currentMedicalHistory) {
+      insights.push({
+        id: uuid(),
+        title: "Medical history linked from Assessment",
+        summary: [
+          input.painProfile.pastMedicalHistory
+            ? `PMH: ${input.painProfile.pastMedicalHistory.slice(0, 120)}`
+            : null,
+          input.painProfile.currentMedicalHistory
+            ? `Current: ${input.painProfile.currentMedicalHistory.slice(0, 120)}`
+            : null,
+          input.painProfile.sex ? `Sex context: ${input.painProfile.sex}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        severity: "caution",
+        sources: ["pain", "modalities", "routines"],
+        recommendation:
+          "History informs conservative dosing, modality education, and Jeffery coaching across the app.",
+        at: now,
+      });
+    }
+  }
+
   if (topDesc.length) {
     const labels = getDescriptorsByIds(topDesc).map((d) => d.label);
     const hints = summarizeDescriptors(topDesc);

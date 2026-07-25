@@ -9,6 +9,7 @@ import { getDescriptorById } from "@/data/pain-descriptors";
 import { getModalityById } from "@/data/modalities";
 import { Network, Sparkles } from "lucide-react";
 import Link from "next/link";
+import { ClinicalCorrelationCard } from "@/components/ClinicalCorrelationCard";
 
 export default function InsightsPage() {
   const [insights, setInsights] = useState<CorrelatedInsight[]>([]);
@@ -83,6 +84,8 @@ export default function InsightsPage() {
           are analyzed together—like an outpatient re-eval of the full story, not one number alone.
         </p>
       </div>
+
+      <ClinicalCorrelationCard section="insights" />
 
       {painProfile && (painProfile.descriptorIds || []).length > 0 && (
         <section className="card border-brand-200 bg-brand-50/40 p-5">

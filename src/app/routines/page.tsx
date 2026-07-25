@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { STARTER_ROUTINES } from "@/lib/routine-engine";
 import { ListChecks } from "lucide-react";
+import { ClinicalCorrelationCard } from "@/components/ClinicalCorrelationCard";
 
 export const metadata = { title: "Routines" };
 
@@ -28,6 +29,8 @@ export default function RoutinesPage() {
           </Link>
         </div>
       </div>
+
+      <ClinicalCorrelationCard section="routines" />
 
       <div className="grid gap-4 md:grid-cols-2">
         {STARTER_ROUTINES.map((r) => (

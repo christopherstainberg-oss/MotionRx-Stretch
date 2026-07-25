@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { JefferyMessage, Routine } from "@/lib/types";
+import { ClinicalCorrelationCard } from "@/components/ClinicalCorrelationCard";
+import { clinicalContextPromptBlob } from "@/lib/clinical-context";
 import { Bot, Send } from "lucide-react";
 
 export default function JefferyPage() {
@@ -49,7 +51,11 @@ export default function JefferyPage() {
       const res = await fetch("/api/jeffery", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({
+          message: text,
+          /** Client-side Assessment story + Q&A correlation blob */
+          clinicalContext: clinicalContextPromptBlob(),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -103,9 +109,11 @@ export default function JefferyPage() {
         </h1>
         <p className="mt-1.5 text-sm leading-relaxed text-brand-700/85">
           Ask about pain, progress, or your plan. Jeffery can educate you and adjust your program
-          from the conversation.
+          from the conversation — including your Assessment story and Q&amp;A.
         </p>
       </div>
+
+      <ClinicalCorrelationCard section="jeffery" variant="compact" />
 
       <div
         className="card flex flex-col overflow-hidden"

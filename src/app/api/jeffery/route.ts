@@ -35,6 +35,10 @@ export async function POST(req: Request) {
   if (!text) {
     return NextResponse.json({ error: "Empty message" }, { status: 400 });
   }
+  const clinicalContext =
+    typeof body.clinicalContext === "string"
+      ? sanitizeText(body.clinicalContext, 6000)
+      : "";
 
   const { userId } = await getActorId();
   const db = await readDb();
@@ -62,16 +66,38 @@ export async function POST(req: Request) {
     .filter((p) => p.userId === userId)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
 
+  // Prefer live Assessment story from client correlation blob when present
+  let freeText = painProfile?.freeText;
+  let pastMedicalHistory = painProfile?.pastMedicalHistory;
+  let currentMedicalHistory = painProfile?.currentMedicalHistory;
+  let sex = painProfile?.sex;
+  let preferredName: string | undefined;
+  if (clinicalContext) {
+    const storyM = clinicalContext.match(/Assessment story:\s*([^\n]+(?:\n(?![A-Z][a-z]+:)[^\n]+)*)/i);
+    if (storyM?.[1]) freeText = storyM[1].trim().slice(0, 2000);
+    const pmhM = clinicalContext.match(/PMH:\s*([^\n]+)/i);
+    if (pmhM?.[1]) pastMedicalHistory = pmhM[1].trim().slice(0, 500);
+    const cmhM = clinicalContext.match(/Current Hx:\s*([^\n]+)/i);
+    if (cmhM?.[1]) currentMedicalHistory = cmhM[1].trim().slice(0, 500);
+    const sexM = clinicalContext.match(/Sex:\s*([^\n]+)/i);
+    if (sexM?.[1]) sex = sexM[1].trim().slice(0, 40) as typeof sex;
+    const nameM = clinicalContext.match(/Preferred name:\s*([^\n]+)/i);
+    if (nameM?.[1]) preferredName = nameM[1].trim().slice(0, 40);
+  }
+
   const reply = await jefferyReply(text, {
     routines,
     sessions,
     journal,
     thread,
     painDescriptorIds: painProfile?.descriptorIds,
-    sex: painProfile?.sex,
-    pastMedicalHistory: painProfile?.pastMedicalHistory,
-    currentMedicalHistory: painProfile?.currentMedicalHistory,
-    freeText: painProfile?.freeText,
+    sex,
+    pastMedicalHistory,
+    currentMedicalHistory,
+    freeText: freeText
+      ? `${freeText}${clinicalContext ? `\n\n[Assessment Q&A context]\n${clinicalContext.slice(0, 2500)}` : ""}`
+      : clinicalContext || undefined,
+    preferredName,
   });
 
   thread.messages.push(reply.message);

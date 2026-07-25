@@ -72,6 +72,12 @@ import {
   type SexSelection,
 } from "@/lib/clinical-history";
 import {
+  loadAssessmentQa,
+  loadClinicalContext,
+  saveAssessmentQa,
+  saveClinicalContext,
+} from "@/lib/clinical-context";
+import {
   Check,
   ChevronLeft,
   ChevronRight,
@@ -355,6 +361,16 @@ export default function AssessmentPage() {
     if (local?.sex) setSex(local.sex);
     if (local?.pastMedicalHistory) setPastMedicalHistory(local.pastMedicalHistory);
     if (local?.currentMedicalHistory) setCurrentMedicalHistory(local.currentMedicalHistory);
+    const qaStored = loadAssessmentQa();
+    if (qaStored.length) setCoachLog(qaStored);
+    const ctx = loadClinicalContext();
+    if (ctx?.freeText && !local?.freeText) setParagraph(ctx.freeText);
+    if (ctx?.sex && !local?.sex) setSex(ctx.sex);
+    if (ctx?.pastMedicalHistory && !local?.pastMedicalHistory)
+      setPastMedicalHistory(ctx.pastMedicalHistory);
+    if (ctx?.currentMedicalHistory && !local?.currentMedicalHistory)
+      setCurrentMedicalHistory(ctx.currentMedicalHistory);
+    if (ctx?.writtenApproach) setWrittenApproach(ctx.writtenApproach);
     fetch("/api/pain-profile")
       .then((r) => r.json())
       .then((d) => {
@@ -523,6 +539,34 @@ export default function AssessmentPage() {
       setCurrentMedicalHistory((prev) => mergeHistoryText(prev, hist.currentMedicalHistory));
     }
   }, [debouncedParagraph, autoApplyHistory]);
+
+  // Keep cross-app clinical context in sync as the story evolves
+  useEffect(() => {
+    if (debouncedParagraph.trim().length < 4 && !coachLog.length) return;
+    saveClinicalContext({
+      freeText: debouncedParagraph,
+      preferredName: displayPreferredName(preferredName),
+      sex: sex || undefined,
+      pastMedicalHistory: pastMedicalHistory.trim() || undefined,
+      currentMedicalHistory: currentMedicalHistory.trim() || undefined,
+      areas,
+      goals,
+      descriptorIds,
+      qa: coachLog,
+      writtenApproach: writtenApproach || undefined,
+    });
+  }, [
+    debouncedParagraph,
+    preferredName,
+    sex,
+    pastMedicalHistory,
+    currentMedicalHistory,
+    areas,
+    goals,
+    descriptorIds,
+    coachLog,
+    writtenApproach,
+  ]);
 
   useEffect(() => {
     if (ageYears !== "" && Number(ageYears) > 0) {
@@ -703,7 +747,22 @@ export default function AssessmentPage() {
       answer,
       at: new Date().toISOString(),
     };
-    setCoachLog((prev) => [...prev, entry].slice(-12));
+    setCoachLog((prev) => {
+      const next = [...prev, entry].slice(-24);
+      saveAssessmentQa(next);
+      saveClinicalContext({
+        freeText: paragraph,
+        preferredName: displayPreferredName(preferredName),
+        sex: sex || undefined,
+        pastMedicalHistory: pastMedicalHistory.trim() || undefined,
+        currentMedicalHistory: currentMedicalHistory.trim() || undefined,
+        areas,
+        goals,
+        descriptorIds,
+        qa: next,
+      });
+      return next;
+    });
     setCoachQuestion("");
   }
 
@@ -740,6 +799,24 @@ export default function AssessmentPage() {
     setModalityPlan(modPlan);
     setStep(5);
     setSaving(true);
+    saveClinicalContext({
+      freeText: paragraph,
+      preferredName: displayPreferredName(preferredName),
+      sex: sex || undefined,
+      pastMedicalHistory: pastMedicalHistory.trim() || undefined,
+      currentMedicalHistory: currentMedicalHistory.trim() || undefined,
+      areas,
+      goals,
+      descriptorIds,
+      conditionIds: paragraphConditions,
+      overallPain: averagePainFromAreas(
+        painLevels,
+        areas.length ? areas : (["full-body"] as BodyPart[])
+      ),
+      qa: coachLog,
+      writtenApproach: approach,
+      routineId: routine.id,
+    });
     const finalDesc =
       routine.generatedFrom?.painDescriptorIds || input.painDescriptorIds || descriptorIds;
     setDescriptorIds(finalDesc);
@@ -976,12 +1053,23 @@ export default function AssessmentPage() {
           </SubSection>
 
           <SubSection
-            title={`Ask a question${
-              preferredName ? `, ${displayPreferredName(preferredName)}` : ""
+            title={`Questions & answers${
+              preferredName ? ` · ${displayPreferredName(preferredName)}` : ""
             }`}
-            hint="Clarifying questions appear when history is incomplete. Answers use your full story."
+            hint="Ask about your story, history, or plan. Q&A is saved and correlated into Plan, Jeffery, Journal, Insights, and Modalities."
+            action={
+              coachLog.length > 0 ? (
+                <span className="text-xs font-semibold text-brand-600">
+                  {coachLog.length} saved
+                </span>
+              ) : null
+            }
           >
-            <div className="space-y-3">
+            <div className="space-y-3 rounded-xl border border-brand-200 bg-white/80 p-3 dark:border-brand-700 dark:bg-brand-950/60 sm:p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-brand-900">
+                <MessageCircleQuestion className="h-4 w-4 text-brand-600" />
+                Assessment Story Q&amp;A
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 {suggestedAssessmentQuestions(sex || undefined, {
                   pastMedicalHistory,
@@ -1009,8 +1097,8 @@ export default function AssessmentPage() {
                       askCoach();
                     }
                   }}
-                  placeholder="Type your question…"
-                  aria-label="Ask a question about your assessment"
+                  placeholder="Type a question or add a clarifying detail…"
+                  aria-label="Ask a question about your assessment story"
                   autoComplete="off"
                 />
                 <button
@@ -1023,8 +1111,8 @@ export default function AssessmentPage() {
                   <Send className="h-4 w-4" />
                 </button>
               </div>
-              {coachLog.length > 0 && (
-                <ul className="max-h-64 space-y-2.5 overflow-y-auto rounded-xl border border-brand-100 bg-brand-50/40 p-3 dark:border-brand-800 dark:bg-brand-950/40">
+              {coachLog.length > 0 ? (
+                <ul className="max-h-72 space-y-2.5 overflow-y-auto rounded-xl border border-brand-100 bg-brand-50/40 p-3 dark:border-brand-800 dark:bg-brand-950/40">
                   {coachLog.map((ex) => (
                     <li key={ex.id} className="text-sm">
                       <p className="flex items-start gap-1.5 font-semibold text-brand-900">
@@ -1037,10 +1125,15 @@ export default function AssessmentPage() {
                     </li>
                   ))}
                 </ul>
+              ) : (
+                <p className="rounded-lg bg-brand-50/80 px-3 py-2 text-xs text-brand-600 dark:bg-brand-900/40">
+                  No questions yet. Tap a chip or type your own — answers use your paragraph, sex,
+                  and medical history, then sync across the app.
+                </p>
               )}
               <p className="text-[11px] leading-relaxed text-brand-500">
-                Educational answers only. Not a diagnosis. Preferred name is set at registration or
-                under Account.
+                Educational only — not a diagnosis. Q&amp;A threads travel with your story to Plan,
+                Jeffery, Journal, Insights, and Modalities.
               </p>
             </div>
           </SubSection>

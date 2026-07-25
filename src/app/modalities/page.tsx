@@ -18,6 +18,8 @@ import { AddModalitiesToProgram } from "@/components/AddModalitiesToProgram";
 import { PageHeader } from "@/components/PageHeader";
 import { PainScale } from "@/components/PainScale";
 import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
+import { ClinicalCorrelationCard } from "@/components/ClinicalCorrelationCard";
+import { loadClinicalContext } from "@/lib/clinical-context";
 import {
   BookOpen,
   Filter,
@@ -81,9 +83,21 @@ function ModalitiesInner() {
 
   useEffect(() => {
     const local = loadLocalPainProfile();
+    const clinical = loadClinicalContext();
     if (local?.descriptorIds?.length) setDescriptorIds(local.descriptorIds);
-    if (local?.freeText) setExperience(local.freeText);
+    else if (clinical?.descriptorIds?.length) setDescriptorIds(clinical.descriptorIds);
+    const story =
+      clinical?.freeText ||
+      local?.freeText ||
+      [
+        clinical?.pastMedicalHistory ? `PMH: ${clinical.pastMedicalHistory}` : "",
+        clinical?.currentMedicalHistory ? `Current: ${clinical.currentMedicalHistory}` : "",
+      ]
+        .filter(Boolean)
+        .join(". ");
+    if (story) setExperience(story);
     if (typeof local?.overallPain === "number") setPain(local.overallPain);
+    else if (typeof clinical?.overallPain === "number") setPain(clinical.overallPain);
     fetch("/api/pain-profile")
       .then((r) => r.json())
       .then((d) => {
@@ -193,6 +207,8 @@ function ModalitiesInner() {
           </Link>
         }
       />
+
+      <ClinicalCorrelationCard section="modalities" variant="compact" />
 
       <div className="flex flex-wrap gap-2">
         <button
