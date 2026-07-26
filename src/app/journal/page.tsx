@@ -39,6 +39,14 @@ import {
 } from "@/lib/journal-intelligence";
 import { useDebouncedValue } from "@/lib/hooks";
 import type { ConversationPrompt } from "@/lib/assessment-story-conversation";
+import {
+  ConversationSettleActions,
+  ConversationSpeedControl,
+} from "@/components/ConversationSpeedControl";
+import {
+  useAnswerSettleCountdown,
+  useConversationSpeed,
+} from "@/lib/use-conversation-speed";
 import { ClinicalCorrelationCard } from "@/components/ClinicalCorrelationCard";
 import {
   BookOpen,
@@ -97,7 +105,9 @@ export default function JournalPage() {
   const journalUserEditedRef = useRef(false);
   const flowLockRef = useRef(false);
   const lastFlowAppendRef = useRef("");
-  const flowBody = useDebouncedValue(body, 550);
+  /** Short detect pause; full edit window uses conversation speed (default 5s). */
+  const flowBody = useDebouncedValue(body, 300);
+  const { delayMs: conversationDelayMs } = useConversationSpeed();
 
   useEffect(() => {
     const scored = recommendModalities({
@@ -267,51 +277,88 @@ export default function JournalPage() {
     focusJournalEnd();
   }
 
-  /** Continuous counselor-style interview in the journal free-text box */
-  useEffect(() => {
-    if (!guideJournalQa || !continuousFlow) return;
-    if (flowLockRef.current) return;
-    if (step !== 1) return;
+  const pendingJournalAdvance = useMemo(() => {
+    if (!guideJournalQa || !continuousFlow || step !== 1) return null;
+    if (flowStatus.type !== "advance") return null;
+    if (!journalUserEditedRef.current && !body.includes("▸")) return null;
+    if (
+      lastFlowAppendRef.current === flowStatus.prompt.id &&
+      journalEndsWithOpenQuestion(body)
+    ) {
+      return null;
+    }
+    return flowStatus;
+  }, [guideJournalQa, continuousFlow, step, flowStatus, body]);
 
-    const action = decideJournalFlow(flowCtx);
+  const journalSettle = useAnswerSettleCountdown({
+    armed: Boolean(pendingJournalAdvance),
+    resetKey: body,
+    delayMs: conversationDelayMs,
+  });
 
-    if (action.type === "wait" || action.type === "done" || action.type === "idle") return;
-
-    if (action.type === "seed") {
-      if (body.trim()) return;
-      flowLockRef.current = true;
-      setBody((prev) => {
-        if (prev.trim()) return prev;
-        return appendJournalFlowQuestion("", action.prompt);
-      });
-      lastFlowAppendRef.current = action.prompt.id;
-      focusJournalEnd();
-      window.setTimeout(() => {
-        flowLockRef.current = false;
-      }, 400);
+  function commitJournalAdvanceNow() {
+    if (!pendingJournalAdvance || pendingJournalAdvance.type !== "advance") {
+      journalSettle.sendNow();
       return;
     }
+    if (flowLockRef.current) return;
+    const action = pendingJournalAdvance;
+    flowLockRef.current = true;
+    setBody((prev) => {
+      if (journalEndsWithOpenQuestion(prev)) return prev;
+      return appendJournalFlowQuestion(prev, action.prompt, action.bridge);
+    });
+    lastFlowAppendRef.current = action.prompt.id;
+    journalSettle.cancel();
+    focusJournalEnd();
+    window.setTimeout(() => {
+      flowLockRef.current = false;
+    }, 400);
+  }
 
-    if (action.type === "advance") {
-      if (!journalUserEditedRef.current && !body.includes("▸")) return;
-      if (
-        lastFlowAppendRef.current === action.prompt.id &&
-        journalEndsWithOpenQuestion(body)
-      ) {
-        return;
-      }
-      flowLockRef.current = true;
-      setBody((prev) => {
-        if (journalEndsWithOpenQuestion(prev)) return prev;
-        return appendJournalFlowQuestion(prev, action.prompt, action.bridge);
-      });
-      lastFlowAppendRef.current = action.prompt.id;
-      focusJournalEnd();
-      window.setTimeout(() => {
-        flowLockRef.current = false;
-      }, 500);
+  function editJournalAnswer() {
+    journalSettle.edit();
+    focusJournalEnd();
+  }
+
+  // Seed opening question promptly
+  useEffect(() => {
+    if (!guideJournalQa || !continuousFlow || step !== 1) return;
+    if (flowLockRef.current) return;
+    if (flowStatus.type !== "seed") return;
+    if (body.trim()) return;
+    flowLockRef.current = true;
+    setBody((prev) => {
+      if (prev.trim()) return prev;
+      if (flowStatus.type !== "seed") return prev;
+      return appendJournalFlowQuestion("", flowStatus.prompt);
+    });
+    if (flowStatus.type === "seed") {
+      lastFlowAppendRef.current = flowStatus.prompt.id;
     }
-  }, [guideJournalQa, continuousFlow, flowCtx, body, step]);
+    focusJournalEnd();
+    window.setTimeout(() => {
+      flowLockRef.current = false;
+    }, 400);
+  }, [guideJournalQa, continuousFlow, flowStatus, body, step]);
+
+  /** After edit window: record answer and append next clinical question */
+  useEffect(() => {
+    if (!journalSettle.settled || !pendingJournalAdvance) return;
+    if (flowLockRef.current) return;
+    if (pendingJournalAdvance.type !== "advance") return;
+    const action = pendingJournalAdvance;
+    flowLockRef.current = true;
+    setBody((prev) => {
+      if (journalEndsWithOpenQuestion(prev)) return prev;
+      return appendJournalFlowQuestion(prev, action.prompt, action.bridge);
+    });
+    lastFlowAppendRef.current = action.prompt.id;
+    focusJournalEnd();
+    window.setTimeout(() => {
+      flowLockRef.current = false;
+    }, 400);
+  }, [journalSettle.settled, pendingJournalAdvance]);
 
   useEffect(() => {
     if (step < 4 || (!body.trim() && !title.trim())) {
@@ -673,6 +720,11 @@ export default function JournalPage() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
                 Continuous conversation
+                {journalSettle.settling
+                  ? ` · edit window ${journalSettle.remainingSec}s`
+                  : continuousFlow && guideJournalQa
+                    ? " · flow on"
+                    : ""}
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700 dark:text-brand-200">
@@ -695,6 +747,37 @@ export default function JournalPage() {
                 </label>
               </div>
             </div>
+            <div className="mt-2">
+              <ConversationSpeedControl
+                compact
+                settling={journalSettle.settling}
+                settleRemainingSec={journalSettle.remainingSec}
+              />
+            </div>
+            {journalSettle.settling || journalSettle.editing ? (
+              <div className="mt-2 space-y-2 rounded-lg bg-amber-50 px-2.5 py-2 dark:bg-amber-900/30">
+                <p className="text-xs font-medium text-amber-950 dark:text-amber-100">
+                  {journalSettle.editing
+                    ? "Editing — revise your answer below, then Send or pause and type again to restart the timer."
+                    : (
+                      <>
+                        Answer detected — <strong>{journalSettle.remainingSec}s</strong> left.{" "}
+                        <strong>Send</strong> records now; <strong>Edit</strong> pauses so you can
+                        revise.
+                      </>
+                    )}
+                </p>
+                <ConversationSettleActions
+                  settling={journalSettle.settling}
+                  editing={journalSettle.editing}
+                  remainingSec={journalSettle.remainingSec}
+                  onSend={commitJournalAdvanceNow}
+                  onEdit={editJournalAnswer}
+                  sendLabel="Send"
+                  editLabel="Edit"
+                />
+              </div>
+            ) : null}
             {openJournalQuestion ? (
               <p className="mt-1.5 text-sm leading-snug text-brand-900 dark:text-brand-50">
                 <span className="font-semibold text-brand-600">Now answering: </span>

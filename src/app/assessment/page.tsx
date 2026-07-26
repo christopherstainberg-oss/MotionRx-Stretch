@@ -3,6 +3,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { sameStringArray, useDebouncedValue } from "@/lib/hooks";
+import {
+  ConversationSettleActions,
+  ConversationSpeedControl,
+} from "@/components/ConversationSpeedControl";
+import {
+  useAnswerSettleCountdown,
+  useConversationSpeed,
+} from "@/lib/use-conversation-speed";
 import { BODY_PART_LABELS, getStretchById } from "@/data/stretch-library";
 import { getExerciseById } from "@/data/exercise-library";
 import {
@@ -348,8 +356,12 @@ export default function AssessmentPage() {
 
   /** Heavy clinical matching runs on debounced text so the textarea stays responsive */
   const debouncedParagraph = useDebouncedValue(paragraph, 400);
-  /** Faster debounce for continuous interview advance (feels conversational) */
-  const flowParagraph = useDebouncedValue(paragraph, 550);
+  /**
+   * Short pause so typing settles before we *detect* a complete answer.
+   * The longer conversation-speed delay (default 5s) runs after that so the user can still edit.
+   */
+  const flowParagraph = useDebouncedValue(paragraph, 300);
+  const { delayMs: conversationDelayMs } = useConversationSpeed();
 
   useEffect(() => {
     try {
@@ -835,59 +847,93 @@ export default function AssessmentPage() {
     [paragraph]
   );
 
-  /**
-   * Continuous conversation flow in the free-text box:
-   * seed opening Q → wait for answer → bridge + next Q → repeat.
-   */
+  /** Complete answer detected → arm edit window before next question */
+  const pendingStoryAdvance = useMemo(() => {
+    if (!guideStoryQa || !continuousFlow) return null;
+    if (flowStatus.type !== "advance") return null;
+    if (!storyUserEditedRef.current && !paragraph.includes("▸")) return null;
+    if (
+      lastFlowAppendRef.current === flowStatus.prompt.id &&
+      storyEndsWithOpenQuestion(paragraph)
+    ) {
+      return null;
+    }
+    return flowStatus;
+  }, [guideStoryQa, continuousFlow, flowStatus, paragraph]);
+
+  const storySettle = useAnswerSettleCountdown({
+    armed: Boolean(pendingStoryAdvance),
+    resetKey: paragraph,
+    delayMs: conversationDelayMs,
+  });
+
+  function commitStoryAdvanceNow() {
+    if (!pendingStoryAdvance || pendingStoryAdvance.type !== "advance") {
+      storySettle.sendNow();
+      return;
+    }
+    if (flowLockRef.current) return;
+    const action = pendingStoryAdvance;
+    flowLockRef.current = true;
+    setParagraph((prev) => {
+      if (storyEndsWithOpenQuestion(prev)) return prev;
+      return appendFlowQuestion(prev, action.prompt, action.bridge);
+    });
+    lastFlowAppendRef.current = action.prompt.id;
+    storySettle.cancel();
+    focusStoryEnd();
+    window.setTimeout(() => {
+      flowLockRef.current = false;
+    }, 400);
+  }
+
+  function editStoryAnswer() {
+    storySettle.edit();
+    focusStoryEnd();
+  }
+
+  // Seed opening question promptly (not held by edit window)
   useEffect(() => {
     if (!guideStoryQa || !continuousFlow) return;
     if (flowLockRef.current) return;
-
-    const action = decideStoryFlow(flowCtx);
-
-    if (action.type === "wait" || action.type === "done" || action.type === "idle") {
-      return;
+    if (flowStatus.type !== "seed") return;
+    if (paragraph.trim()) return;
+    flowLockRef.current = true;
+    setParagraph((prev) => {
+      if (prev.trim()) return prev;
+      if (flowStatus.type !== "seed") return prev;
+      return appendFlowQuestion("", flowStatus.prompt);
+    });
+    if (flowStatus.type === "seed") {
+      lastFlowAppendRef.current = flowStatus.prompt.id;
     }
+    focusStoryEnd();
+    window.setTimeout(() => {
+      flowLockRef.current = false;
+    }, 400);
+  }, [guideStoryQa, continuousFlow, flowStatus, paragraph]);
 
-    // Seed opening question even before first keystroke (continuous interview ready)
-    if (action.type === "seed") {
-      if (paragraph.trim()) return;
-      flowLockRef.current = true;
-      setParagraph((prev) => {
-        if (prev.trim()) return prev;
-        return appendFlowQuestion("", action.prompt);
-      });
-      lastFlowAppendRef.current = action.prompt.id;
-      focusStoryEnd();
-      window.setTimeout(() => {
-        flowLockRef.current = false;
-      }, 400);
-      return;
-    }
+  /**
+   * After settle countdown: record answer + ask next question.
+   * Any edit while settling restarts the timer (resetKey = paragraph).
+   */
+  useEffect(() => {
+    if (!storySettle.settled || !pendingStoryAdvance) return;
+    if (flowLockRef.current) return;
+    if (pendingStoryAdvance.type !== "advance") return;
 
-    // Advance only after user has engaged (or already has content)
-    if (action.type === "advance") {
-      if (!storyUserEditedRef.current && !paragraph.includes("▸")) return;
-      if (lastFlowAppendRef.current === action.prompt.id && storyEndsWithOpenQuestion(paragraph)) {
-        return;
-      }
-      flowLockRef.current = true;
-      setParagraph((prev) => {
-        if (storyEndsWithOpenQuestion(prev)) return prev;
-        return appendFlowQuestion(prev, action.prompt, action.bridge);
-      });
-      lastFlowAppendRef.current = action.prompt.id;
-      focusStoryEnd();
-      window.setTimeout(() => {
-        flowLockRef.current = false;
-      }, 500);
-    }
-  }, [
-    guideStoryQa,
-    continuousFlow,
-    flowCtx,
-    paragraph,
-  ]);
+    const action = pendingStoryAdvance;
+    flowLockRef.current = true;
+    setParagraph((prev) => {
+      if (storyEndsWithOpenQuestion(prev)) return prev;
+      return appendFlowQuestion(prev, action.prompt, action.bridge);
+    });
+    lastFlowAppendRef.current = action.prompt.id;
+    focusStoryEnd();
+    window.setTimeout(() => {
+      flowLockRef.current = false;
+    }, 400);
+  }, [storySettle.settled, pendingStoryAdvance]);
 
   function askCoach(question?: string) {
     const q = (question ?? coachQuestion).trim();
@@ -1380,6 +1426,11 @@ export default function AssessmentPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
                     Continuous conversation
+                    {storySettle.settling
+                      ? ` · edit window ${storySettle.remainingSec}s`
+                      : continuousFlow && guideStoryQa
+                        ? " · flow on"
+                        : ""}
                   </p>
                   <div className="flex flex-wrap items-center gap-3">
                     <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700 dark:text-brand-200">
@@ -1402,6 +1453,37 @@ export default function AssessmentPage() {
                     </label>
                   </div>
                 </div>
+                <div className="mt-2">
+                  <ConversationSpeedControl
+                    compact
+                    settling={storySettle.settling}
+                    settleRemainingSec={storySettle.remainingSec}
+                  />
+                </div>
+                {storySettle.settling || storySettle.editing ? (
+                  <div className="mt-2 space-y-2 rounded-lg bg-amber-50 px-2.5 py-2 dark:bg-amber-900/30">
+                    <p className="text-xs font-medium text-amber-950 dark:text-amber-100">
+                      {storySettle.editing
+                        ? "Editing — change your answer below, then Send or wait for the timer after you pause."
+                        : (
+                          <>
+                            Answer detected — <strong>{storySettle.remainingSec}s</strong> left.
+                            Use <strong>Send</strong> to record now, or <strong>Edit</strong> to
+                            pause and revise.
+                          </>
+                        )}
+                    </p>
+                    <ConversationSettleActions
+                      settling={storySettle.settling}
+                      editing={storySettle.editing}
+                      remainingSec={storySettle.remainingSec}
+                      onSend={commitStoryAdvanceNow}
+                      onEdit={editStoryAnswer}
+                      sendLabel="Send"
+                      editLabel="Edit"
+                    />
+                  </div>
+                ) : null}
                 {openStoryQuestion ? (
                   <p className="mt-1.5 text-sm leading-snug text-brand-900 dark:text-brand-50">
                     <span className="font-semibold text-brand-600">Now answering: </span>
@@ -1429,8 +1511,8 @@ export default function AssessmentPage() {
                   </p>
                 )}
                 <p className="mt-1 text-[10px] leading-relaxed text-brand-500">
-                  Each ▸ line is a question. Type your answer under it; after a short pause the next
-                  question is added automatically so the conversation never stalls.
+                  Each ▸ line is a question. Type under it; after your edit window the next question
+                  is added. Adjust conversation speed above (shared with Journal &amp; Jeffery).
                 </p>
               </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { JefferyMessage, Routine } from "@/lib/types";
 import { ClinicalCorrelationCard } from "@/components/ClinicalCorrelationCard";
@@ -10,6 +10,15 @@ import {
   decideJefferyFlow,
   type JefferyAdaptivePrompt,
 } from "@/lib/jeffery-intelligence";
+import {
+  ConversationSettleActions,
+  ConversationSpeedControl,
+} from "@/components/ConversationSpeedControl";
+import {
+  useAnswerSettleCountdown,
+  useConversationSpeed,
+} from "@/lib/use-conversation-speed";
+import { isAnswerComplete } from "@/lib/assessment-story-conversation";
 import { Bot, MessageCircleQuestion, Send, Sparkles } from "lucide-react";
 
 export default function JefferyPage() {
@@ -22,6 +31,8 @@ export default function JefferyPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastAutoFillRef = useRef("");
+  const lastAutoSentRef = useRef("");
+  const { delayMs: conversationDelayMs } = useConversationSpeed();
 
   useEffect(() => {
     try {
@@ -102,58 +113,24 @@ export default function JefferyPage() {
     intel.nextOpenQuestion ||
     (flowStatus.type === "wait" ? flowStatus.currentQuestion : null);
 
-  /** Continuous flow: after user reply is answered by Jeffery, stage next question in the input */
-  useEffect(() => {
-    if (!continuousFlow || loading) return;
-    if (flowStatus.type !== "wait" && flowStatus.type !== "seed") return;
+  /**
+   * Continuous flow: after a complete draft answer, wait conversationDelayMs (default 5s)
+   * so the user can edit; then auto-send. Any edit resets the timer.
+   */
+  const jefferyDraftReady =
+    continuousFlow &&
+    !loading &&
+    isAnswerComplete(input) &&
+    lastAutoSentRef.current !== input.trim();
 
-    const q =
-      flowStatus.type === "wait"
-        ? flowStatus.currentQuestion
-        : flowStatus.type === "seed"
-          ? flowStatus.prompt.question
-          : "";
-    if (!q) return;
-    // Only auto-fill when input is empty so we don't clobber typing
-    if (input.trim()) return;
-    if (lastAutoFillRef.current === q) return;
-    // Don't put Jeffery's full multi-sentence education into the input — only short open Qs
-    if (q.length > 220) return;
-    lastAutoFillRef.current = q;
-    // For seed/wait we show the question as a soft placeholder via state, not forced fill,
-    // unless user just finished a turn and Jeffery asked something new
-    const last = messages[messages.length - 1];
-    if (last?.role === "jeffery" && messages.some((m) => m.role === "user")) {
-      // leave input empty; chips handle next answer prompts
-    }
-  }, [continuousFlow, flowStatus, loading, input, messages]);
+  const jefferySettle = useAnswerSettleCountdown({
+    armed: jefferyDraftReady,
+    resetKey: input,
+    delayMs: conversationDelayMs,
+  });
 
-  const applyPrompt = useCallback((prompt: JefferyAdaptivePrompt) => {
-    setInput(prompt.question.includes("?") ? "" : "");
-    // Put a starter answer frame or the question context — better: set input empty and focus
-    // Actually for continuous flow, pre-fill a short answer scaffold:
-    setInput("");
-    // Use the prompt as the *message they can edit* only if it's a short self-report frame
-    // Prefer filling nothing and showing "Now answering" — user types their answer.
-    // Optional: prefill nothing, store pending question label
-    inputRef.current?.focus();
-    // If they tap a chip, send the question as context by prepending answer space
-    setInput((prev) => {
-      if (prev.trim()) return prev;
-      // Leave blank for free answer; store hint via selection of chip -> user types answer to open Q
-      return prev;
-    });
-  }, []);
-
-  /** Tap adaptive chip → either send as answer topic or place answer helper */
+  /** Tap adaptive chip → place answer helper scaffold (user can still edit during settle) */
   function useAdaptiveChip(prompt: JefferyAdaptivePrompt) {
-    // Put a reflective lead-in so conversation continues
-    const lead = continuousFlow
-      ? ``
-      : ``;
-    setInput(lead);
-    // Better UX: send a message that answers by quoting the theme, or fill input with empty and show question
-    // Most natural continuous flow: auto-focus for answering the open question; chip inserts a partial answer starter
     const starters: Record<string, string> = {
       pain: "My pain is about /10 most of the day and at worst. ",
       aggravators: "It gets worse when ",
@@ -168,12 +145,14 @@ export default function JefferyPage() {
     const scaffold = starters[key] || "";
     setInput(scaffold);
     lastAutoFillRef.current = prompt.id;
+    lastAutoSentRef.current = "";
     inputRef.current?.focus();
   }
 
   async function sendMessage(textRaw: string) {
     const text = textRaw.trim();
     if (!text || loading) return;
+    lastAutoSentRef.current = text;
     setInput("");
     setMessages((m) => [
       ...m,
@@ -238,6 +217,15 @@ export default function JefferyPage() {
     await sendMessage(input);
   }
 
+  // Auto-send after settle window (edit resets timer via resetKey=input)
+  useEffect(() => {
+    if (!jefferySettle.settled || !jefferyDraftReady) return;
+    const text = input.trim();
+    if (!text || lastAutoSentRef.current === text) return;
+    void sendMessage(text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- send once when settled
+  }, [jefferySettle.settled, jefferyDraftReady]);
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4 pb-8">
       <div>
@@ -283,6 +271,44 @@ export default function JefferyPage() {
             Keep flow going
           </label>
         </div>
+        <div className="mt-3">
+          <ConversationSpeedControl
+            compact
+            settling={jefferySettle.settling}
+            settleRemainingSec={jefferySettle.remainingSec}
+          />
+        </div>
+        {jefferySettle.settling || jefferySettle.editing ? (
+          <div className="mt-2 space-y-2 rounded-lg bg-amber-50 px-2.5 py-2 dark:bg-amber-900/30">
+            <p className="text-xs font-medium text-amber-950 dark:text-amber-100">
+              {jefferySettle.editing
+                ? "Editing — revise your message, then Send or type again to restart the timer."
+                : (
+                  <>
+                    Draft ready — <strong>{jefferySettle.remainingSec}s</strong> left.{" "}
+                    <strong>Send</strong> records now; <strong>Edit</strong> pauses auto-send so
+                    you can revise.
+                  </>
+                )}
+            </p>
+            <ConversationSettleActions
+              settling={jefferySettle.settling}
+              editing={jefferySettle.editing}
+              remainingSec={jefferySettle.remainingSec}
+              onSend={() => {
+                const text = input.trim();
+                if (!text) return;
+                void sendMessage(text);
+              }}
+              onEdit={() => {
+                jefferySettle.edit();
+                inputRef.current?.focus();
+              }}
+              sendLabel="Send"
+              editLabel="Edit"
+            />
+          </div>
+        ) : null}
       </div>
 
       {/* Live clinical read */}
@@ -384,30 +410,50 @@ export default function JefferyPage() {
         </div>
         <form
           onSubmit={send}
-          className="flex gap-2 border-t border-brand-100 bg-brand-50/30 p-3 dark:border-brand-800"
+          className="flex flex-col gap-2 border-t border-brand-100 bg-brand-50/30 p-3 dark:border-brand-800 sm:flex-row sm:items-center"
         >
           <input
             ref={inputRef}
-            className="input"
+            className="input flex-1"
             placeholder={
-              openQuestion
-                ? "Type your answer to the open question…"
-                : "Describe how you feel or ask a question…"
+              jefferySettle.settling
+                ? `Edit freely — sending in ${jefferySettle.remainingSec}s…`
+                : jefferySettle.editing
+                  ? "Editing — revise your answer…"
+                  : openQuestion
+                    ? "Type your answer to the open question…"
+                    : "Describe how you feel or ask a question…"
             }
             value={input}
             onChange={(e) => setInput(e.target.value)}
             aria-label="Message to Jeffery"
             disabled={loading}
           />
-          <button
-            type="submit"
-            className="btn-primary min-w-[48px] shrink-0 px-3 sm:px-4"
-            disabled={loading || !input.trim()}
-            aria-label="Send message"
-          >
-            <Send className="h-4 w-4" />
-            <span className="hidden sm:inline">Send</span>
-          </button>
+          <div className="flex shrink-0 gap-2">
+            {(jefferySettle.settling || jefferySettle.editing) && (
+              <button
+                type="button"
+                className="btn-secondary !px-3"
+                onClick={() => {
+                  jefferySettle.edit();
+                  inputRef.current?.focus();
+                }}
+                disabled={loading}
+                aria-label="Edit answer"
+              >
+                Edit
+              </button>
+            )}
+            <button
+              type="submit"
+              className="btn-primary min-w-[48px] px-3 sm:px-4"
+              disabled={loading || !input.trim()}
+              aria-label="Send message"
+            >
+              <Send className="h-4 w-4" />
+              <span className="hidden sm:inline">Send</span>
+            </button>
+          </div>
         </form>
       </div>
 
