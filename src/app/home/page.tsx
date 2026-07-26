@@ -6,6 +6,7 @@ import {
   Dumbbell,
   Library,
   ListChecks,
+  Moon,
   Sparkles,
   Stethoscope,
 } from "lucide-react";
@@ -56,6 +57,7 @@ const SECONDARY = [
   { href: "/library", title: "Stretches", icon: Library, text: "Mobility library" },
   { href: "/exercises", title: "Exercises", icon: Dumbbell, text: "Strength & control" },
   { href: "/modalities", title: "Modalities", icon: Sparkles, text: "Heat, ice, pacing" },
+  { href: "/sleep", title: "Sleep", icon: Moon, text: "PSQI score & trends" },
   { href: "/analytics", title: "User Analytics", icon: ListChecks, text: "Sessions & trends" },
 ] as const;
 

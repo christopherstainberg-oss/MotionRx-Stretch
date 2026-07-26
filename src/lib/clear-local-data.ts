@@ -20,6 +20,7 @@ const FIXED_KEYS = [
   "clinical-history-profile",
   "motionrx-conversation-speed-ms",
   "motionrx-pwa-dismissed",
+  "motionrx-psqi-logs",
 ] as const;
 
 /** Prefix patterns for per-item keys (routine:id, session:id, etc.) */

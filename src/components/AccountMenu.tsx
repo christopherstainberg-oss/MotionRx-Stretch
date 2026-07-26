@@ -339,6 +339,13 @@ export function AccountMenu({ className = "" }: { className?: string }) {
               hint="Outcomes over time"
               onNavigate={() => setOpen(false)}
             />
+            <MenuLink
+              href="/sleep"
+              emoji="😴"
+              label="Sleep (PSQI)"
+              hint="Questionnaire, metrics & tips"
+              onNavigate={() => setOpen(false)}
+            />
           </div>
 
           {/* Data actions: Export / Import / Reset */}

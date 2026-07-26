@@ -254,6 +254,24 @@ export const APP_SEARCH_INDEX: AppSearchItem[] = [
     href: "/progress",
     description: "Track practice and goals over time",
   },
+  {
+    id: "sleep",
+    title: "Sleep quality (PSQI)",
+    category: "Track & reflect",
+    keywords: [
+      "sleep",
+      "psqi",
+      "insomnia",
+      "rest",
+      "pittsburgh",
+      "sleep efficiency",
+      "sleep questionnaire",
+      "fatigue",
+    ],
+    href: "/sleep",
+    description:
+      "Full PSQI questionnaire, sleep metrics, trends, and improvement suggestions",
+  },
 
   // —— Libraries ——
   {
