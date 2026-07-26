@@ -11,7 +11,7 @@ import {
   type JefferyAdaptivePrompt,
 } from "@/lib/jeffery-intelligence";
 import {
-  ConversationSettleActions,
+  ConversationComposer,
   ConversationSpeedControl,
 } from "@/components/ConversationSpeedControl";
 import {
@@ -19,7 +19,7 @@ import {
   useConversationSpeed,
 } from "@/lib/use-conversation-speed";
 import { isAnswerComplete } from "@/lib/assessment-story-conversation";
-import { Bot, MessageCircleQuestion, Pencil, Send, Sparkles } from "lucide-react";
+import { Bot, MessageCircleQuestion, Sparkles } from "lucide-react";
 
 export default function JefferyPage() {
   const [messages, setMessages] = useState<JefferyMessage[]>([]);
@@ -280,50 +280,6 @@ export default function JefferyPage() {
             settleRemainingSec={jefferySettle.remainingSec}
           />
         </div>
-        {jefferySettle.showControls ? (
-          <div className="mt-3">
-            <ConversationSettleActions
-              settling={jefferySettle.settling}
-              editing={jefferySettle.editing}
-              remainingSec={jefferySettle.remainingSec}
-              onSend={() => {
-                const text = input.trim();
-                if (!text) return;
-                jefferySettle.cancel();
-                void sendMessage(text);
-              }}
-              onEdit={() => {
-                jefferySettle.edit();
-                requestAnimationFrame(() => inputRef.current?.focus());
-              }}
-              sendLabel="Send"
-              editLabel="Edit"
-            />
-          </div>
-        ) : null}
-        {jefferySettle.showControls ? (
-          <>
-            <ConversationSettleActions
-              fixed
-              settling={jefferySettle.settling}
-              editing={jefferySettle.editing}
-              remainingSec={jefferySettle.remainingSec}
-              onSend={() => {
-                const text = input.trim();
-                if (!text) return;
-                jefferySettle.cancel();
-                void sendMessage(text);
-              }}
-              onEdit={() => {
-                jefferySettle.edit();
-                requestAnimationFrame(() => inputRef.current?.focus());
-              }}
-              sendLabel="Send"
-              editLabel="Edit"
-            />
-            <div className="h-24 sm:h-20" aria-hidden />
-          </>
-        ) : null}
       </div>
 
       {/* Live clinical read */}
@@ -423,59 +379,44 @@ export default function JefferyPage() {
           )}
           <div ref={bottomRef} />
         </div>
-        <form
-          onSubmit={send}
-          className="flex flex-col gap-2 border-t border-brand-100 bg-brand-50/30 p-3 dark:border-brand-800 sm:flex-row sm:items-center"
-        >
-          <input
-            ref={inputRef}
-            className="input flex-1"
-            placeholder={
-              jefferySettle.settling
-                ? `Edit freely — sending in ${jefferySettle.remainingSec}s…`
-                : jefferySettle.editing
-                  ? "Editing — revise your answer…"
-                  : openQuestion
-                    ? "Type your answer to the open question…"
-                    : "Describe how you feel or ask a question…"
-            }
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            aria-label="Message to Jeffery"
-            disabled={loading}
-          />
-          <div className="flex shrink-0 gap-2">
-            {jefferySettle.showControls && (
-              <button
-                type="button"
-                className={
-                  jefferySettle.editing
-                    ? "btn-settle-edit btn-settle-edit-active !min-h-[44px] !flex-none !px-3"
-                    : "btn-settle-edit !min-h-[44px] !flex-none !px-3"
-                }
-                onClick={() => {
-                  jefferySettle.edit();
-                  requestAnimationFrame(() => inputRef.current?.focus());
-                }}
-                disabled={loading}
-                aria-label="Edit answer"
-                aria-pressed={jefferySettle.editing || undefined}
-              >
-                <Pencil className="h-4 w-4" />
-                Edit
-              </button>
-            )}
-            <button
-              type="submit"
-              className="btn-settle-send !min-h-[44px] !flex-none min-w-[48px] !px-3 sm:!px-4"
-              disabled={loading || !input.trim()}
-              aria-label="Send message"
-            >
-              <Send className="h-4 w-4" />
-              <span className="hidden sm:inline">Send</span>
-            </button>
-          </div>
-        </form>
+        <div className="border-t border-brand-100 bg-brand-50/30 p-2.5 dark:border-brand-800">
+          <ConversationComposer
+            settling={jefferySettle.settling}
+            editing={jefferySettle.editing}
+            remainingSec={jefferySettle.remainingSec}
+            onSend={() => {
+              const text = input.trim();
+              if (!text || loading) return;
+              jefferySettle.cancel();
+              void sendMessage(text);
+            }}
+            onEdit={() => {
+              jefferySettle.edit();
+              requestAnimationFrame(() => inputRef.current?.focus());
+            }}
+            sendDisabled={loading || !input.trim()}
+            editDisabled={loading}
+            onSubmit={send}
+          >
+            <input
+              ref={inputRef}
+              className="input conversation-text-box-field rounded-none"
+              placeholder={
+                jefferySettle.settling
+                  ? `Edit freely — sending in ${jefferySettle.remainingSec}s…`
+                  : jefferySettle.editing
+                    ? "Editing — revise your answer…"
+                    : openQuestion
+                      ? "Type your answer to the open question…"
+                      : "Describe how you feel or ask a question…"
+              }
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              aria-label="Message to Jeffery"
+              disabled={loading}
+            />
+          </ConversationComposer>
+        </div>
       </div>
 
       {/* Adaptive queue */}

@@ -72,8 +72,8 @@ export function useConversationSpeed() {
  * After a complete answer is detected (`armed`), wait `delayMs` before `settled`.
  * Any change to `resetKey` restarts the countdown (user is editing content).
  *
- * **Edit** pauses the timer and keeps Send/Edit controls fixed until Send or resume.
- * **Send** settles immediately so conversation flow continues without hesitation.
+ * Send/Edit UI lives permanently in the text-box chrome (not show/hide).
+ * **Edit** pauses the auto-timer; **Send** settles immediately.
  */
 export function useAnswerSettleCountdown(opts: {
   /** When true, countdown runs toward commit */
@@ -91,11 +91,11 @@ export function useAnswerSettleCountdown(opts: {
   /** Paused via Edit — waiting for user to type again */
   editing: boolean;
   /**
-   * True after Edit (and while settling) so Send/Edit stay fixed while the user types.
-   * Cleared on Send, cancel, or when the answer is no longer armed.
+   * @deprecated Send/Edit are always visible in the text box. Kept for compatibility.
+   * True while settle is active or after Edit.
    */
   showControls: boolean;
-  /** Pause countdown; keep controls fixed until type/Send */
+  /** Pause countdown until type/Send */
   edit: () => void;
   /** Commit immediately (Send) — no delay */
   sendNow: () => void;
@@ -105,8 +105,6 @@ export function useAnswerSettleCountdown(opts: {
   const [remainingMs, setRemainingMs] = useState(0);
   const [settled, setSettled] = useState(false);
   const [editing, setEditing] = useState(false);
-  /** Keep Edit/Send bar fixed after Edit while user types */
-  const [holdControls, setHoldControls] = useState(false);
   const [epoch, setEpoch] = useState(0);
   const settledOnceRef = useRef(false);
   const onSettledRef = useRef(onSettled);
@@ -116,7 +114,6 @@ export function useAnswerSettleCountdown(opts: {
     setRemainingMs(0);
     setSettled(false);
     setEditing(false);
-    setHoldControls(false);
     settledOnceRef.current = false;
     setEpoch((e) => e + 1);
   }, []);
@@ -125,7 +122,6 @@ export function useAnswerSettleCountdown(opts: {
     setRemainingMs(0);
     setSettled(false);
     setEditing(true);
-    setHoldControls(true);
     settledOnceRef.current = false;
     setEpoch((e) => e + 1);
   }, []);
@@ -133,7 +129,6 @@ export function useAnswerSettleCountdown(opts: {
   /** Immediate commit — no settle delay, clear edit hold, fire settled once */
   const sendNow = useCallback(() => {
     setEditing(false);
-    setHoldControls(false);
     setRemainingMs(0);
     if (!settledOnceRef.current) {
       settledOnceRef.current = true;
@@ -145,7 +140,7 @@ export function useAnswerSettleCountdown(opts: {
     }
   }, []);
 
-  // User typed after Edit → release pause, keep fixed controls, restart countdown
+  // User typed after Edit → release pause, restart countdown
   useEffect(() => {
     if (editing) {
       setEditing(false);
@@ -156,13 +151,12 @@ export function useAnswerSettleCountdown(opts: {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when content changes
   }, [resetKey]);
 
-  // Drop fixed controls when answer is no longer complete (disarmed)
+  // Clear settle state when answer is no longer complete (disarmed)
   useEffect(() => {
     if (!armed) {
       setRemainingMs(0);
       setSettled(false);
       setEditing(false);
-      setHoldControls(false);
       settledOnceRef.current = false;
     }
   }, [armed]);
@@ -172,7 +166,7 @@ export function useAnswerSettleCountdown(opts: {
       return;
     }
 
-    // Edit pause: no auto-timer, but Send stays available via showControls
+    // Edit pause: no auto-timer; user can still Send from the text-box bar
     if (editing) {
       setRemainingMs(0);
       setSettled(false);
@@ -197,7 +191,6 @@ export function useAnswerSettleCountdown(opts: {
         window.clearInterval(tick);
         if (!settledOnceRef.current) {
           settledOnceRef.current = true;
-          setHoldControls(false);
           setSettled(true);
           onSettledRef.current?.();
         }
@@ -211,8 +204,8 @@ export function useAnswerSettleCountdown(opts: {
   }, [armed, resetKey, delayMs, epoch, editing]);
 
   const settling = Boolean(armed && !editing && remainingMs > 0 && !settled);
-  // Keep Edit/Send fixed after Edit while typing, and during the settle window
-  const showControls = Boolean(editing || holdControls || settling || (armed && !settled));
+  // Compatibility: formerly gated UI; buttons are always mounted now
+  const showControls = Boolean(editing || settling || (armed && !settled));
 
   return {
     remainingMs,

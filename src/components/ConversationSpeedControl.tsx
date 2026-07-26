@@ -1,5 +1,6 @@
 "use client";
 
+import type { FormEvent, ReactNode } from "react";
 import {
   CONVERSATION_SPEED_PRESETS,
   MAX_CONVERSATION_DELAY_MS,
@@ -27,23 +28,18 @@ type Props = {
   editLabel?: string;
 };
 
-function settleHint(
-  editing?: boolean,
-  settling?: boolean,
-  remainingSec?: number
-): string {
-  if (editing) {
-    return "Editing mode — type freely. Send continues the conversation right away.";
-  }
-  if (settling && remainingSec != null && remainingSec > 0) {
-    return `Answer ready — auto-continues in ${remainingSec}s. Send now, or Edit to revise.`;
-  }
-  return "Send continues the conversation · Edit pauses the timer while you type.";
-}
+export type ConversationSettleState = {
+  settling?: boolean;
+  editing?: boolean;
+  remainingSec?: number;
+};
 
 /**
- * Send / Edit actions during the answer settle window.
- * Brand-themed buttons + panel; `fixed` pins above the mobile tab bar.
+ * Compact Send / Edit row that sits inside the text-box chrome.
+ * Always visible (not a floating bar, not show/hide). Quiet status on the left;
+ * small buttons on the right.
+ *
+ * Used identically on Describe Your Issue, Journal, and Jeffery via ConversationComposer.
  */
 export function ConversationSettleActions({
   settling,
@@ -54,11 +50,8 @@ export function ConversationSettleActions({
   sendLabel = "Send",
   editLabel = "Edit",
   className = "",
-  /** Pin bar above bottom nav so controls stay visible while typing */
-  fixed = false,
-  hint,
-  /** Show status copy above buttons (default true for fixed, optional for inline) */
-  showHint,
+  sendDisabled,
+  editDisabled,
 }: {
   settling?: boolean;
   editing?: boolean;
@@ -68,191 +61,171 @@ export function ConversationSettleActions({
   sendLabel?: string;
   editLabel?: string;
   className?: string;
-  fixed?: boolean;
-  hint?: string;
-  showHint?: boolean;
+  /** Soft-disable Send (e.g. empty draft) without hiding the control */
+  sendDisabled?: boolean;
+  editDisabled?: boolean;
 }) {
   if (!onSend && !onEdit) return null;
 
-  const statusText = hint || settleHint(editing, settling, remainingSec);
-  const displayHint = showHint ?? fixed;
-
-  const buttons = (
-    <div
-      className={cn(
-        "grid w-full gap-2.5",
-        onSend && onEdit ? "grid-cols-2" : "grid-cols-1",
-        fixed ? "sm:max-w-md sm:shrink-0" : ""
-      )}
-    >
-      {onSend ? (
-        <button
-          type="button"
-          className="btn-settle-send"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onSend();
-          }}
-          aria-label={
-            settling && remainingSec != null && remainingSec > 0
-              ? `${sendLabel}, or wait ${remainingSec} seconds`
-              : sendLabel
-          }
-        >
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
-            <Send className="h-3.5 w-3.5" aria-hidden />
-          </span>
-          <span className="flex flex-col items-start leading-tight">
-            <span>{sendLabel}</span>
-            {settling && remainingSec != null && remainingSec > 0 ? (
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-white/85">
-                or wait {remainingSec}s
-              </span>
-            ) : (
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-white/85">
-                continue now
-              </span>
-            )}
-          </span>
-        </button>
-      ) : null}
-      {onEdit ? (
-        <button
-          type="button"
-          className={cn("btn-settle-edit", editing && "btn-settle-edit-active")}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onEdit();
-          }}
-          aria-label={editLabel}
-          aria-pressed={editing || undefined}
-        >
-          <span
-            className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-full",
-              editing
-                ? "bg-brand-600 text-white dark:bg-brand-400 dark:text-brand-950"
-                : "bg-brand-100 text-brand-700 dark:bg-brand-800 dark:text-brand-100"
-            )}
-          >
-            <Pencil className="h-3.5 w-3.5" aria-hidden />
-          </span>
-          <span className="flex flex-col items-start leading-tight">
-            <span>{editLabel}</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wide opacity-70">
-              {editing ? "typing…" : "revise"}
-            </span>
-          </span>
-        </button>
-      ) : null}
-    </div>
-  );
-
-  if (fixed) {
-    return (
-      <div
-        className={cn("pointer-events-none fixed inset-x-0 z-[60]", className)}
-        style={{
-          bottom: "calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px))",
-        }}
-        role="toolbar"
-        aria-label="Answer actions"
-      >
-        <div
-          className="settle-bar-fixed pointer-events-auto"
-          style={{
-            paddingBottom: "max(0.65rem, env(safe-area-inset-bottom, 0px))",
-          }}
-        >
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-2.5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 flex flex-wrap items-center gap-2">
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
-                    editing
-                      ? "bg-brand-600 text-white dark:bg-brand-400 dark:text-brand-950"
-                      : settling
-                        ? "bg-brand-100 text-brand-800 dark:bg-brand-800 dark:text-brand-100"
-                        : "bg-brand-50 text-brand-700 dark:bg-brand-900 dark:text-brand-200"
-                  )}
-                >
-                  {editing ? (
-                    <>
-                      <Pencil className="h-3 w-3" aria-hidden />
-                      Editing
-                    </>
-                  ) : settling ? (
-                    <>
-                      <Clock className="h-3 w-3" aria-hidden />
-                      Ready
-                      {remainingSec != null && remainingSec > 0
-                        ? ` · ${remainingSec}s`
-                        : ""}
-                    </>
-                  ) : (
-                    "Actions"
-                  )}
-                </span>
-              </div>
-              {displayHint ? (
-                <p className="text-xs leading-snug text-brand-700 dark:text-brand-200">
-                  {statusText}
-                </p>
-              ) : null}
-            </div>
-            {buttons}
-          </div>
-        </div>
-      </div>
-    );
+  let status = "Ready when you are";
+  if (editing) {
+    status = "Editing — type freely";
+  } else if (settling && remainingSec != null && remainingSec > 0) {
+    status = `Auto-continue in ${remainingSec}s`;
   }
 
-  // Inline panel (card inside continuous-conversation strip)
   return (
     <div
       className={cn(
-        "settle-panel",
-        editing && "settle-panel-editing",
+        "flex min-h-[2.25rem] items-center justify-between gap-2",
         className
       )}
+      role="toolbar"
+      aria-label="Answer actions"
     >
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 flex flex-wrap items-center gap-2">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
-                editing
-                  ? "bg-brand-600 text-white dark:bg-brand-400 dark:text-brand-950"
-                  : "bg-brand-600/10 text-brand-800 dark:bg-brand-400/15 dark:text-brand-100"
-              )}
-            >
-              {editing ? (
-                <>
-                  <Pencil className="h-3 w-3" aria-hidden />
-                  Editing
-                </>
-              ) : (
-                <>
-                  <Clock className="h-3 w-3" aria-hidden />
-                  {settling && remainingSec != null && remainingSec > 0
-                    ? `${remainingSec}s remaining`
-                    : "Answer ready"}
-                </>
-              )}
-            </span>
-          </div>
-          <p className="text-xs leading-relaxed text-brand-800 dark:text-brand-100">
-            {statusText}
-          </p>
-        </div>
+      <p className="min-w-0 flex-1 truncate text-[11px] leading-none text-brand-500 dark:text-brand-400">
+        {settling && remainingSec != null && remainingSec > 0 ? (
+          <span className="inline-flex items-center gap-1">
+            <Clock className="h-3 w-3 shrink-0" aria-hidden />
+            {status}
+          </span>
+        ) : editing ? (
+          <span className="inline-flex items-center gap-1">
+            <Pencil className="h-3 w-3 shrink-0" aria-hidden />
+            {status}
+          </span>
+        ) : (
+          status
+        )}
+      </p>
+
+      <div className="flex shrink-0 items-center gap-1.5">
+        {onEdit ? (
+          <button
+            type="button"
+            className={cn(
+              "btn-settle-edit",
+              editing && "btn-settle-edit-active"
+            )}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onEdit();
+            }}
+            disabled={editDisabled}
+            aria-label={editLabel}
+            aria-pressed={editing || undefined}
+            title="Pause auto-continue and revise"
+          >
+            <Pencil className="h-3.5 w-3.5" aria-hidden />
+            <span>{editLabel}</span>
+          </button>
+        ) : null}
+        {onSend ? (
+          <button
+            type="button"
+            className="btn-settle-send"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onSend();
+            }}
+            disabled={sendDisabled}
+            aria-label={
+              settling && remainingSec != null && remainingSec > 0
+                ? `${sendLabel}, or wait ${remainingSec} seconds`
+                : sendLabel
+            }
+            title="Continue conversation now"
+          >
+            <Send className="h-3.5 w-3.5" aria-hidden />
+            <span>{sendLabel}</span>
+          </button>
+        ) : null}
       </div>
-      {buttons}
     </div>
   );
+}
+
+/**
+ * Text-box shell with a fixed Send/Edit footer layout.
+ * - `default` — standard brand field (Describe Your Issue, Jeffery)
+ * - `journal` — lined paper, handwriting font, paper-colored action strip
+ *
+ * Send/Edit button layout is identical on every surface.
+ */
+export function ConversationComposer({
+  children,
+  header,
+  className = "",
+  variant = "default",
+  settling,
+  editing,
+  remainingSec,
+  onSend,
+  onEdit,
+  sendDisabled,
+  editDisabled,
+  onSubmit,
+}: {
+  /** Textarea / input (and any in-box content above the actions strip) */
+  children: ReactNode;
+  /** Optional top meta row inside the same border */
+  header?: ReactNode;
+  className?: string;
+  /** Field chrome only — does not change Send/Edit layout */
+  variant?: "default" | "journal";
+  settling?: boolean;
+  editing?: boolean;
+  remainingSec?: number;
+  onSend: () => void;
+  onEdit: () => void;
+  sendDisabled?: boolean;
+  editDisabled?: boolean;
+  /** When provided, outer element is a form (Jeffery chat) */
+  onSubmit?: (e: FormEvent<HTMLFormElement>) => void;
+}) {
+  const isJournal = variant === "journal";
+  const shellClass = cn(
+    isJournal ? "journal-paper overflow-hidden" : "conversation-text-box",
+    className
+  );
+  const headerClass = isJournal
+    ? "flex items-center justify-between gap-2 border-b border-brand-100/80 px-1 pb-1"
+    : "conversation-text-box-header";
+  const actionsClass = isJournal
+    ? "text-box-actions text-box-actions-journal"
+    : "text-box-actions";
+
+  const body = (
+    <>
+      {header ? <div className={headerClass}>{header}</div> : null}
+      {children}
+      <div className={actionsClass}>
+        <ConversationSettleActions
+          settling={settling}
+          editing={editing}
+          remainingSec={remainingSec}
+          onSend={onSend}
+          onEdit={onEdit}
+          sendLabel="Send"
+          editLabel="Edit"
+          sendDisabled={sendDisabled}
+          editDisabled={editDisabled}
+        />
+      </div>
+    </>
+  );
+
+  if (onSubmit) {
+    return (
+      <form className={shellClass} onSubmit={onSubmit}>
+        {body}
+      </form>
+    );
+  }
+
+  return <div className={shellClass}>{body}</div>;
 }
 
 /**

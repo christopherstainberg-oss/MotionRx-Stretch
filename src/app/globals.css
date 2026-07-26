@@ -119,53 +119,66 @@ body {
       dark:text-brand-100 dark:hover:bg-brand-900;
   }
 
-  /* Conversation flow: Send / Edit (Describe Your Issue, Journal, Jeffery) */
+  /* Conversation flow: compact Send / Edit inside text-box chrome */
   .btn-settle-send {
-    @apply inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-2xl
-      bg-gradient-to-b from-brand-500 to-brand-700 px-5 py-2.5 text-sm font-bold tracking-wide text-white
-      shadow-[0_4px_14px_-4px_rgba(44,117,111,0.55)]
-      transition hover:from-brand-600 hover:to-brand-800 hover:shadow-[0_6px_18px_-4px_rgba(44,117,111,0.65)]
-      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2
+    @apply inline-flex h-8 items-center justify-center gap-1 rounded-lg
+      bg-brand-600 px-2.5 text-xs font-semibold text-white
+      transition hover:bg-brand-700
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-1
       active:scale-[0.98]
-      dark:from-brand-400 dark:to-brand-600 dark:text-brand-950
-      dark:shadow-[0_4px_16px_-4px_rgba(84,174,165,0.45)]
+      disabled:pointer-events-none disabled:opacity-40
+      dark:bg-brand-500 dark:text-brand-950 dark:hover:bg-brand-400
       dark:focus-visible:ring-offset-brand-950;
   }
 
   .btn-settle-edit {
-    @apply inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-2xl
-      border-2 border-brand-300 bg-white px-5 py-2.5 text-sm font-bold tracking-wide text-brand-800
-      shadow-sm transition
-      hover:border-brand-500 hover:bg-brand-50 hover:text-brand-950
-      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2
+    @apply inline-flex h-8 items-center justify-center gap-1 rounded-lg
+      border border-brand-200 bg-white px-2.5 text-xs font-semibold text-brand-700
+      transition hover:border-brand-400 hover:bg-brand-50 hover:text-brand-900
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-1
       active:scale-[0.98]
-      dark:border-brand-600 dark:bg-brand-950 dark:text-brand-100
-      dark:hover:border-brand-400 dark:hover:bg-brand-900
+      disabled:pointer-events-none disabled:opacity-40
+      dark:border-brand-700 dark:bg-brand-950 dark:text-brand-100
+      dark:hover:border-brand-500 dark:hover:bg-brand-900
       dark:focus-visible:ring-offset-brand-950;
   }
 
   .btn-settle-edit-active {
-    @apply border-brand-600 bg-brand-100 text-brand-950 ring-2 ring-brand-300/70
-      dark:border-brand-400 dark:bg-brand-800 dark:text-white dark:ring-brand-500/40;
+    @apply border-brand-500 bg-brand-50 text-brand-900
+      dark:border-brand-400 dark:bg-brand-900 dark:text-brand-50;
   }
 
-  .settle-panel {
-    @apply rounded-2xl border border-brand-200/90 bg-gradient-to-br from-brand-50 via-white to-brand-100/40
-      p-3 shadow-sm
-      dark:border-brand-700 dark:from-brand-950 dark:via-brand-950 dark:to-brand-900;
+  /*
+   * Shared conversation composer (Describe Your Issue, Journal, Jeffery).
+   * One chrome shell: field area + fixed Send/Edit footer.
+   */
+  .conversation-text-box {
+    @apply overflow-hidden rounded-xl border border-brand-200 bg-white
+      focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-200
+      dark:border-brand-700 dark:bg-brand-950
+      dark:focus-within:border-brand-400 dark:focus-within:ring-brand-800;
   }
 
-  .settle-panel-editing {
-    @apply border-brand-400/80 from-brand-100/80 via-white to-brand-50
-      dark:border-brand-500 dark:from-brand-900 dark:via-brand-950 dark:to-brand-900;
+  .conversation-text-box-header {
+    @apply flex items-center justify-between gap-2 border-b border-brand-100 px-3 py-1.5
+      dark:border-brand-800;
   }
 
-  .settle-bar-fixed {
-    @apply pointer-events-auto border-t border-brand-200/90
-      bg-gradient-to-t from-white via-white/95 to-brand-50/90
-      shadow-[0_-10px_40px_-12px_rgba(15,61,58,0.28)] backdrop-blur-xl
-      dark:border-brand-700 dark:from-brand-950 dark:via-brand-950/95 dark:to-brand-900/90
-      dark:shadow-[0_-10px_40px_-12px_rgba(0,0,0,0.55)];
+  .conversation-text-box-field {
+    @apply w-full border-0 bg-transparent outline-none focus:border-0 focus:ring-0
+      dark:bg-transparent;
+  }
+
+  /* Default Send/Edit footer (Assessment + Jeffery) */
+  .text-box-actions {
+    @apply border-t border-brand-100 bg-brand-50/50 px-2.5 py-1.5
+      dark:border-brand-800 dark:bg-brand-950/60;
+  }
+
+  /* Journal: same Send/Edit layout, paper-colored strip */
+  .text-box-actions-journal {
+    @apply border-brand-100/80 bg-[#fffef8]/90
+      dark:border-brand-800 dark:bg-[#1a2332]/90;
   }
 
   .input {

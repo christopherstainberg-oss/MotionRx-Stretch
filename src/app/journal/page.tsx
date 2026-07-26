@@ -40,7 +40,7 @@ import {
 import { useDebouncedValue } from "@/lib/hooks";
 import type { ConversationPrompt } from "@/lib/assessment-story-conversation";
 import {
-  ConversationSettleActions,
+  ConversationComposer,
   ConversationSpeedControl,
 } from "@/components/ConversationSpeedControl";
 import {
@@ -665,26 +665,35 @@ export default function JournalPage() {
             </div>
           </div>
 
-          <div className="journal-paper overflow-hidden">
-            <div className="flex items-center justify-between gap-2 border-b border-brand-100/80 px-1 pb-1">
-              <input
-                className="journal-paper-title !border-0 !pb-0"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Title for today…"
-                aria-label="Journal title"
-              />
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-brand-500">
-                {completedTurns > 0 ? `${completedTurns} turns` : "ready"}
-                {flowStatus.type === "wait"
-                  ? " · waiting"
-                  : flowStatus.type === "advance"
-                    ? " · next Q…"
-                    : continuousFlow && guideJournalQa
-                      ? " · flow on"
-                      : ""}
-              </span>
-            </div>
+          <ConversationComposer
+            variant="journal"
+            settling={journalSettle.settling}
+            editing={journalSettle.editing}
+            remainingSec={journalSettle.remainingSec}
+            onSend={commitJournalAdvanceNow}
+            onEdit={editJournalAnswer}
+            header={
+              <>
+                <input
+                  className="journal-paper-title !border-0 !pb-0"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Title for today…"
+                  aria-label="Journal title"
+                />
+                <span className="shrink-0 pr-2 text-[10px] font-semibold uppercase tracking-wide text-brand-500">
+                  {completedTurns > 0 ? `${completedTurns} turns` : "ready"}
+                  {flowStatus.type === "wait"
+                    ? " · waiting"
+                    : flowStatus.type === "advance"
+                      ? " · next Q…"
+                      : continuousFlow && guideJournalQa
+                        ? " · flow on"
+                        : ""}
+                </span>
+              </>
+            }
+          >
             <textarea
               ref={journalTextareaRef}
               className="journal-paper-input min-h-[240px]"
@@ -700,7 +709,7 @@ export default function JournalPage() {
               }
               aria-label="Journal reflection"
             />
-          </div>
+          </ConversationComposer>
 
           {/* Continuous conversation strip */}
           <div className="rounded-xl border border-brand-200 bg-brand-50/60 px-3 py-2.5 dark:border-brand-700 dark:bg-brand-900/40">
@@ -741,34 +750,6 @@ export default function JournalPage() {
                 settleRemainingSec={journalSettle.remainingSec}
               />
             </div>
-            {journalSettle.showControls ? (
-              <div className="mt-3">
-                <ConversationSettleActions
-                  settling={journalSettle.settling}
-                  editing={journalSettle.editing}
-                  remainingSec={journalSettle.remainingSec}
-                  onSend={commitJournalAdvanceNow}
-                  onEdit={editJournalAnswer}
-                  sendLabel="Send"
-                  editLabel="Edit"
-                />
-              </div>
-            ) : null}
-            {journalSettle.showControls ? (
-              <>
-                <ConversationSettleActions
-                  fixed
-                  settling={journalSettle.settling}
-                  editing={journalSettle.editing}
-                  remainingSec={journalSettle.remainingSec}
-                  onSend={commitJournalAdvanceNow}
-                  onEdit={editJournalAnswer}
-                  sendLabel="Send"
-                  editLabel="Edit"
-                />
-                <div className="h-24 sm:h-20" aria-hidden />
-              </>
-            ) : null}
             {openJournalQuestion ? (
               <p className="mt-1.5 text-sm leading-snug text-brand-900 dark:text-brand-50">
                 <span className="font-semibold text-brand-600">Now answering: </span>

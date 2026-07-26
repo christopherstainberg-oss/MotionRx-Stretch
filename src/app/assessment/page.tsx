@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { sameStringArray, useDebouncedValue } from "@/lib/hooks";
 import {
-  ConversationSettleActions,
+  ConversationComposer,
   ConversationSpeedControl,
 } from "@/components/ConversationSpeedControl";
 import {
@@ -1385,29 +1385,37 @@ export default function AssessmentPage() {
                             : ""}
                   </span>
                 </span>
-                <textarea
-                  ref={storyTextareaRef}
-                  className="input min-h-[220px] resize-y text-base leading-relaxed"
-                  value={paragraph}
-                  onChange={(e) => {
-                    storyUserEditedRef.current = true;
-                    setParagraph(e.target.value);
-                  }}
-                  onKeyDown={(e) => {
-                    // Enter on a finished short answer nudges flow sooner (still debounced)
-                    if (e.key === "Enter" && !e.shiftKey) {
+                <ConversationComposer
+                  settling={storySettle.settling}
+                  editing={storySettle.editing}
+                  remainingSec={storySettle.remainingSec}
+                  onSend={commitStoryAdvanceNow}
+                  onEdit={editStoryAnswer}
+                >
+                  <textarea
+                    ref={storyTextareaRef}
+                    className="input conversation-text-box-field min-h-[220px] resize-y rounded-none text-base leading-relaxed"
+                    value={paragraph}
+                    onChange={(e) => {
                       storyUserEditedRef.current = true;
+                      setParagraph(e.target.value);
+                    }}
+                    onKeyDown={(e) => {
+                      // Enter on a finished short answer nudges flow sooner (still debounced)
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        storyUserEditedRef.current = true;
+                      }
+                    }}
+                    placeholder={
+                      continuousFlow && guideStoryQa
+                        ? "Answer under each ▸ line — the next question appears automatically when you pause…"
+                        : storyPriorPrompt.placeholder
                     }
-                  }}
-                  placeholder={
-                    continuousFlow && guideStoryQa
-                      ? "Answer under each ▸ line — the next question appears automatically when you pause…"
-                      : storyPriorPrompt.placeholder
-                  }
-                  aria-label="Describe your issue"
-                  autoComplete="off"
-                  spellCheck
-                />
+                    aria-label="Describe your issue"
+                    autoComplete="off"
+                    spellCheck
+                  />
+                </ConversationComposer>
               </label>
 
               {/* Continuous conversation strip */}
@@ -1449,35 +1457,6 @@ export default function AssessmentPage() {
                     settleRemainingSec={storySettle.remainingSec}
                   />
                 </div>
-                {storySettle.showControls ? (
-                  <div className="mt-3">
-                    <ConversationSettleActions
-                      settling={storySettle.settling}
-                      editing={storySettle.editing}
-                      remainingSec={storySettle.remainingSec}
-                      onSend={commitStoryAdvanceNow}
-                      onEdit={editStoryAnswer}
-                      sendLabel="Send"
-                      editLabel="Edit"
-                    />
-                  </div>
-                ) : null}
-                {/* Fixed Send/Edit bar — brand theme, above mobile tab bar */}
-                {storySettle.showControls ? (
-                  <>
-                    <ConversationSettleActions
-                      fixed
-                      settling={storySettle.settling}
-                      editing={storySettle.editing}
-                      remainingSec={storySettle.remainingSec}
-                      onSend={commitStoryAdvanceNow}
-                      onEdit={editStoryAnswer}
-                      sendLabel="Send"
-                      editLabel="Edit"
-                    />
-                    <div className="h-24 sm:h-20" aria-hidden />
-                  </>
-                ) : null}
                 {openStoryQuestion ? (
                   <p className="mt-1.5 text-sm leading-snug text-brand-900 dark:text-brand-50">
                     <span className="font-semibold text-brand-600">Now answering: </span>
