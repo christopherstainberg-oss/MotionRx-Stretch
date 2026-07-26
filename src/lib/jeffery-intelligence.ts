@@ -669,14 +669,11 @@ export function decideJefferyFlow(
   return { type: "idle" };
 }
 
-function jefferyBridge(intel: JefferyIntelligence, lastAnswer: string): string {
-  const name = "friend";
-  const bit = snip(lastAnswer, 48);
-  if (bit) return `Thanks — holding “${bit}.” Let’s keep going.`;
-  if (intel.missingThemes[0]) {
-    return `Thanks — next we’ll cover ${intel.missingThemes[0]}.`;
-  }
-  return `Thanks — ${name}, let’s keep the interview flowing.`;
+/**
+ * After the user replies, only surface the next question — no “holding …” bridge text.
+ */
+function jefferyBridge(_intel: JefferyIntelligence, _lastAnswer: string): string {
+  return "";
 }
 
 /** Enrich local Jeffery reply content with intelligence telemetry + better follow-up */

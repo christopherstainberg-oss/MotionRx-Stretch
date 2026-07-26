@@ -770,10 +770,11 @@ export function decideJournalFlow(ctx: {
   return intel.missingThemes.length ? { type: "idle" } : { type: "done" };
 }
 
-function journalBridge(name: string, lastAnswer: string): string {
-  const s = snip(lastAnswer, 48);
-  if (s) return `${name}, thank you — holding “${s}.” Let’s keep going:`;
-  return `${name}, thank you — let’s keep the conversation flowing:`;
+/**
+ * After the user replies, just ask the next journal question — no “holding …” bridge.
+ */
+function journalBridge(_name: string, _lastAnswer: string): string {
+  return "";
 }
 
 export function appendJournalFlowQuestion(

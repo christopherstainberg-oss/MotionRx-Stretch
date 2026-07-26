@@ -239,15 +239,13 @@ export function decideStoryFlow(ctx: {
   return next ? { type: "idle" } : { type: "done" };
 }
 
-function continuousBridge(name: string, lastAnswer: string): string {
-  if (isSkipAnswer(lastAnswer)) {
-    return `${name}, no problem — we’ll skip that one and keep going:`;
-  }
-  const snip = storySnippet(lastAnswer, 48);
-  if (snip) {
-    return `${name}, thanks — holding “${snip}.” Let’s keep going:`;
-  }
-  return `${name}, thanks — let’s keep the interview flowing:`;
+/**
+ * After the user replies, do not inject “thanks — holding …” filler.
+ * Continuous flow should only append the next ▸ question.
+ * Bridge kept as "" so Skip and normal answers both advance cleanly.
+ */
+function continuousBridge(_name: string, _lastAnswer: string): string {
+  return "";
 }
 
 /**
