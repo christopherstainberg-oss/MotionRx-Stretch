@@ -23,6 +23,11 @@ import {
   buildVisitModalityPlan,
   modalityCoachBlurb,
 } from "@/lib/modality-engine";
+import {
+  analyzeJefferyIntelligence,
+  enrichJefferyLocalContent,
+} from "@/lib/jeffery-intelligence";
+import { sampleTherapeuticQuestions } from "@/data/therapeutic-question-catalog";
 
 const OPEN_ENDED = [
   "On a scale of 0–10, what is your pain right now, and what makes it better or worse?",
@@ -35,6 +40,7 @@ const OPEN_ENDED = [
   "What is one win from this week—even a small one—that we should protect in your plan?",
   "Is fear of movement, sleep, or stress shaping whether you feel ready to progress?",
   "What support (pacing, rest, people, environment) helped most when symptoms rose?",
+  ...sampleTherapeuticQuestions(12, "jeffery-open", { preferCurated: true }).map((q) => q.question),
 ];
 
 /**
@@ -312,7 +318,29 @@ export function jefferyLocalReply(
     });
   }
 
-  const openEndedQuestion = OPEN_ENDED[Math.floor(Math.random() * OPEN_ENDED.length)]!;
+  // Describe Your Issue–grade intelligence over chat + assessment story
+  const priorMsgs = ctx.thread?.messages || [];
+  const threadForIntel = [
+    ...priorMsgs,
+    {
+      id: "live-user",
+      role: "user" as const,
+      content: userText,
+      createdAt: new Date().toISOString(),
+    },
+  ];
+  const intel = analyzeJefferyIntelligence(threadForIntel, {
+    preferredName: preferred || undefined,
+    assessmentStory: story || undefined,
+    journalBridge: journalBridge?.summary,
+    painOverall: pain ?? ctx.journal[0]?.painOverall,
+    mood: ctx.journal[0]?.mood,
+  });
+
+  const intelQuestion =
+    intel.adaptiveQuestions[0]?.question ||
+    OPEN_ENDED[Math.floor(Math.random() * OPEN_ENDED.length)]!;
+
   const edu = topics.map((t) => clinicalEducation(t)).join("\n\n");
 
   const routineLines = (adjustedRoutine || active)?.items
@@ -328,6 +356,7 @@ export function jefferyLocalReply(
 
   const painForMods =
     pain ??
+    intel.painNow ??
     ctx.sessions[0]?.averagePainAfter ??
     ctx.journal[0]?.painOverall ??
     3;
@@ -344,7 +373,14 @@ export function jefferyLocalReply(
     ? `Hi **${preferred}**, I'm **Jeffery**, your MotionRx Stretch clinical mobility coach.`
     : `Hi, I'm **Jeffery**, your MotionRx Stretch clinical mobility coach.`;
 
-  const content = [
+  const irrNote =
+    intel.story.irritability !== "unknown"
+      ? `Story irritability: **${intel.story.irritability}**${
+          intel.story.irritabilitySource === "assumed" ? " (assumed until more detail)" : ""
+        }.`
+      : "";
+
+  let content = [
     greeting,
     ``,
     `I read what you shared and correlated it with your Assessment story, sex/medical history (when provided), routines, sessions, journal, pain descriptors, and modality suggestions.`,
@@ -354,6 +390,9 @@ export function jefferyLocalReply(
           .map((k) => `• ${k}`)
           .join("\n")}`
       : `I don't have much history yet—complete Assessment (including sex & medical history) and Journal so I can personalize more.`,
+    `\n**Conversation intel:** ${intel.intelligenceGrade} (${intel.completeness}/100) · themes ${intel.coveredThemes.length}/12${
+      intel.planFeedback !== "unknown" ? ` · plan feedback: ${intel.planFeedback}` : ""
+    }. ${irrNote}`,
     descLabels.length
       ? `\n**Descriptor-driven dosing hints:** stretch bias ${descHints.stretchBias.toFixed(2)}, exercise bias ${descHints.exerciseBias.toFixed(2)}, irritability boost +${descHints.effectivePainBoost.toFixed(1)}.${descHints.biases.length ? ` Biases: ${descHints.biases.slice(0, 5).join(", ")}.` : ""}`
       : "",
@@ -369,14 +408,18 @@ export function jefferyLocalReply(
           )
           .join("\n")}`
       : "",
-    descHints.redFlags.length || condHints.redFlags.length
-      ? `\n**Safety notes:** ${[...descHints.redFlags, ...condHints.redFlags][0]}`
+    descHints.redFlags.length || condHints.redFlags.length || intel.safetyHints.length
+      ? `\n**Safety notes:** ${
+          [...descHints.redFlags, ...condHints.redFlags, ...intel.safetyHints][0]
+        }`
       : "",
     ``,
     `**Clinical education:**\n${edu}`,
     pain !== undefined
       ? `\nYou mentioned pain around **${pain}/10**. We'll treat that as a dosing signal alongside your descriptors.`
-      : "",
+      : intel.painNow != null
+        ? `\nFrom your conversation/story, pain **${intel.painNow}/10** is on record as stated.`
+        : "",
     adjustedRoutine
       ? `\n**I adjusted / drafted your program based on this discussion.**\n${routineLines || adjustedRoutine.name}\n\n_Open the Routines or Builder page to review, rotate items, or start a session._`
       : active
@@ -385,12 +428,16 @@ export function jefferyLocalReply(
     ``,
     modalityBlurb,
     ``,
-    `**Question for you:** ${openEndedQuestion}`,
+    `**Question for you:** ${intelQuestion}`,
     ``,
     `_Educational support only—not a medical diagnosis. Seek licensed care for red flags (chest pain, progressive weakness, bowel/bladder changes, trauma, fever with back pain)._`,
   ]
     .filter(Boolean)
     .join("\n");
+
+  const enriched = enrichJefferyLocalContent(content, intel, preferred || undefined);
+  content = enriched.content;
+  const openEndedQuestion = enriched.openEndedQuestion;
 
   return {
     message: {
@@ -399,7 +446,7 @@ export function jefferyLocalReply(
       content,
       createdAt: new Date().toISOString(),
       meta: {
-        painMentioned: pain,
+        painMentioned: pain ?? intel.painNow,
         adjustedRoutineId: adjustedRoutine?.id,
         openEndedQuestion,
         clinicalTopics: topics,
@@ -489,9 +536,25 @@ export function newThread(userId: string): JefferyThread {
       {
         id: uuid(),
         role: "jeffery",
-        content:
-          "Hi, I'm **Jeffery**. Tell me what is bothering you (a short paragraph is perfect), how your pain feels today (0–10), and what you want to get back to doing. I can educate you, ask helpful questions, and adjust your stretch/exercise plan based on our discussion.",
+        content: [
+          "Hi, I'm **Jeffery** — your continuous clinical coach.",
+          "",
+          "I'll interview you like a careful outpatient eval (same intelligence style as **Describe Your Issue**):",
+          "• What bothers you most",
+          "• Pain 0–10 only if you state it (I won't invent a score)",
+          "• What makes it worse / better",
+          "• How you feel 2–24 hours after activity",
+          "• Goals, sleep, stress, and plan dosing feedback",
+          "",
+          "**Question for you:** What is bothering you most right now—and how does it show up in a typical day?",
+          "",
+          "_Educational support only—not a diagnosis. Seek urgent care for red-flag symptoms._",
+        ].join("\n"),
         createdAt: new Date().toISOString(),
+        meta: {
+          openEndedQuestion:
+            "What is bothering you most right now—and how does it show up in a typical day?",
+        },
       },
     ],
     knownAdjustments: [],

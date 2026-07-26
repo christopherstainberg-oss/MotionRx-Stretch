@@ -52,6 +52,13 @@ export type StoryPriorPrompt = {
 /** Marker prefix when a guided question is written into the free-text story */
 export const STORY_Q_MARKER = "▸";
 
+/** One interview turn: guided question + optional user answer text */
+export type StoryInterviewTurn = {
+  question: string;
+  answer: string;
+  open: boolean;
+};
+
 function areaPhrase(areas: BodyPart[]): string {
   if (!areas.length) return "what is bothering you";
   const labels = areas.slice(0, 2).map((a) => BODY_PART_LABELS[a] || a);
@@ -63,6 +70,177 @@ function storySnippet(story: string, max = 90): string {
   const s = story.trim().replace(/\s+/g, " ");
   if (!s) return "";
   return s.length > max ? `${s.slice(0, max)}…` : s;
+}
+
+/**
+ * Parse free-text into interview turns (▸ question + following answer lines).
+ * Free narrative before the first ▸ is a synthetic “opening” turn.
+ */
+export function parseStoryInterviewTurns(story: string): StoryInterviewTurn[] {
+  const raw = (story || "").replace(/\r/g, "");
+  if (!raw.trim()) return [];
+
+  const parts = raw.split(new RegExp(`(?=\\n?\\s*${escapeRegExp(STORY_Q_MARKER)}\\s)`));
+  const turns: StoryInterviewTurn[] = [];
+
+  for (const part of parts) {
+    const chunk = part.trim();
+    if (!chunk) continue;
+
+    if (chunk.startsWith(STORY_Q_MARKER)) {
+      const lines = chunk.split("\n");
+      const qLine = (lines[0] || "").replace(new RegExp(`^\\s*${escapeRegExp(STORY_Q_MARKER)}\\s*`), "").trim();
+      const answer = lines
+        .slice(1)
+        .join("\n")
+        .trim();
+      turns.push({
+        question: qLine,
+        answer,
+        open: !isAnswerComplete(answer),
+      });
+    } else {
+      // Opening free narrative (no marker yet)
+      turns.push({
+        question: "",
+        answer: chunk,
+        open: !isAnswerComplete(chunk),
+      });
+    }
+  }
+  return turns;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Enough substance to treat a reply as a finished turn and advance the interview. */
+export function isAnswerComplete(answer: string): boolean {
+  const a = (answer || "").trim();
+  if (!a) return false;
+  // Very short ack still counts if multi-word or has meaningful tokens
+  const words = a.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return true;
+  if (words.length === 1 && words[0]!.length >= 4) return true;
+  // Single short token — wait
+  return a.length >= 12;
+}
+
+/**
+ * Continuous-flow decision for the free-text box.
+ * - seed: empty box should get opening question
+ * - wait: open question awaiting answer
+ * - advance: last answer complete → append next Q
+ * - done: no more questions
+ */
+export type StoryFlowAction =
+  | { type: "seed"; prompt: ConversationPrompt }
+  | { type: "wait"; currentQuestion: string }
+  | { type: "advance"; prompt: ConversationPrompt; bridge: string }
+  | { type: "idle" }
+  | { type: "done" };
+
+export function decideStoryFlow(ctx: {
+  paragraph?: string;
+  areas?: BodyPart[];
+  preferredName?: string;
+  sex?: SexSelection | null;
+  pastMedicalHistory?: string;
+  currentMedicalHistory?: string;
+  descriptorIds?: string[];
+  conditionIds?: string[];
+  goals?: string[];
+}): StoryFlowAction {
+  const story = (ctx.paragraph || "").replace(/\r/g, "");
+  const trimmed = story.trim();
+  const turns = parseStoryInterviewTurns(story);
+  const next = nextStoryBoxQuestion(ctx);
+  const name = displayPreferredName(ctx.preferredName);
+
+  // Empty → seed opening question so conversation starts immediately
+  if (!trimmed) {
+    const open =
+      next ||
+      ({
+        id: "flow-open",
+        label: "What’s bothering you?",
+        question: `${name}, what is bothering you most right now—and how does it show up in a typical day?`,
+        category: "bother" as const,
+        reason: "Start continuous interview",
+      } satisfies ConversationPrompt);
+    return { type: "seed", prompt: open };
+  }
+
+  const last = turns[turns.length - 1];
+  if (last?.open) {
+    return {
+      type: "wait",
+      currentQuestion: last.question || "Keep writing…",
+    };
+  }
+
+  // Has content, last turn complete — advance if we have a new Q not already present
+  if (next) {
+    const needle = next.question.slice(0, Math.min(36, next.question.length));
+    if (story.includes(needle)) {
+      // Next Q already in box but maybe answered — try second in list
+      const more = selectAutoAppearingQuestions(ctx, 4);
+      const fresh = more.find((p) => !story.includes(p.question.slice(0, Math.min(36, p.question.length))));
+      if (fresh) {
+        return {
+          type: "advance",
+          prompt: fresh,
+          bridge: continuousBridge(name, last?.answer || ""),
+        };
+      }
+      return { type: "done" };
+    }
+    return {
+      type: "advance",
+      prompt: next,
+      bridge: continuousBridge(name, last?.answer || ""),
+    };
+  }
+
+  // Free text without markers and no adaptive Q — still keep flow with catalog
+  if (!story.includes(STORY_Q_MARKER) && trimmed.length >= 12) {
+    const catalog = selectAutoAppearingQuestions(ctx, 3);
+    if (catalog[0]) {
+      return {
+        type: "advance",
+        prompt: catalog[0],
+        bridge: continuousBridge(name, trimmed.slice(0, 80)),
+      };
+    }
+  }
+
+  return next ? { type: "idle" } : { type: "done" };
+}
+
+function continuousBridge(name: string, lastAnswer: string): string {
+  const snip = storySnippet(lastAnswer, 48);
+  if (snip) {
+    return `${name}, thanks — holding “${snip}.” Let’s keep going:`;
+  }
+  return `${name}, thanks — let’s keep the interview flowing:`;
+}
+
+/**
+ * Append the next guided question (with optional bridge) for continuous conversation.
+ */
+export function appendFlowQuestion(
+  story: string,
+  prompt: ConversationPrompt,
+  bridge?: string
+): string {
+  const needle = prompt.question.slice(0, Math.min(40, prompt.question.length));
+  if (story.includes(needle)) return story;
+  const base = story.trimEnd();
+  const bridgeLine = bridge ? `\n\n${bridge}` : "";
+  const block = formatQuestionForStoryBox(prompt);
+  if (!base) return `${bridgeLine}${block}`.trimStart();
+  return `${base}${bridgeLine}${block}`;
 }
 
 /**
@@ -275,16 +453,25 @@ export function nextStoryBoxQuestion(ctx: {
  * Whether the free-text story already ends with an unanswered guided question line.
  */
 export function storyEndsWithOpenQuestion(story: string): boolean {
-  const s = story.trimEnd();
-  if (!s.includes(STORY_Q_MARKER)) return false;
-  const lastMarker = s.lastIndexOf(STORY_Q_MARKER);
-  const after = s.slice(lastMarker);
-  // Marker line present; if little/no answer text after the question line, still open
-  const lines = after.split(/\n/).map((l) => l.trim()).filter(Boolean);
-  if (lines.length <= 1) return true;
-  // Second line is very short → still open
-  if (lines.length === 2 && lines[1].length < 12) return true;
-  return false;
+  const turns = parseStoryInterviewTurns(story);
+  if (!turns.length) return false;
+  const last = turns[turns.length - 1]!;
+  // Only “waiting on answer” when there is a guided question marker turn still open
+  if (!last.question && !story.includes(STORY_Q_MARKER)) return false;
+  return last.open;
+}
+
+/** Count completed interview turns (for UI progress). */
+export function countCompletedStoryTurns(story: string): number {
+  return parseStoryInterviewTurns(story).filter((t) => !t.open && (t.answer || t.question)).length;
+}
+
+/** Last open question text, if any. */
+export function currentOpenStoryQuestion(story: string): string | null {
+  const turns = parseStoryInterviewTurns(story);
+  const last = turns[turns.length - 1];
+  if (last?.open && last.question) return last.question;
+  return null;
 }
 
 /**
@@ -695,8 +882,12 @@ function buildStoryIntelReflection(
           : `; no 0–10 pain number stated yet (I will not invent one)`
     }. ${
       intel.irritability !== "unknown"
-        ? `Irritability from your stated evidence: **${intel.irritability}**`
-        : `Irritability: **not determined** (I will not assume low/moderate/high)`
+        ? `Irritability: **${intel.irritability}** (${
+            intel.irritabilitySource === "assumed"
+              ? "assumed for dosing until more detail"
+              : "from your signals"
+          })`
+        : `Irritability: **unknown**`
     }${
       intel.activityResponse !== "unknown"
         ? ` with activity response “${intel.activityResponse}”`
@@ -705,9 +896,15 @@ function buildStoryIntelReflection(
   );
   if (intel.aggravators.length) {
     bits.push(`Aggravators you actually described: ${intel.aggravators.slice(0, 4).join(", ")}.`);
+  } else if (intel.assumedAggravators?.length) {
+    bits.push(
+      `You have not confirmed causes yet—I'm holding soft context only: ${intel.assumedAggravators
+        .slice(0, 3)
+        .join(", ")} (assumed, not stated as aggravators).`
+    );
   } else {
     bits.push(
-      `You have not yet named which positions, actions, or activities make it worse—I am not filling those in for you.`
+      `You have not yet named which positions, actions, or activities make it worse.`
     );
   }
   if (intel.easers.length) {

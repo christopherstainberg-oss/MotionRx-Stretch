@@ -12,14 +12,20 @@ import { getDescriptorById } from "@/data/pain-descriptors";
 import { sexLabel, type SexSelection } from "@/lib/clinical-history";
 import {
   answerStoryConversation,
+  appendFlowQuestion,
   buildStoryPriorPrompt,
+  countCompletedStoryTurns,
+  currentOpenStoryQuestion,
+  decideStoryFlow,
   formatQuestionForStoryBox,
   getStoryIntel,
   nextStoryBoxQuestion,
+  parseStoryInterviewTurns,
   selectAutoAppearingQuestions,
   storyEndsWithOpenQuestion,
   suggestedConversationChips,
   type ConversationPrompt,
+  type StoryFlowAction,
   type StoryPriorPrompt,
 } from "@/lib/assessment-story-conversation";
 import {
@@ -27,12 +33,17 @@ import {
   type StoryIntelligence,
 } from "@/lib/story-intelligence";
 
-export type { ConversationPrompt, StoryPriorPrompt, StoryIntelligence };
+export type { ConversationPrompt, StoryPriorPrompt, StoryIntelligence, StoryFlowAction };
 export {
+  appendFlowQuestion,
   buildStoryPriorPrompt,
+  countCompletedStoryTurns,
+  currentOpenStoryQuestion,
+  decideStoryFlow,
   formatQuestionForStoryBox,
   getStoryIntel,
   nextStoryBoxQuestion,
+  parseStoryInterviewTurns,
   selectAutoAppearingQuestions,
   storyEndsWithOpenQuestion,
 };

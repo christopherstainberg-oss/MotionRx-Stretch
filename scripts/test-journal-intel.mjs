@@ -1,0 +1,13 @@
+import { analyzeJournalIntelligence, decideJournalFlow, journalQuestionBankChips } from '../src/lib/journal-intelligence.ts';
+import { ALL_THERAPEUTIC_QUESTIONS } from '../src/data/therapeutic-questions.ts';
+console.log('questions', ALL_THERAPEUTIC_QUESTIONS.length);
+console.log('chips', journalQuestionBankChips(5).map(q=>q.label).join(' | '));
+const empty = decideJournalFlow({ body: '' });
+console.log('seed', empty.type);
+const open = decideJournalFlow({ body: '▸ How are you feeling right now?\n' });
+console.log('wait', open.type);
+const ans = '▸ How are you feeling right now?\nAnxious and my lower back is tight after a stressful day at work.\n';
+const adv = decideJournalFlow({ body: ans });
+console.log('advance', adv.type);
+const intel = analyzeJournalIntelligence(ans);
+console.log('grade', intel.intelligenceGrade, 'mood', intel.moodWords.join(','), 'themes', intel.coveredThemes.length);

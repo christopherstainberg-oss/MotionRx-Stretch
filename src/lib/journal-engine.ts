@@ -17,6 +17,9 @@ import { matchConditionsFromText } from "@/data/clinical-conditions";
 import { summarizeClinicalSymptoms } from "@/data/clinical-symptoms";
 import { summarizeAdlEntries, type UserAdlEntry } from "@/data/adls";
 import { BODY_PART_LABELS } from "@/data/stretch-library";
+import { ALL_THERAPEUTIC_QUESTIONS } from "@/data/therapeutic-questions";
+import { sampleTherapeuticQuestions } from "@/data/therapeutic-question-catalog";
+import { analyzeJournalIntelligence } from "@/lib/journal-intelligence";
 
 export type JournalPrompt = {
   id: string;
@@ -105,7 +108,10 @@ export type JournalAnalysis = {
   adlEntries: UserAdlEntry[];
 };
 
+/** Jeffery follow-ups: curated + virtual catalog sample + PT classics */
 const THERAPIST_QUESTIONS = [
+  ...ALL_THERAPEUTIC_QUESTIONS.slice(0, 20).map((q) => q.question),
+  ...sampleTherapeuticQuestions(40, "jeffery-bank", { preferCurated: false }).map((q) => q.question),
   "If you described today to your PT in one sentence, what would you want them to know first?",
   "What activity do you most want to return to, and what about it still feels out of reach?",
   "When symptoms flare, what is your usual first response—and does it help for more than an hour?",
@@ -258,17 +264,35 @@ export function analyzeJournalEntry(input: {
   for (const tip of sx.suggestions.slice(0, 2)) improvements.push(tip);
   for (const tip of adl.coachingTips.slice(0, 2)) improvements.push(tip);
 
-  const jefferyQuestion = hashPick(THERAPIST_QUESTIONS, text.slice(0, 40) + String(input.painOverall));
+  const jIntel = analyzeJournalIntelligence(input.body || "", {
+    painOverall: input.painOverall,
+    mood: input.mood,
+    energy: input.energy,
+    sleepQuality: input.sleepQuality,
+  });
+
+  const jefferyQuestion =
+    jIntel.adaptiveQuestions[0]?.question ||
+    hashPick(THERAPIST_QUESTIONS, text.slice(0, 40) + String(input.painOverall));
 
   const jefferySummary = [
     `I hear you. From today's journal, the plan signal is **${signal}**.`,
     reasons.slice(0, 2).join(" "),
     `Pain logged at **${input.painOverall}/10** (mood ${input.mood}/5${input.energy ? `, energy ${input.energy}/5` : ""}).`,
+    jIntel.moodWords.length
+      ? `Mood language: ${jIntel.moodWords.slice(0, 3).join(", ")}.`
+      : "",
+    jIntel.copingWords.length
+      ? `Coping you named: ${jIntel.copingWords.slice(0, 3).join(", ")}.`
+      : "",
     sx.labels.length
       ? `Symptoms noted: ${sx.labels.slice(0, 4).join(", ")}.`
       : "",
     adl.limitedCount
       ? `ADL load: ${adl.limitedCount} limited daily activit${adl.limitedCount === 1 ? "y" : "ies"}.`
+      : "",
+    jIntel.safetyHints.length
+      ? `Safety note: please seek emergency/crisis support if you are in danger — this app is not crisis care.`
       : "",
     signal === "flare"
       ? "We'll treat this as a protective day: easier mobility, less load, and check-in with licensed care if red flags appear."
@@ -277,6 +301,7 @@ export function analyzeJournalEntry(input: {
         : signal === "progress"
           ? "You're showing readiness cues—we can nudge challenge carefully if the next 24 hours stay calm."
           : "Holding steady is a valid clinical choice; maintenance builds durable capacity.",
+    jIntel.liveReadLines[1] ? `Journal intel: ${jIntel.liveReadLines[1]}` : "",
   ]
     .filter(Boolean)
     .join(" ");

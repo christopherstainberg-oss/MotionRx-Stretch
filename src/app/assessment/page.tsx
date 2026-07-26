@@ -58,7 +58,11 @@ import {
 } from "@/lib/pain-profile";
 import {
   answerAssessmentConversation,
+  appendFlowQuestion,
   buildStoryPriorPrompt,
+  countCompletedStoryTurns,
+  currentOpenStoryQuestion,
+  decideStoryFlow,
   displayPreferredName,
   formatQuestionForStoryBox,
   getStoryIntel,
@@ -321,9 +325,14 @@ export default function AssessmentPage() {
   const [coachLog, setCoachLog] = useState<CoachExchange[]>([]);
   /** Progressive Q&A guide inserts open-ended questions into free text */
   const [guideStoryQa, setGuideStoryQa] = useState(true);
+  /** Keep seeding / advancing the free-text interview without waiting for first keystroke */
+  const [continuousFlow, setContinuousFlow] = useState(true);
   const storyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   /** Only auto-append after the user has typed (not on first load of saved story) */
   const storyUserEditedRef = useRef(false);
+  /** Prevent re-entrant double-appends while React batches setState */
+  const flowLockRef = useRef(false);
+  const lastFlowAppendRef = useRef("");
   const [writtenApproach, setWrittenApproach] = useState<string | null>(null);
   const [prescribed, setPrescribed] = useState<PrescribedPlanDocument | null>(null);
   const [planAgreed, setPlanAgreed] = useState(false);
@@ -339,6 +348,8 @@ export default function AssessmentPage() {
 
   /** Heavy clinical matching runs on debounced text so the textarea stays responsive */
   const debouncedParagraph = useDebouncedValue(paragraph, 400);
+  /** Faster debounce for continuous interview advance (feels conversational) */
+  const flowParagraph = useDebouncedValue(paragraph, 550);
 
   useEffect(() => {
     try {
@@ -771,15 +782,7 @@ export default function AssessmentPage() {
     [storyPromptCtx]
   );
 
-  /** Insert an open-ended Q into the free-text story box and focus for the answer */
-  function insertQuestionIntoStory(prompt: ConversationPrompt) {
-    setParagraph((prev) => {
-      const needle = prompt.question.slice(0, Math.min(40, prompt.question.length));
-      if (prev.includes(needle)) return prev;
-      const block = formatQuestionForStoryBox(prompt);
-      const base = prev.trimEnd();
-      return base ? `${base}${block}` : block.trimStart();
-    });
+  function focusStoryEnd() {
     requestAnimationFrame(() => {
       const el = storyTextareaRef.current;
       if (!el) return;
@@ -790,48 +793,100 @@ export default function AssessmentPage() {
     });
   }
 
-  /** Progressive guide: after user types and pauses, auto-append next unanswered Q into free text */
-  useEffect(() => {
-    if (!guideStoryQa) return;
-    if (!storyUserEditedRef.current) return;
-    const story = debouncedParagraph;
-    if (story.trim().length < 28) return;
-    if (storyEndsWithOpenQuestion(story)) return;
-    const next = nextStoryBoxQuestion({
-      paragraph: story,
+  /** Insert an open-ended Q into the free-text story box and focus for the answer */
+  function insertQuestionIntoStory(prompt: ConversationPrompt, bridge?: string) {
+    setParagraph((prev) => appendFlowQuestion(prev, prompt, bridge));
+    lastFlowAppendRef.current = prompt.id;
+    focusStoryEnd();
+  }
+
+  const flowCtx = useMemo(
+    () => ({
+      paragraph: flowParagraph,
       areas,
       preferredName: displayPreferredName(preferredName),
-      sex: sex || undefined,
+      sex: (sex || undefined) as SexSelection | undefined,
       pastMedicalHistory,
       currentMedicalHistory,
       descriptorIds,
       conditionIds: paragraphConditions,
       goals,
-    });
-    if (!next) return;
-    // Only auto-append when the last non-empty line looks like a finished answer
-    const lines = story.trimEnd().split(/\n/).filter((l) => l.trim());
-    const last = lines[lines.length - 1] || "";
-    if (last.includes("?")) return;
-    if (last.length < 18) return;
-    const needle = next.question.slice(0, Math.min(40, next.question.length));
-    if (story.includes(needle)) return;
-    setParagraph((prev) => {
-      if (storyEndsWithOpenQuestion(prev)) return prev;
-      if (prev.includes(needle)) return prev;
-      return `${prev.trimEnd()}${formatQuestionForStoryBox(next)}`;
-    });
+    }),
+    [
+      flowParagraph,
+      areas,
+      preferredName,
+      sex,
+      pastMedicalHistory,
+      currentMedicalHistory,
+      descriptorIds,
+      paragraphConditions,
+      goals,
+    ]
+  );
+
+  const flowStatus = useMemo(() => decideStoryFlow(flowCtx), [flowCtx]);
+  const openStoryQuestion = useMemo(
+    () => currentOpenStoryQuestion(paragraph),
+    [paragraph]
+  );
+  const completedTurns = useMemo(
+    () => countCompletedStoryTurns(paragraph),
+    [paragraph]
+  );
+
+  /**
+   * Continuous conversation flow in the free-text box:
+   * seed opening Q → wait for answer → bridge + next Q → repeat.
+   */
+  useEffect(() => {
+    if (!guideStoryQa || !continuousFlow) return;
+    if (flowLockRef.current) return;
+
+    const action = decideStoryFlow(flowCtx);
+
+    if (action.type === "wait" || action.type === "done" || action.type === "idle") {
+      return;
+    }
+
+    // Seed opening question even before first keystroke (continuous interview ready)
+    if (action.type === "seed") {
+      if (paragraph.trim()) return;
+      flowLockRef.current = true;
+      setParagraph((prev) => {
+        if (prev.trim()) return prev;
+        return appendFlowQuestion("", action.prompt);
+      });
+      lastFlowAppendRef.current = action.prompt.id;
+      focusStoryEnd();
+      window.setTimeout(() => {
+        flowLockRef.current = false;
+      }, 400);
+      return;
+    }
+
+    // Advance only after user has engaged (or already has content)
+    if (action.type === "advance") {
+      if (!storyUserEditedRef.current && !paragraph.includes("▸")) return;
+      if (lastFlowAppendRef.current === action.prompt.id && storyEndsWithOpenQuestion(paragraph)) {
+        return;
+      }
+      flowLockRef.current = true;
+      setParagraph((prev) => {
+        if (storyEndsWithOpenQuestion(prev)) return prev;
+        return appendFlowQuestion(prev, action.prompt, action.bridge);
+      });
+      lastFlowAppendRef.current = action.prompt.id;
+      focusStoryEnd();
+      window.setTimeout(() => {
+        flowLockRef.current = false;
+      }, 500);
+    }
   }, [
     guideStoryQa,
-    debouncedParagraph,
-    areas,
-    preferredName,
-    sex,
-    pastMedicalHistory,
-    currentMedicalHistory,
-    descriptorIds,
-    paragraphConditions,
-    goals,
+    continuousFlow,
+    flowCtx,
+    paragraph,
   ]);
 
   function askCoach(question?: string) {
@@ -1272,29 +1327,112 @@ export default function AssessmentPage() {
               </div>
 
               <label className="block">
-                <span className="mb-1.5 block text-sm font-medium text-brand-800 dark:text-brand-100">
-                  Free-text story &amp; Q&amp;A
-                  {preferredName ? (
-                    <span className="font-normal text-brand-500">
-                      {" "}
-                      · {displayPreferredName(preferredName)}
-                    </span>
-                  ) : null}
+                <span className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-sm font-medium text-brand-800 dark:text-brand-100">
+                  <span>
+                    Free-text story &amp; Q&amp;A
+                    {preferredName ? (
+                      <span className="font-normal text-brand-500">
+                        {" "}
+                        · {displayPreferredName(preferredName)}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-500">
+                    {completedTurns > 0 ? `${completedTurns} turns` : "ready"}
+                    {flowStatus.type === "wait"
+                      ? " · waiting for your answer"
+                      : flowStatus.type === "advance"
+                        ? " · queuing next question…"
+                        : flowStatus.type === "done"
+                          ? " · interview solid"
+                          : continuousFlow && guideStoryQa
+                            ? " · continuous flow on"
+                            : ""}
+                  </span>
                 </span>
                 <textarea
                   ref={storyTextareaRef}
-                  className="input min-h-[200px] resize-y text-base leading-relaxed"
+                  className="input min-h-[220px] resize-y text-base leading-relaxed"
                   value={paragraph}
                   onChange={(e) => {
                     storyUserEditedRef.current = true;
                     setParagraph(e.target.value);
                   }}
-                  placeholder={storyPriorPrompt.placeholder}
+                  onKeyDown={(e) => {
+                    // Enter on a finished short answer nudges flow sooner (still debounced)
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      storyUserEditedRef.current = true;
+                    }
+                  }}
+                  placeholder={
+                    continuousFlow && guideStoryQa
+                      ? "Answer under each ▸ line — the next question appears automatically when you pause…"
+                      : storyPriorPrompt.placeholder
+                  }
                   aria-label="Describe your issue"
                   autoComplete="off"
                   spellCheck
                 />
               </label>
+
+              {/* Continuous conversation strip */}
+              <div className="rounded-xl border border-brand-200 bg-brand-50/60 px-3 py-2.5 dark:border-brand-700 dark:bg-brand-900/40">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                    Continuous conversation
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700 dark:text-brand-200">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 accent-brand-600"
+                        checked={guideStoryQa}
+                        onChange={(e) => setGuideStoryQa(e.target.checked)}
+                      />
+                      Guide in box
+                    </label>
+                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700 dark:text-brand-200">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 accent-brand-600"
+                        checked={continuousFlow}
+                        onChange={(e) => setContinuousFlow(e.target.checked)}
+                      />
+                      Keep flow going
+                    </label>
+                  </div>
+                </div>
+                {openStoryQuestion ? (
+                  <p className="mt-1.5 text-sm leading-snug text-brand-900 dark:text-brand-50">
+                    <span className="font-semibold text-brand-600">Now answering: </span>
+                    {openStoryQuestion}
+                  </p>
+                ) : nextGuidedQuestion ? (
+                  <div className="mt-1.5 flex flex-wrap items-start justify-between gap-2">
+                    <p className="text-sm leading-snug text-brand-800 dark:text-brand-100">
+                      <span className="font-semibold text-brand-600">Up next: </span>
+                      {nextGuidedQuestion.question}
+                    </p>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-full border border-brand-300 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-brand-800 shadow-sm hover:border-brand-500 dark:border-brand-600 dark:bg-brand-950 dark:text-brand-100"
+                      onClick={() => insertQuestionIntoStory(nextGuidedQuestion)}
+                    >
+                      Drop in now
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-1.5 text-xs leading-relaxed text-brand-600 dark:text-brand-300">
+                    {flowStatus.type === "done"
+                      ? "Main interview themes look covered — keep writing anytime or refine Plan."
+                      : "Start typing or wait a moment — the opening question will appear in the box."}
+                  </p>
+                )}
+                <p className="mt-1 text-[10px] leading-relaxed text-brand-500">
+                  Each ▸ line is a question. Type your answer under it; after a short pause the next
+                  question is added automatically so the conversation never stalls.
+                </p>
+              </div>
 
               {/* Live clinical intelligence from free text (drives Plan & adaptive Q&A) */}
               {storyIntel.richness !== "empty" ? (
@@ -1311,7 +1449,9 @@ export default function AssessmentPage() {
                       {" · "}
                       {storyIntel.irritability === "unknown"
                         ? "irritability unknown"
-                        : `${storyIntel.irritability} irritability`}
+                        : `${storyIntel.irritability} irritability${
+                            storyIntel.irritabilitySource === "assumed" ? " (assumed)" : ""
+                          }`}
                       {storyIntel.planHints.phaseBias
                         ? ` · ${storyIntel.planHints.phaseBias}`
                         : ""}
@@ -1322,18 +1462,22 @@ export default function AssessmentPage() {
                       <li key={i}>{line}</li>
                     ))}
                   </ul>
-                  {storyIntel.elite?.evidence?.length ? (
-                    <p className="mt-1.5 text-[11px] text-brand-600 dark:text-brand-300">
-                      Evidence ledger: {storyIntel.elite.evidence.length} item
-                      {storyIntel.elite.evidence.length === 1 ? "" : "s"}
-                      {storyIntel.elite.doseEnvelope
-                        ? ` · dose ${storyIntel.elite.doseEnvelope.mode}`
-                        : ""}
-                      {storyIntel.trajectory && storyIntel.trajectory !== "unknown"
-                        ? ` · trajectory ${storyIntel.trajectory}`
-                        : ""}
-                    </p>
-                  ) : null}
+                  <p className="mt-1.5 text-[11px] text-brand-600 dark:text-brand-300">
+                    {storyIntel.elite?.evidence?.length
+                      ? `Evidence: ${storyIntel.elite.evidence.length} stated item${
+                          storyIntel.elite.evidence.length === 1 ? "" : "s"
+                        }`
+                      : "Evidence: sparse"}
+                    {storyIntel.assumptions?.length
+                      ? ` · Assumptions: ${storyIntel.assumptions.length} (gap-fill only)`
+                      : " · Assumptions: none"}
+                    {storyIntel.elite?.doseEnvelope
+                      ? ` · dose ${storyIntel.elite.doseEnvelope.mode}`
+                      : ""}
+                    {storyIntel.trajectory && storyIntel.trajectory !== "unknown"
+                      ? ` · trajectory ${storyIntel.trajectory}`
+                      : ""}
+                  </p>
                   {storyIntel.conflicts && storyIntel.conflicts.length > 0 ? (
                     <p className="mt-1 text-[11px] font-medium text-amber-800 dark:text-amber-200">
                       Conflict check: {storyIntel.conflicts[0]}
@@ -1359,31 +1503,20 @@ export default function AssessmentPage() {
               <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 p-3 dark:border-brand-700 dark:bg-brand-900/30">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                    Adaptive questions (react to your answers)
+                    Adaptive queue (also auto-flows into the box)
                     {autoAppearingQuestions.length > 0
-                      ? ` · ${autoAppearingQuestions.length} open`
+                      ? ` · ${autoAppearingQuestions.length} ready`
                       : " · story looks complete"}
                   </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700 dark:text-brand-200">
-                      <input
-                        type="checkbox"
-                        className="h-3.5 w-3.5 accent-brand-600"
-                        checked={guideStoryQa}
-                        onChange={(e) => setGuideStoryQa(e.target.checked)}
-                      />
-                      Auto-populate next Q in box
-                    </label>
-                    {nextGuidedQuestion ? (
-                      <button
-                        type="button"
-                        className="rounded-full border border-brand-300 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-brand-800 shadow-sm hover:border-brand-500 hover:bg-brand-50 dark:border-brand-600 dark:bg-brand-950 dark:text-brand-100"
-                        onClick={() => insertQuestionIntoStory(nextGuidedQuestion)}
-                      >
-                        Add next question
-                      </button>
-                    ) : null}
-                  </div>
+                  {nextGuidedQuestion ? (
+                    <button
+                      type="button"
+                      className="rounded-full border border-brand-300 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-brand-800 shadow-sm hover:border-brand-500 hover:bg-brand-50 dark:border-brand-600 dark:bg-brand-950 dark:text-brand-100"
+                      onClick={() => insertQuestionIntoStory(nextGuidedQuestion)}
+                    >
+                      Add next question
+                    </button>
+                  ) : null}
                 </div>
                 {autoAppearingQuestions.length > 0 ? (
                   <ul className="space-y-2">

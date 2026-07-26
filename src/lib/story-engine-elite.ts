@@ -367,14 +367,21 @@ function buildHypotheses(base: StoryIntelligence, evidence: StoryEvidence[]): Cl
 
 function buildDoseEnvelope(base: StoryIntelligence): DoseEnvelope {
   const rationale: string[] = [];
+  const srcNote =
+    base.irritabilitySource === "assumed"
+      ? "assumed (confirm with user)"
+      : base.irritabilitySource === "stated"
+        ? "stated signals"
+        : "unknown";
 
-  if (base.irritability === "high" || base.redFlagHints.length || base.activityResponse === "delayed-worse") {
+  // Hard protect signals
+  if (base.redFlagHints.length || base.activityResponse === "delayed-worse" || base.irritability === "high") {
     rationale.push(
-      base.irritability === "high"
-        ? "High irritability from stated evidence"
-        : base.redFlagHints.length
-          ? "Red-flag language present — conservative envelope"
-          : "Delayed post-activity flare stated"
+      base.redFlagHints.length
+        ? "Red-flag language present — conservative envelope"
+        : base.activityResponse === "delayed-worse"
+          ? "Delayed post-activity flare stated"
+          : `High irritability (${srcNote})`
     );
     return {
       mode: "protect",
@@ -385,8 +392,8 @@ function buildDoseEnvelope(base: StoryIntelligence): DoseEnvelope {
     };
   }
 
-  if (base.irritability === "low" && base.activityResponse === "better") {
-    rationale.push("Lower irritability + movement eases (stated)");
+  if (base.irritability === "low" && (base.activityResponse === "better" || base.activityResponse === "same")) {
+    rationale.push(`Lower irritability (${srcNote}) with tolerable activity response`);
     return {
       mode: "build",
       rationale,
@@ -398,8 +405,12 @@ function buildDoseEnvelope(base: StoryIntelligence): DoseEnvelope {
     };
   }
 
-  if (base.irritability === "moderate" || base.activityResponse !== "unknown") {
-    rationale.push("Partial irritability/activity evidence — steady envelope");
+  if (base.irritability === "moderate" || base.irritability === "low" || base.activityResponse !== "unknown") {
+    rationale.push(
+      base.irritabilitySource === "assumed"
+        ? `Steady envelope using assumed ${base.irritability} irritability (data-first; confirm)`
+        : "Steady envelope from irritability/activity signals"
+    );
     return {
       mode: "steady",
       rationale,
@@ -409,7 +420,7 @@ function buildDoseEnvelope(base: StoryIntelligence): DoseEnvelope {
     };
   }
 
-  rationale.push("Insufficient stated evidence for dose envelope — unknown (not assumed)");
+  rationale.push("Insufficient signal for dose envelope — neutral defaults");
   return {
     mode: "unknown",
     rationale,
@@ -574,9 +585,11 @@ function buildSystemsRead(
   );
   if (trajectory !== "unknown") lines.push(`Trajectory (stated): ${trajectory}`);
   if (base.irritability === "unknown") {
-    lines.push("Irritability: unknown — insufficient stated evidence (not assumed).");
+    lines.push("Irritability: unknown.");
   } else {
-    lines.push(`Irritability: ${base.irritability} from stated evidence only.`);
+    lines.push(
+      `Irritability: ${base.irritability} (${base.irritabilitySource || "stated"}; data-first with labeled assumptions when needed).`
+    );
   }
   if (!base.aggravators.length) {
     lines.push("Causal load map: empty — no positions/actions/activities locked as aggravators.");

@@ -1,0 +1,11 @@
+import { ALL_THERAPEUTIC_QUESTIONS, journalTherapeuticStarters } from '../src/data/therapeutic-questions.ts';
+import { getTherapeuticQuestionByIndex, therapeuticCatalogStats } from '../src/data/therapeutic-question-catalog.ts';
+import { analyzeJournalIntelligence } from '../src/lib/journal-intelligence.ts';
+console.log('curated', ALL_THERAPEUTIC_QUESTIONS.length);
+console.log('sample gathers', ALL_THERAPEUTIC_QUESTIONS[0].gathers, ALL_THERAPEUTIC_QUESTIONS[0].label);
+console.log('starters', journalTherapeuticStarters(5).map(q=>q.label).join(' | '));
+const v = getTherapeuticQuestionByIndex(0);
+console.log('virtual0', v.label, v.gathers, v.question.slice(0,90));
+console.log('capacity', therapeuticCatalogStats().capacity);
+const intel = analyzeJournalIntelligence('My back hurts after work.');
+console.log('nextQ', intel.adaptiveQuestions[0]?.label, intel.adaptiveQuestions[0]?.reason?.slice(0,80));

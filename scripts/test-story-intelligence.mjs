@@ -33,11 +33,15 @@ function assert(cond, msg) {
   const s = analyzeStoryIntelligence(
     "I have severe sharp stabbing lower back pain that is moderate most days and mild sometimes."
   );
-  assert(s.painNow == null, "no invented painNow from severe/sharp/moderate/mild");
-  assert(s.painWorst == null, "no invented painWorst from qualitative words");
+  assert(s.painNow == null, "no official painNow from severe/sharp/moderate/mild");
+  assert(s.painWorst == null, "no official painWorst from qualitative words");
   assert(
-    s.liveReadLines.some((l) => /pain 0–10 not stated|not stated/i.test(l)),
-    "live read admits pain number not stated"
+    s.painEstimate?.source === "assumed" && s.painEstimate.now != null,
+    `soft painEstimate allowed when no 0–10: ${JSON.stringify(s.painEstimate)}`
+  );
+  assert(
+    s.liveReadLines.some((l) => /assumed|not stated|0–10/i.test(l)),
+    "live read distinguishes assumed vs stated pain"
   );
 }
 
@@ -65,15 +69,19 @@ function assert(cond, msg) {
   );
   assert(
     s.aggravators.length === 0,
-    `bare desk/walk/drive must not become aggravators, got: ${JSON.stringify(s.aggravators)}`
+    `bare desk/walk/drive must not become stated aggravators, got: ${JSON.stringify(s.aggravators)}`
   );
   assert(
     s.functionalLimits.length === 0,
     `bare work/walk must not become functional limits, got: ${JSON.stringify(s.functionalLimits)}`
   );
   assert(
-    s.liveReadLines.some((l) => /not (?:specified|assumed)|none —/i.test(l) && /aggravat/i.test(l)),
-    "live read says aggravators not assumed"
+    s.assumedAggravators.length > 0,
+    `soft assumed context from bare mentions: ${JSON.stringify(s.assumedAggravators)}`
+  );
+  assert(
+    s.liveReadLines.some((l) => /assumed context|Aggravators:/i.test(l)),
+    "live read discloses soft assumed context vs stated"
   );
 }
 
@@ -138,17 +146,20 @@ function assert(cond, msg) {
   assert(s.sleepImpact, "night pain / can't get comfortable sets sleepImpact");
 }
 
-// —— No assumptions: irritability / regions / laterality / goals invention ——
+// —— Hybrid: stated fields pure; labeled assumptions fill gaps ——
 {
   const s = analyzeStoryIntelligence("My lower back hurts.");
-  assert(s.irritability === "unknown", `thin story irritability must be unknown, got ${s.irritability}`);
-  assert(s.painNow == null, "no pain number assumed");
-  assert(s.aggravators.length === 0, "no aggravators assumed");
-  assert(s.goals.length === 0, "no goals assumed");
-  assert(s.planHints.functionalGoals.length === 0, "no invented functionalGoals from silence");
+  assert(s.painNow == null, "no official painNow from silence");
+  assert(s.aggravators.length === 0, "stated aggravators empty without causal language");
+  assert(s.goals.length === 0, "stated goals empty");
   assert(
-    s.liveReadLines.some((l) => /irritability.*(?:unknown|not determined|not assumed)/i.test(l)),
-    "live read says irritability not assumed"
+    s.irritability === "moderate" && s.irritabilitySource === "assumed",
+    `thin story uses assumed moderate irritability, got ${s.irritability}/${s.irritabilitySource}`
+  );
+  assert(s.assumptions.length > 0, "assumptions ledger non-empty for gap fill");
+  assert(
+    s.liveReadLines.some((l) => /assumed/i.test(l)),
+    "live read discloses assumptions"
   );
 }
 
@@ -179,9 +190,11 @@ function assert(cond, msg) {
   assert(s.painNow === 7, "explicit 7/10");
   assert(s.activityResponse === "delayed-worse", `delayed response: ${s.activityResponse}`);
   assert(s.irritability === "high" || s.irritability === "moderate", `evidence-based irritability: ${s.irritability}`);
+  // Stated goals empty; assumed goals from limits are OK if labeled
+  assert(s.goals.length === 0, "stated goals still empty without goal language");
   assert(
-    s.planHints.functionalGoals.length === 0 || s.planHints.functionalGoals.every((g) => s.goals.includes(g)),
-    "functionalGoals must not invent Improve X from limits alone"
+    s.assumedGoals.some((g) => /stairs/i.test(g)) || s.planHints.functionalGoals.some((g) => /stairs/i.test(g)),
+    `assumed/plan goals may derive from stated stair limit: assumed=${JSON.stringify(s.assumedGoals)} plan=${JSON.stringify(s.planHints.functionalGoals)}`
   );
 }
 

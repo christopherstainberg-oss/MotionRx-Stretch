@@ -2,17 +2,14 @@
  * Deep free-text story intelligence for Assessment “Describe Your Issue”.
  *
  * Stack:
- * 1) Assumption-safe extractors (this file) — explicit evidence only.
- * 2) Elite systems layer (`story-engine-elite.ts`) — evidence ledger, dose envelope,
- *    completeness telemetry, conflict detection, info-value adaptive interview,
- *    provisional pattern hypotheses (never diagnoses).
+ * 1) Data-driven extractors — explicit user statements (authoritative).
+ * 2) Clinical assumption layer — fills gaps for dosing when data is thin,
+ *    always labeled assumed/inferred (never presented as user-stated fact).
+ * 3) Elite systems layer — evidence ledger, dose envelope, completeness,
+ *    conflict detection, info-value adaptive interview.
  *
- * Engineering contract — DO NOT MAKE ASSUMPTIONS:
- * - Record only what the user explicitly stated or structured UI fields they chose.
- * - Pain 0–10 ONLY for explicit scale language. Never invent from adjectives.
- * - Aggravators / easers / limits / goals ONLY with causal / limitation / goal language.
- * - Irritability stays “unknown” until evidence exists.
- * - Unknown stays unknown in live read — admit gaps, never fill them.
+ * Priority: stated data wins. Assumptions only when fields are empty/unknown,
+ * at lower confidence, and always disclosed in live read + plan evidence lines.
  *
  * Educational only — not diagnosis or licensed care.
  */
@@ -85,6 +82,22 @@ export type StoryPlanHints = {
   scoringBoost: number;
 };
 
+/** Transparent clinical assumption (never mixed into “you stated” fields). */
+export type StoryAssumption = {
+  field:
+    | "irritability"
+    | "aggravators"
+    | "easers"
+    | "goals"
+    | "pain-estimate"
+    | "activity-response"
+    | "region-context"
+    | "dose";
+  value: string;
+  reason: string;
+  confidence: "low" | "medium";
+};
+
 export type StoryIntelligence = {
   raw: string;
   wordCount: number;
@@ -95,21 +108,34 @@ export type StoryIntelligence = {
   sensory: string[];
   onset: OnsetType;
   timelineHints: string[];
+  /** Explicit 0–10 only (never filled from adjectives). */
   painNow?: number;
   painWorst?: number;
+  /** Soft qualitative band — may be estimated when no 0–10 given. */
+  painEstimate?: { now?: number; worst?: number; source: "stated" | "assumed" };
+  /** Causal-framed aggravators only (stated). */
   aggravators: string[];
+  /** Soft context activities mentioned without causal framing (assumed for plan tags). */
+  assumedAggravators: string[];
   easers: string[];
+  assumedEasers: string[];
   timeOfDayWorst: string[];
   functionalLimits: string[];
   fearAvoidance: boolean;
   sleepImpact: boolean;
   stressImpact: boolean;
   activityResponse: ActivityResponse;
+  /** Working irritability used for dosing (may be assumed). */
   irritability: StoryIrritability;
+  /** Whether working irritability came from stated signals vs default/heuristic. */
+  irritabilitySource: "stated" | "assumed" | "unknown";
   directionalCues: string[];
   radiation: boolean;
   neuroLanguage: boolean;
+  /** Explicit goal language (stated). */
   goals: string[];
+  /** Provisional goals derived from limits/context (assumed). */
+  assumedGoals: string[];
   redFlagHints: string[];
   coveredThemes: StoryTheme[];
   missingThemes: StoryTheme[];
@@ -126,6 +152,8 @@ export type StoryIntelligence = {
     placeholder: string;
     coachLine: string;
   };
+  /** Labeled assumptions applied for dosing / interview continuity */
+  assumptions: StoryAssumption[];
   /** Elite systems layer: evidence ledger, dose envelope, completeness, hypotheses */
   elite?: StoryEliteAnalysis;
   /** 0–100 interview completeness (elite) */
@@ -911,8 +939,9 @@ export function analyzeStoryIntelligence(
   else if (wordCount < 120 || coveredThemes.length < 8) richness = "rich";
   else richness = "clinical";
 
-  // Irritability: ONLY from stated evidence. Silence → unknown (never assume moderate).
+  // Irritability from stated signals first; assumptions fill only when empty (below).
   let irritability: StoryIrritability = "unknown";
+  let irritabilitySource: StoryIntelligence["irritabilitySource"] = "unknown";
   const highSignals =
     (painNow != null && painNow >= 6 ? 2 : 0) +
     (painWorst != null && painWorst >= 8 ? 1 : 0) +
@@ -927,16 +956,27 @@ export function analyzeStoryIntelligence(
     (painSeverityQual === "low" ? 2 : 0) +
     (activityResponse === "better" ? 2 : 0) +
     (easers.includes("gentle movement") || easers.includes("stretching") ? 1 : 0);
-  // Require solid evidence before labeling — partial signals leave unknown (not assumed).
-  if (highSignals >= 3) irritability = "high";
-  else if (lowSignals >= 3 && highSignals === 0) irritability = "low";
-  else if (highSignals >= 2 && lowSignals === 0) irritability = "moderate";
-  else if (lowSignals >= 2 && highSignals === 0) irritability = "low";
-  else irritability = "unknown";
+  if (highSignals >= 3) {
+    irritability = "high";
+    irritabilitySource = "stated";
+  } else if (lowSignals >= 3 && highSignals === 0) {
+    irritability = "low";
+    irritabilitySource = "stated";
+  } else if (highSignals >= 2 && lowSignals === 0) {
+    irritability = "moderate";
+    irritabilitySource = "stated";
+  } else if (lowSignals >= 2 && highSignals === 0) {
+    irritability = "low";
+    irritabilitySource = "stated";
+  } else if (highSignals >= 1 || lowSignals >= 1) {
+    // Partial stated signal — still data-driven lean
+    irritability = highSignals > lowSignals ? "moderate" : lowSignals > highSignals ? "low" : "moderate";
+    irritabilitySource = "stated";
+  }
 
-  // Descriptors/conditions: lower cap — keyword libraries can over-match; prefer precision.
-  const descriptorIds = raw.length >= 12 ? matchDescriptorsFromText(raw, 8) : [];
-  const conditionIds = raw.length >= 12 ? matchConditionsFromText(raw, 6) : [];
+  // Descriptors/conditions: mostly data-driven keyword match (user text).
+  const descriptorIds = raw.length >= 12 ? matchDescriptorsFromText(raw, 10) : [];
+  const conditionIds = raw.length >= 12 ? matchConditionsFromText(raw, 8) : [];
 
   const primaryComplaint =
     raw.length >= 12
@@ -948,6 +988,45 @@ export function analyzeStoryIntelligence(
           140
         )
       : undefined;
+
+  // —— Clinical assumption layer (labeled; never overwrites stated arrays) ——
+  const assumptionPack = buildClinicalAssumptions({
+    raw,
+    wordCount,
+    regions,
+    sensory,
+    painNow,
+    painWorst,
+    painSeverityQual,
+    aggravators,
+    easers,
+    functionalLimits,
+    goals,
+    activityResponse,
+    irritability,
+    irritabilitySource,
+    neuroLanguage,
+    sleepImpact,
+    fearAvoidance,
+    onset,
+  });
+
+  const assumedAggravators = assumptionPack.assumedAggravators;
+  const assumedEasers = assumptionPack.assumedEasers;
+  const assumedGoals = assumptionPack.assumedGoals;
+  const assumptions = assumptionPack.assumptions;
+  irritability = assumptionPack.irritability;
+  irritabilitySource = assumptionPack.irritabilitySource;
+  const painEstimate = assumptionPack.painEstimate;
+  // Working activity response may use soft assumption for dosing only
+  if (activityResponse === "unknown" && assumptionPack.assumedActivityResponse) {
+    activityResponse = assumptionPack.assumedActivityResponse;
+  }
+
+  // Plan uses stated first, then soft assumed context (tagged lower in buildPlanHints via assumptions)
+  const planAggravators = unique([...aggravators, ...assumedAggravators]);
+  const planEasers = unique([...easers, ...assumedEasers]);
+  const planGoals = unique([...goals, ...assumedGoals]);
 
   const answerSnippets: StoryIntelligence["answerSnippets"] = [];
   if (primaryComplaint)
@@ -963,16 +1042,17 @@ export function analyzeStoryIntelligence(
     sensory,
     irritability,
     activityResponse,
-    aggravators,
-    easers,
+    aggravators: planAggravators,
+    easers: planEasers,
     functionalLimits,
     directionalCues,
     neuroLanguage,
     fearAvoidance,
-    painNow,
-    goals,
+    painNow: painNow ?? painEstimate?.now,
+    goals: planGoals,
     redFlagHints,
     onset,
+    assumptions,
   });
 
   const baseLiveRead = buildLiveReadLines({
@@ -984,13 +1064,19 @@ export function analyzeStoryIntelligence(
     onset,
     painNow,
     painWorst,
+    painEstimate,
     aggravators,
+    assumedAggravators,
     easers,
+    assumedEasers,
     functionalLimits,
     irritability,
+    irritabilitySource,
     activityResponse,
     neuroLanguage,
     goals,
+    assumedGoals,
+    assumptions,
     coveredThemes,
     missingThemes,
   });
@@ -1037,8 +1123,11 @@ export function analyzeStoryIntelligence(
     timelineHints,
     painNow,
     painWorst,
+    painEstimate,
     aggravators,
+    assumedAggravators,
     easers,
+    assumedEasers,
     timeOfDayWorst,
     functionalLimits,
     fearAvoidance,
@@ -1046,10 +1135,12 @@ export function analyzeStoryIntelligence(
     stressImpact,
     activityResponse,
     irritability,
+    irritabilitySource,
     directionalCues,
     radiation,
     neuroLanguage,
     goals,
+    assumedGoals,
     redFlagHints,
     coveredThemes: unique(coveredThemes),
     missingThemes,
@@ -1066,6 +1157,7 @@ export function analyzeStoryIntelligence(
       placeholder: "",
       coachLine: "",
     },
+    assumptions,
   };
 
   const elite = runEliteStoryEngine(baseSnapshot, { preferredName: name });
@@ -1120,8 +1212,11 @@ export function analyzeStoryIntelligence(
     };
   }
 
-  const liveReadLines =
-    elite.liveReadLines.length > 0 ? elite.liveReadLines : baseLiveRead;
+  // Prefer base live read for stated-vs-assumed clarity; keep elite telemetry lines.
+  const liveReadLines = unique([
+    ...baseLiveRead,
+    ...elite.liveReadLines.filter((l) => /Telemetry|Flight read|Conflict|Provisional|Highest-value|Evidence:/i.test(l)),
+  ]).slice(0, 10);
   const adaptiveQuestions = mergeAdaptiveQuestions(elite.adaptiveQuestions, baseAdaptive, 10);
   const coachSummary = liveReadLines.slice(0, 4).join(" ");
 
@@ -1139,7 +1234,8 @@ export function analyzeStoryIntelligence(
 
   // Upgrade prior prompt coach line with elite telemetry when useful
   if (elite.intelligenceGrade !== "empty" && priorPrompt.coachLine) {
-    priorPrompt.coachLine = `${priorPrompt.coachLine} · Signal ${elite.intelligenceGrade} (${elite.completeness}/100)${
+    const assn = assumptions.length ? ` · ${assumptions.length} assumptions` : "";
+    priorPrompt.coachLine = `${priorPrompt.coachLine} · Signal ${elite.intelligenceGrade} (${elite.completeness}/100)${assn}${
       elite.criticalGaps[0] ? ` · next gap: ${elite.criticalGaps[0].theme}` : ""
     }.`;
   }
@@ -1156,8 +1252,11 @@ export function analyzeStoryIntelligence(
     timelineHints,
     painNow,
     painWorst,
+    painEstimate,
     aggravators,
+    assumedAggravators,
     easers,
+    assumedEasers,
     timeOfDayWorst,
     functionalLimits,
     fearAvoidance,
@@ -1165,10 +1264,12 @@ export function analyzeStoryIntelligence(
     stressImpact,
     activityResponse,
     irritability,
+    irritabilitySource,
     directionalCues,
     radiation,
     neuroLanguage,
     goals,
+    assumedGoals,
     redFlagHints,
     coveredThemes: unique(coveredThemes),
     missingThemes,
@@ -1180,6 +1281,7 @@ export function analyzeStoryIntelligence(
     liveReadLines,
     adaptiveQuestions,
     priorPrompt,
+    assumptions,
     elite,
     completeness: elite.completeness,
     intelligenceGrade: elite.intelligenceGrade,
@@ -1192,6 +1294,232 @@ function difficultyRank(d: Difficulty): number {
   if (d === "beginner") return 1;
   if (d === "intermediate") return 2;
   return 3;
+}
+
+/**
+ * Mostly data-driven: only fill empty fields with transparent clinical assumptions.
+ * Never overwrites explicit user statements (aggravators/goals/pain numbers stay pure).
+ */
+function buildClinicalAssumptions(s: {
+  raw: string;
+  wordCount: number;
+  regions: BodyPart[];
+  sensory: string[];
+  painNow?: number;
+  painWorst?: number;
+  painSeverityQual: "high" | "moderate" | "low" | "unknown";
+  aggravators: string[];
+  easers: string[];
+  functionalLimits: string[];
+  goals: string[];
+  activityResponse: ActivityResponse;
+  irritability: StoryIrritability;
+  irritabilitySource: StoryIntelligence["irritabilitySource"];
+  neuroLanguage: boolean;
+  sleepImpact: boolean;
+  fearAvoidance: boolean;
+  onset: OnsetType;
+}): {
+  assumptions: StoryAssumption[];
+  assumedAggravators: string[];
+  assumedEasers: string[];
+  assumedGoals: string[];
+  irritability: StoryIrritability;
+  irritabilitySource: StoryIntelligence["irritabilitySource"];
+  painEstimate?: StoryIntelligence["painEstimate"];
+  assumedActivityResponse?: ActivityResponse;
+} {
+  const assumptions: StoryAssumption[] = [];
+  const assumedAggravators: string[] = [];
+  const assumedEasers: string[] = [];
+  const assumedGoals: string[] = [];
+  let { irritability, irritabilitySource } = s;
+  let painEstimate: StoryIntelligence["painEstimate"] | undefined;
+  let assumedActivityResponse: ActivityResponse | undefined;
+
+  if (s.wordCount === 0) {
+    return {
+      assumptions,
+      assumedAggravators,
+      assumedEasers,
+      assumedGoals,
+      irritability,
+      irritabilitySource,
+    };
+  }
+
+  // Soft context: bare activity mentions → assumed aggravators only if no stated ones
+  if (!s.aggravators.length) {
+    const soft = extractList(s.raw, [
+      { re: /\b(desk|sitting|sit at)\b/i, label: "sitting/desk" },
+      { re: /\b(stairs?|steps)\b/i, label: "stairs" },
+      { re: /\b(walk(?:ing)?|errands)\b/i, label: "walking" },
+      { re: /\b(lift(?:ing)?|carry(?:ing)?)\b/i, label: "lifting/carrying" },
+      { re: /\b(reach(?:ing)?|overhead)\b/i, label: "reaching/overhead" },
+      { re: /\b(run(?:ning)?|jog)\b/i, label: "running" },
+      { re: /\b(driv(?:e|ing)|commute)\b/i, label: "driving" },
+      { re: /\b(work|job|shift)\b/i, label: "work tasks" },
+      { re: /\b(morning)\b/i, label: "morning" },
+    ]).slice(0, 3);
+    for (const a of soft) {
+      assumedAggravators.push(a);
+      assumptions.push({
+        field: "aggravators",
+        value: a,
+        reason: `Mentioned “${a}” without clear cause language — soft plan context only until confirmed`,
+        confidence: "low",
+      });
+    }
+  }
+
+  // Soft easers: modality words without help language, only if no stated easers
+  if (!s.easers.length) {
+    const softE = extractList(s.raw, [
+      { re: /\b(heat|hot pack|heating pad)\b/i, label: "heat" },
+      { re: /\b(ice|cold pack)\b/i, label: "ice/cold" },
+      { re: /\b(stretch(?:ing)?|yoga)\b/i, label: "stretching" },
+      { re: /\b(rest|lying down)\b/i, label: "rest/position change" },
+    ]).slice(0, 2);
+    for (const e of softE) {
+      assumedEasers.push(e);
+      assumptions.push({
+        field: "easers",
+        value: e,
+        reason: `“${e}” appears in story without clear help language — provisional only`,
+        confidence: "low",
+      });
+    }
+  }
+
+  // Goals from functional limits when user didn't state goals
+  if (!s.goals.length && s.functionalLimits.length) {
+    for (const f of s.functionalLimits.slice(0, 3)) {
+      const g = `Improve ${f}`;
+      assumedGoals.push(g);
+      assumptions.push({
+        field: "goals",
+        value: g,
+        reason: `Derived from stated function limit “${f}” (provisional goal until you name one)`,
+        confidence: "medium",
+      });
+    }
+  } else if (!s.goals.length && s.wordCount >= 20) {
+    // Region-based provisional goal
+    if (s.regions.length) {
+      const g = `Move more comfortably in ${regionLabel(s.regions)}`;
+      assumedGoals.push(g);
+      assumptions.push({
+        field: "goals",
+        value: g,
+        reason: "No goal stated — provisional comfort goal from named region",
+        confidence: "low",
+      });
+    }
+  }
+
+  // Soft pain estimate from qualitative language only when no explicit 0–10
+  if (s.painNow == null && s.painWorst == null && s.painSeverityQual !== "unknown") {
+    if (s.painSeverityQual === "high") {
+      painEstimate = { now: 7, worst: 9, source: "assumed" };
+    } else if (s.painSeverityQual === "moderate") {
+      painEstimate = { now: 4, worst: 6, source: "assumed" };
+    } else {
+      painEstimate = { now: 2, worst: 4, source: "assumed" };
+    }
+    assumptions.push({
+      field: "pain-estimate",
+      value: `${painEstimate.now}/${painEstimate.worst}`,
+      reason: `No 0–10 stated — soft band from “${s.painSeverityQual}” language (not recorded as official score)`,
+      confidence: "low",
+    });
+  } else if (s.painNow != null || s.painWorst != null) {
+    painEstimate = { now: s.painNow, worst: s.painWorst, source: "stated" };
+  }
+
+  // Soft activity response: stiff + movement language often eases; high pain estimate may delay
+  if (s.activityResponse === "unknown") {
+    if (s.sensory.includes("stiff/tight") && /\b(move|moving|walk|stretch)\b/i.test(s.raw)) {
+      assumedActivityResponse = "better";
+      assumptions.push({
+        field: "activity-response",
+        value: "better",
+        reason: "Stiffness language + movement mention — provisional “often eases with motion” until 24h response is stated",
+        confidence: "low",
+      });
+    } else if (s.painSeverityQual === "high" || (s.painNow != null && s.painNow >= 7)) {
+      assumedActivityResponse = "worse";
+      assumptions.push({
+        field: "activity-response",
+        value: "worse",
+        reason: "Higher intensity language without 24h detail — provisional caution on post-activity response",
+        confidence: "low",
+      });
+    }
+  }
+
+  // Irritability default for dosing when still unknown — moderate outpatient prior
+  if (irritability === "unknown" || irritabilitySource === "unknown") {
+    if (s.painSeverityQual === "high" || s.neuroLanguage || s.fearAvoidance || s.sleepImpact) {
+      irritability = "high";
+      irritabilitySource = "assumed";
+      assumptions.push({
+        field: "irritability",
+        value: "high",
+        reason: "Assumed high from severity/neuro/fear/sleep language without a full signal set",
+        confidence: "medium",
+      });
+    } else if (s.painSeverityQual === "low" && s.onset !== "sudden") {
+      irritability = "low";
+      irritabilitySource = "assumed";
+      assumptions.push({
+        field: "irritability",
+        value: "low",
+        reason: "Assumed low from mild language and non-sudden onset",
+        confidence: "low",
+      });
+    } else if (s.wordCount >= 3) {
+      irritability = "moderate";
+      irritabilitySource = "assumed";
+      assumptions.push({
+        field: "irritability",
+        value: "moderate",
+        reason: "Default outpatient prior when intensity/24h response not fully stated — re-check as you add detail",
+        confidence: "low",
+      });
+    }
+  }
+
+  // Region-context soft tags (for plan preferTags via assumptions)
+  if (s.regions.includes("lower-back") && !assumedAggravators.includes("sitting/desk") && !s.aggravators.includes("sitting/desk")) {
+    // don't auto-add; only note if desk already soft-assumed
+  }
+  if (s.regions.includes("knee") || s.regions.includes("hips")) {
+    assumptions.push({
+      field: "region-context",
+      value: s.regions.slice(0, 2).join(","),
+      reason: "Lower-limb region → plan may bias closed-chain control if no conflicting stated data",
+      confidence: "low",
+    });
+  }
+  if (s.regions.includes("shoulders") || s.regions.includes("neck")) {
+    assumptions.push({
+      field: "region-context",
+      value: s.regions.slice(0, 2).join(","),
+      reason: "Axial/UE region → plan may bias posture/scapular control if no conflicting stated data",
+      confidence: "low",
+    });
+  }
+
+  return {
+    assumptions,
+    assumedAggravators: unique(assumedAggravators),
+    assumedEasers: unique(assumedEasers),
+    assumedGoals: unique(assumedGoals),
+    irritability,
+    irritabilitySource,
+    painEstimate,
+    assumedActivityResponse,
+  };
 }
 
 function buildPlanHints(s: {
@@ -1209,6 +1537,7 @@ function buildPlanHints(s: {
   goals: string[];
   redFlagHints: string[];
   onset: OnsetType;
+  assumptions?: StoryAssumption[];
 }): StoryPlanHints {
   const preferTags: string[] = [];
   const avoidTags: string[] = [];
@@ -1256,15 +1585,39 @@ function buildPlanHints(s: {
     );
     scoringBoost += 2;
   } else {
-    // unknown — neutral program defaults, explicitly not an assumption about the patient
+    // unknown residual — gentle neutral (assumption layer usually fills moderate first)
     phaseBias = "motor-control";
     stretchBias += 0.15;
     exerciseBias += 0.15;
     preferTags.push("gentle", "mobility", "motor-control");
     evidenceLines.push(
-      "Irritability not determined from story (not assumed) — neutral dosing until more evidence."
+      "Irritability still unknown — neutral dosing until more stated evidence."
     );
     scoringBoost += 0;
+  }
+
+  // Disclose assumptions used for dosing (data still wins when present)
+  const assumedLines = (s.assumptions || [])
+    .filter((a) => a.field === "irritability" || a.field === "aggravators" || a.field === "goals" || a.field === "pain-estimate")
+    .slice(0, 4)
+    .map((a) => `Assumed (${a.confidence}): ${a.field}=${a.value} — ${a.reason}`);
+  evidenceLines.push(...assumedLines);
+
+  // Region-context assumptions → soft prefer tags
+  for (const a of s.assumptions || []) {
+    if (a.field !== "region-context") continue;
+    if (/knee|hip|ankle|foot|glute/.test(a.value)) {
+      preferTags.push("quad", "glute", "functional", "balance");
+      movementKeywords.push("sit-to-stand", "bridge", "step");
+    }
+    if (/shoulder|neck|scapular|thoracic/.test(a.value)) {
+      preferTags.push("scapular", "posture", "thoracic");
+      movementKeywords.push("chin-tuck", "scapular", "rows");
+    }
+    if (/lower-back|pelvis/.test(a.value)) {
+      preferTags.push("hip", "core", "motor-control");
+      movementKeywords.push("hip hinge", "bird-dog", "dead bug");
+    }
   }
 
   if (s.activityResponse === "delayed-worse") {
@@ -1381,7 +1734,7 @@ function buildPlanHints(s: {
     if (s.irritability !== "low") phaseBias = "protect-calm";
   }
 
-  // Goals only if the user stated them — never invent “Improve stairs” from limits.
+  // Stated goals first; assumed goals (from limits) allowed for plan anchors when labeled.
   const functionalGoals = s.goals.length ? s.goals.slice(0, 6) : [];
 
   preferKinds =
@@ -1417,13 +1770,19 @@ function buildLiveReadLines(s: {
   onset: OnsetType;
   painNow?: number;
   painWorst?: number;
+  painEstimate?: StoryIntelligence["painEstimate"];
   aggravators: string[];
+  assumedAggravators: string[];
   easers: string[];
+  assumedEasers: string[];
   functionalLimits: string[];
   irritability: StoryIrritability;
+  irritabilitySource: StoryIntelligence["irritabilitySource"];
   activityResponse: ActivityResponse;
   neuroLanguage: boolean;
   goals: string[];
+  assumedGoals: string[];
+  assumptions: StoryAssumption[];
   coveredThemes: StoryTheme[];
   missingThemes: StoryTheme[];
 }): string[] {
@@ -1438,41 +1797,48 @@ function buildLiveReadLines(s: {
   const region = regionLabel(s.regions);
   const painBit =
     s.painNow != null
-      ? ` · ${s.painNow}/10${
+      ? ` · ${s.painNow}/10 stated${
           s.painWorst != null && s.painWorst !== s.painNow ? ` (worst ${s.painWorst}/10)` : ""
         }`
       : s.painWorst != null
-        ? ` · worst ${s.painWorst}/10`
-        : "";
+        ? ` · worst ${s.painWorst}/10 stated`
+        : s.painEstimate?.source === "assumed" && s.painEstimate.now != null
+          ? ` · ~${s.painEstimate.now}/10 assumed from quality words (not official)`
+          : " · pain 0–10 not stated";
   lines.push(
     `Clinical read: ${region}${s.laterality !== "unknown" ? ` (${s.laterality})` : ""}${
       s.sensory.length ? ` · feels ${s.sensory.slice(0, 3).join(", ")}` : ""
-    }${painBit || " · pain 0–10 not stated"}.`
+    }${painBit}.`
   );
-  if (s.irritability === "unknown") {
-    lines.push(
-      `Irritability: not determined (not assumed)${
-        s.activityResponse !== "unknown" ? ` · after activity: ${s.activityResponse}` : ""
-      }${s.onset !== "unknown" ? ` · onset ${s.onset}` : ""}.`
-    );
-  } else {
-    lines.push(
-      `Irritability: ${s.irritability} (from stated evidence)${
-        s.activityResponse !== "unknown" ? ` · after activity: ${s.activityResponse}` : ""
-      }${s.onset !== "unknown" ? ` · onset ${s.onset}` : ""}.`
-    );
-  }
-  // richness is already non-empty here (empty returns above).
+
+  const irrLabel =
+    s.irritabilitySource === "stated"
+      ? `${s.irritability} (stated signals)`
+      : s.irritabilitySource === "assumed"
+        ? `${s.irritability} (assumed — default/heuristic until more data)`
+        : "unknown";
+  lines.push(
+    `Irritability: ${irrLabel}${
+      s.activityResponse !== "unknown" ? ` · after activity: ${s.activityResponse}` : ""
+    }${s.onset !== "unknown" ? ` · onset ${s.onset}` : ""}.`
+  );
+
   if (s.aggravators.length) {
     lines.push(`Aggravators you stated: ${s.aggravators.slice(0, 5).join(", ")}.`);
+  } else if (s.assumedAggravators.length) {
+    lines.push(
+      `Assumed context (not confirmed as causes): ${s.assumedAggravators.slice(0, 4).join(", ")}.`
+    );
   } else {
-    lines.push("Aggravating positions/actions/activities: not specified yet (not assumed).");
+    lines.push("Aggravators: none stated yet.");
   }
+
   if (s.easers.length) {
     lines.push(`Easers you stated: ${s.easers.slice(0, 4).join(", ")}.`);
-  } else if (s.richness !== "thin") {
-    lines.push("Easers: not specified yet (not assumed).");
+  } else if (s.assumedEasers.length && s.richness !== "thin") {
+    lines.push(`Assumed easers (low confidence): ${s.assumedEasers.slice(0, 3).join(", ")}.`);
   }
+
   if (s.functionalLimits.length) {
     lines.push(`Function limits you stated: ${s.functionalLimits.slice(0, 5).join(", ")}.`);
   }
@@ -1481,9 +1847,16 @@ function buildLiveReadLines(s: {
   }
   if (s.goals.length) {
     lines.push(`Goals you stated: ${s.goals.slice(0, 4).join("; ")}.`);
-  } else if (s.richness !== "thin") {
-    lines.push("Goals: not specified yet (not assumed).");
+  } else if (s.assumedGoals.length) {
+    lines.push(`Assumed goals (from limits/context): ${s.assumedGoals.slice(0, 3).join("; ")}.`);
   }
+
+  if (s.assumptions.length) {
+    lines.push(
+      `Assumptions active: ${s.assumptions.length} (data-first; assumptions only fill gaps).`
+    );
+  }
+
   lines.push(
     `Interview coverage: ${s.coveredThemes.length}/${ALL_THEMES.length} themes · still open: ${
       s.missingThemes.slice(0, 4).join(", ") || "none major"

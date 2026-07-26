@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { PainScale } from "@/components/PainScale";
 import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
@@ -26,6 +26,19 @@ import {
   buildJournalJefferyReply,
   painTrendLabel,
 } from "@/lib/journal-engine";
+import {
+  JOURNAL_SAFETY_NOTE,
+  analyzeJournalIntelligence,
+  appendJournalFlowQuestion,
+  countCompletedJournalTurns,
+  currentOpenJournalQuestion,
+  decideJournalFlow,
+  journalEndsWithOpenQuestion,
+  journalQuestionBankChips,
+  journalAdaptiveAsPrompts,
+} from "@/lib/journal-intelligence";
+import { useDebouncedValue } from "@/lib/hooks";
+import type { ConversationPrompt } from "@/lib/assessment-story-conversation";
 import { ClinicalCorrelationCard } from "@/components/ClinicalCorrelationCard";
 import {
   BookOpen,
@@ -33,6 +46,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  MessageCircleQuestion,
   Share2,
   Sparkles,
 } from "lucide-react";
@@ -76,6 +90,14 @@ export default function JournalPage() {
   const [jefferyPreview, setJefferyPreview] = useState("");
   const [planNote, setPlanNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [guideJournalQa, setGuideJournalQa] = useState(true);
+  const [continuousFlow, setContinuousFlow] = useState(true);
+  const [preferredName, setPreferredName] = useState("");
+  const journalTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const journalUserEditedRef = useRef(false);
+  const flowLockRef = useRef(false);
+  const lastFlowAppendRef = useRef("");
+  const flowBody = useDebouncedValue(body, 550);
 
   useEffect(() => {
     const scored = recommendModalities({
@@ -109,6 +131,12 @@ export default function JournalPage() {
   }, [pain, descriptorIds, title, body, flexibilityNote, didWell, improveNext]);
 
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem("preferredName");
+      if (stored?.trim()) setPreferredName(stored.trim());
+    } catch {
+      /* ignore */
+    }
     let local: JournalEntry[] = [];
     try {
       const raw = localStorage.getItem("journal-entries");
@@ -181,6 +209,109 @@ export default function JournalPage() {
       adlEntries,
     ]
   );
+
+  const journalIntel = useMemo(
+    () =>
+      analyzeJournalIntelligence(body, {
+        preferredName: preferredName || undefined,
+        title,
+        painOverall: pain,
+        mood,
+        energy,
+        sleepQuality,
+        areas: parts,
+      }),
+    [body, preferredName, title, pain, mood, energy, sleepQuality, parts]
+  );
+
+  const autoAppearingQuestions = useMemo(
+    () => journalAdaptiveAsPrompts(journalIntel),
+    [journalIntel]
+  );
+
+  const flowCtx = useMemo(
+    () => ({
+      body: flowBody,
+      preferredName: preferredName || undefined,
+      title,
+      painOverall: pain,
+      mood,
+      energy,
+      sleepQuality,
+      areas: parts,
+    }),
+    [flowBody, preferredName, title, pain, mood, energy, sleepQuality, parts]
+  );
+
+  const flowStatus = useMemo(() => decideJournalFlow(flowCtx), [flowCtx]);
+  const openJournalQuestion = useMemo(() => currentOpenJournalQuestion(body), [body]);
+  const completedTurns = useMemo(() => countCompletedJournalTurns(body), [body]);
+  const therapeuticChips = useMemo(() => journalQuestionBankChips(14), []);
+  const nextGuidedQuestion = autoAppearingQuestions[0] || null;
+
+  function focusJournalEnd() {
+    requestAnimationFrame(() => {
+      const el = journalTextareaRef.current;
+      if (!el) return;
+      el.focus();
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+      el.scrollTop = el.scrollHeight;
+    });
+  }
+
+  function insertQuestionIntoJournal(prompt: ConversationPrompt, bridge?: string) {
+    setBody((prev) => appendJournalFlowQuestion(prev, prompt, bridge));
+    lastFlowAppendRef.current = prompt.id;
+    journalUserEditedRef.current = true;
+    focusJournalEnd();
+  }
+
+  /** Continuous counselor-style interview in the journal free-text box */
+  useEffect(() => {
+    if (!guideJournalQa || !continuousFlow) return;
+    if (flowLockRef.current) return;
+    if (step !== 1) return;
+
+    const action = decideJournalFlow(flowCtx);
+
+    if (action.type === "wait" || action.type === "done" || action.type === "idle") return;
+
+    if (action.type === "seed") {
+      if (body.trim()) return;
+      flowLockRef.current = true;
+      setBody((prev) => {
+        if (prev.trim()) return prev;
+        return appendJournalFlowQuestion("", action.prompt);
+      });
+      lastFlowAppendRef.current = action.prompt.id;
+      focusJournalEnd();
+      window.setTimeout(() => {
+        flowLockRef.current = false;
+      }, 400);
+      return;
+    }
+
+    if (action.type === "advance") {
+      if (!journalUserEditedRef.current && !body.includes("▸")) return;
+      if (
+        lastFlowAppendRef.current === action.prompt.id &&
+        journalEndsWithOpenQuestion(body)
+      ) {
+        return;
+      }
+      flowLockRef.current = true;
+      setBody((prev) => {
+        if (journalEndsWithOpenQuestion(prev)) return prev;
+        return appendJournalFlowQuestion(prev, action.prompt, action.bridge);
+      });
+      lastFlowAppendRef.current = action.prompt.id;
+      focusJournalEnd();
+      window.setTimeout(() => {
+        flowLockRef.current = false;
+      }, 500);
+    }
+  }, [guideJournalQa, continuousFlow, flowCtx, body, step]);
 
   useEffect(() => {
     if (step < 4 || (!body.trim() && !title.trim())) {
@@ -379,8 +510,8 @@ export default function JournalPage() {
           Journal
         </h1>
         <p className="mt-1.5 text-sm leading-relaxed text-brand-600">
-          Write freely. Jeffery listens with your full app context and can ease or progress your
-          plan from today&apos;s pattern.
+          Write freely in a continuous counselor-style interview. Jeffery listens with your full app
+          context and can ease or progress your plan from today&apos;s pattern.
         </p>
       </header>
 
@@ -426,26 +557,54 @@ export default function JournalPage() {
         </ol>
       </nav>
 
-      {/* Step 1: Write */}
+      {/* Step 1: Write — continuous therapeutic interview */}
       {step === 1 && (
         <section className="card space-y-4 p-5 sm:p-6">
           <div>
             <h2 className="text-base font-semibold text-brand-950">Today&apos;s page</h2>
             <p className="mt-0.5 text-xs text-brand-500">
-              Pick a starter or write freely on the lined paper.
+              Same intelligence style as Describe Your Issue: answer under each ▸ line; the next
+              counselor-style question flows in automatically.
+            </p>
+          </div>
+
+          {/* Prior prompt */}
+          <div className="rounded-xl border border-brand-200 bg-gradient-to-br from-brand-600/10 via-white to-brand-50/80 px-3.5 py-3 dark:border-brand-700 dark:from-brand-900/60 dark:via-brand-950 dark:to-brand-950">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+              Prior prompt · therapeutic interview
+            </p>
+            <p className="mt-1 text-base font-semibold leading-snug text-brand-950 dark:text-brand-50">
+              {journalIntel.priorPrompt.heading}
+            </p>
+            <p className="mt-1.5 text-sm leading-relaxed text-brand-800 dark:text-brand-100">
+              {journalIntel.priorPrompt.question}
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-brand-600 dark:text-brand-300">
+              {journalIntel.priorPrompt.coachLine}
             </p>
           </div>
 
           <div>
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-              Open-ended starters
+              Evidence-gathering prompts · clinical constructs (NRS, function, 24h response)
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {JOURNAL_STARTERS.map((p) => (
+              {therapeuticChips.map((p) => (
                 <button
                   key={p.id}
                   type="button"
-                  onClick={() => applyStarter(p.id)}
+                  title={p.question}
+                  onClick={() => {
+                    setPromptId(p.id);
+                    if (!title.trim()) setTitle(p.label);
+                    insertQuestionIntoJournal({
+                      id: p.id,
+                      label: p.label,
+                      question: p.question,
+                      category: "bother",
+                      reason: p.source,
+                    });
+                  }}
                   className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
                     promptId === p.id
                       ? "border-brand-600 bg-brand-600 text-white"
@@ -455,24 +614,201 @@ export default function JournalPage() {
                   {p.label}
                 </button>
               ))}
+              {JOURNAL_STARTERS.slice(0, 4).map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => applyStarter(p.id)}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                    promptId === p.id
+                      ? "border-brand-600 bg-brand-600 text-white"
+                      : "border-dashed border-brand-300 bg-brand-50/50 text-brand-600 hover:border-brand-400 dark:border-brand-700 dark:bg-brand-950"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
           </div>
 
           <div className="journal-paper overflow-hidden">
-            <input
-              className="journal-paper-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Title for today…"
-              aria-label="Journal title"
-            />
+            <div className="flex items-center justify-between gap-2 border-b border-brand-100/80 px-1 pb-1">
+              <input
+                className="journal-paper-title !border-0 !pb-0"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Title for today…"
+                aria-label="Journal title"
+              />
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-brand-500">
+                {completedTurns > 0 ? `${completedTurns} turns` : "ready"}
+                {flowStatus.type === "wait"
+                  ? " · waiting"
+                  : flowStatus.type === "advance"
+                    ? " · next Q…"
+                    : continuousFlow && guideJournalQa
+                      ? " · flow on"
+                      : ""}
+              </span>
+            </div>
             <textarea
-              className="journal-paper-input"
+              ref={journalTextareaRef}
+              className="journal-paper-input min-h-[240px]"
               value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Dear journal… how did movement feel? What improved? What still bothers you?"
+              onChange={(e) => {
+                journalUserEditedRef.current = true;
+                setBody(e.target.value);
+              }}
+              placeholder={
+                continuousFlow && guideJournalQa
+                  ? "Answer under each ▸ line — the next question appears when you pause…"
+                  : journalIntel.priorPrompt.placeholder
+              }
               aria-label="Journal reflection"
             />
+          </div>
+
+          {/* Continuous conversation strip */}
+          <div className="rounded-xl border border-brand-200 bg-brand-50/60 px-3 py-2.5 dark:border-brand-700 dark:bg-brand-900/40">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                Continuous conversation
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700 dark:text-brand-200">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-brand-600"
+                    checked={guideJournalQa}
+                    onChange={(e) => setGuideJournalQa(e.target.checked)}
+                  />
+                  Guide in box
+                </label>
+                <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700 dark:text-brand-200">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-brand-600"
+                    checked={continuousFlow}
+                    onChange={(e) => setContinuousFlow(e.target.checked)}
+                  />
+                  Keep flow going
+                </label>
+              </div>
+            </div>
+            {openJournalQuestion ? (
+              <p className="mt-1.5 text-sm leading-snug text-brand-900 dark:text-brand-50">
+                <span className="font-semibold text-brand-600">Now answering: </span>
+                {openJournalQuestion}
+              </p>
+            ) : nextGuidedQuestion ? (
+              <div className="mt-1.5 flex flex-wrap items-start justify-between gap-2">
+                <p className="text-sm leading-snug text-brand-800 dark:text-brand-100">
+                  <span className="font-semibold text-brand-600">Up next: </span>
+                  {nextGuidedQuestion.question}
+                </p>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-full border border-brand-300 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-brand-800 shadow-sm hover:border-brand-500 dark:border-brand-600 dark:bg-brand-950 dark:text-brand-100"
+                  onClick={() => insertQuestionIntoJournal(nextGuidedQuestion)}
+                >
+                  Drop in now
+                </button>
+              </div>
+            ) : (
+              <p className="mt-1.5 text-xs text-brand-600 dark:text-brand-300">
+                {flowStatus.type === "done"
+                  ? "Interview themes look solid — keep writing or continue to scores."
+                  : "Opening question will appear in the box when continuous flow is on."}
+              </p>
+            )}
+            <p className="mt-1 text-[10px] leading-relaxed text-brand-500">{JOURNAL_SAFETY_NOTE}</p>
+          </div>
+
+          {/* Live clinical / therapeutic read */}
+          {journalIntel.richness !== "empty" ? (
+            <div className="rounded-xl border border-brand-200 bg-white px-3 py-2.5 text-xs leading-relaxed text-brand-800 dark:border-brand-700 dark:bg-brand-950/60 dark:text-brand-100">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                  Live journal intel · counselor + PT lens
+                </p>
+                <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-800 dark:bg-brand-900 dark:text-brand-100">
+                  {journalIntel.intelligenceGrade} · {journalIntel.completeness}/100
+                  {analysis.signal ? ` · plan ${analysis.signal}` : ""}
+                </span>
+              </div>
+              <ul className="mt-1.5 list-inside list-disc space-y-0.5">
+                {journalIntel.liveReadLines.slice(0, 6).map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+              {journalIntel.missingThemes.length > 0 ? (
+                <p className="mt-1.5 text-[11px] text-brand-500">
+                  Still open: {journalIntel.missingThemes.slice(0, 6).join(", ")}
+                </p>
+              ) : (
+                <p className="mt-1.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                  Themes look solid for today&apos;s note.
+                </p>
+              )}
+            </div>
+          ) : null}
+
+          {/* Adaptive queue */}
+          <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 p-3 dark:border-brand-700 dark:bg-brand-900/30">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                Evidence gaps to fill (adaptive)
+                {autoAppearingQuestions.length > 0
+                  ? ` · ${autoAppearingQuestions.length} ready`
+                  : " · complete"}
+              </p>
+              {nextGuidedQuestion ? (
+                <button
+                  type="button"
+                  className="rounded-full border border-brand-300 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-brand-800 shadow-sm dark:border-brand-600 dark:bg-brand-950 dark:text-brand-100"
+                  onClick={() => insertQuestionIntoJournal(nextGuidedQuestion)}
+                >
+                  Add next question
+                </button>
+              ) : null}
+            </div>
+            {autoAppearingQuestions.length > 0 ? (
+              <ul className="space-y-2">
+                {autoAppearingQuestions.slice(0, 5).map((p) => (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      className="group flex w-full items-start gap-2 rounded-lg border border-brand-100 bg-white px-2.5 py-2 text-left text-sm shadow-sm transition hover:border-brand-400 hover:bg-brand-50 dark:border-brand-800 dark:bg-brand-950 dark:hover:bg-brand-900"
+                      onClick={() => insertQuestionIntoJournal(p)}
+                    >
+                      <MessageCircleQuestion className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[11px] font-bold uppercase tracking-wide text-brand-500">
+                          {p.label}
+                          {p.reason ? (
+                            <span className="ml-1.5 font-medium normal-case tracking-normal text-brand-400">
+                              {p.category}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="mt-0.5 block leading-snug text-brand-900 dark:text-brand-50">
+                          {p.question}
+                        </span>
+                        {p.reason ? (
+                          <span className="mt-1 block text-[10px] italic text-brand-500">
+                            Clinical why: {p.reason}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-brand-600 dark:text-brand-300">
+                Nice work—main interview themes are covered. Continue to scores anytime.
+              </p>
+            )}
           </div>
 
           <details className="rounded-xl border border-brand-100 text-sm dark:border-brand-800">
