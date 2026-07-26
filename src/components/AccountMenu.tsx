@@ -2,21 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import {
-  BarChart3,
-  Bell,
-  ChevronDown,
-  Download,
-  Fingerprint,
-  LogOut,
-  Palette,
-  RotateCcw,
-  Settings,
-  ShieldCheck,
-  Upload,
-  User,
-  UserCircle,
-} from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { collectLocalExportBlob, restoreLocalExportBlob } from "@/lib/local-export";
 import { cn } from "@/lib/utils";
@@ -39,8 +25,8 @@ type MeUser = {
 };
 
 /**
- * Top-bar Account section: profile summary + Logout, Reset, Import, Export, Analytics,
- * and other account shortcuts (settings, biometrics, preferences, theme).
+ * Top-bar Account section: profile + Logout, Reset, Import, Export, Analytics,
+ * Change password, Face ID / Touch ID, and other shortcuts (with matching emojis).
  */
 export function AccountMenu({ className = "" }: { className?: string }) {
   const menuId = useId();
@@ -122,7 +108,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      showToast("Export downloaded");
+      showToast("📤 Export downloaded");
       setOpen(false);
     } catch {
       showToast("Export failed");
@@ -162,7 +148,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
       ) {
         restoreLocalExportBlob((parsed as { local: Record<string, unknown> }).local);
       }
-      showToast("Import complete — reloading…");
+      showToast("📥 Import complete — reloading…");
       setOpen(false);
       window.setTimeout(() => {
         window.location.href = "/home";
@@ -227,7 +213,9 @@ export function AccountMenu({ className = "" }: { className?: string }) {
               referrerPolicy="no-referrer"
             />
           ) : (
-            <User className="h-4 w-4 text-brand-600" aria-hidden />
+            <span className="text-base leading-none" aria-hidden>
+              👤
+            </span>
           )}
         </span>
         <span className="hidden max-w-[7rem] truncate sm:inline">{label}</span>
@@ -256,11 +244,11 @@ export function AccountMenu({ className = "" }: { className?: string }) {
           {/* Profile summary */}
           <div className="border-b border-brand-50 bg-brand-50/50 px-4 py-3 dark:border-brand-800 dark:bg-brand-900/40">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-500">
-              Account
+              👤 Account
             </p>
             {user ? (
               <div className="mt-1.5 flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-brand-700 dark:bg-brand-950">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-white text-lg dark:border-brand-700 dark:bg-brand-950">
                   {photo ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -270,7 +258,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
                       referrerPolicy="no-referrer"
                     />
                   ) : (
-                    <UserCircle className="h-7 w-7 text-brand-500" />
+                    <span aria-hidden>👤</span>
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -282,16 +270,18 @@ export function AccountMenu({ className = "" }: { className?: string }) {
                   </p>
                   <p className="mt-0.5 text-[11px] text-brand-500">
                     {user.createdAt
-                      ? `Joined ${new Date(user.createdAt).toLocaleDateString()}`
+                      ? `📅 Joined ${new Date(user.createdAt).toLocaleDateString()}`
                       : "Registered account"}
-                    {user.isAdmin ? " · Admin" : ""}
-                    {user.biometricsEnabled ? " · Face ID on" : ""}
+                    {user.isAdmin ? " · 🛡️ Admin" : ""}
+                    {user.biometricsEnabled ? " · 🔐 Face ID on" : ""}
                   </p>
                 </div>
               </div>
             ) : (
               <div className="mt-1.5">
-                <p className="font-semibold text-brand-950 dark:text-brand-50">Guest session</p>
+                <p className="font-semibold text-brand-950 dark:text-brand-50">
+                  👋 Guest session
+                </p>
                 <p className="text-xs text-brand-600">
                   Data stays on this device until you create an account.
                 </p>
@@ -303,35 +293,48 @@ export function AccountMenu({ className = "" }: { className?: string }) {
           <div className="p-1.5">
             <MenuLink
               href="/account"
-              icon={Settings}
+              emoji="⚙️"
               label="Account settings"
-              hint="Profile, password, photo, biometrics"
+              hint="Profile, photo, preferences"
               onNavigate={() => setOpen(false)}
             />
             <MenuLink
               href="/analytics"
-              icon={BarChart3}
+              emoji="📊"
               label="User Analytics"
-              hint={user?.isAdmin ? "Your metrics + admin directory" : "Sessions, pain, consistency"}
+              hint={
+                user?.isAdmin
+                  ? "Your metrics + admin directory"
+                  : "Sessions, pain, consistency"
+              }
+              onNavigate={() => setOpen(false)}
+            />
+            {user ? (
+              <MenuLink
+                href="/account#password"
+                emoji="🔑"
+                label="Change password"
+                hint="Update password · signs out other sessions"
+                onNavigate={() => setOpen(false)}
+              />
+            ) : null}
+            <MenuLink
+              href="/account#security"
+              emoji="🔐"
+              label="Enable Face ID / Touch ID"
+              hint="Faster sign-in with biometrics"
               onNavigate={() => setOpen(false)}
             />
             <MenuLink
               href="/account#preferences"
-              icon={Bell}
+              emoji="🔔"
               label="Preferences"
               hint="Reminders, theme, session length"
               onNavigate={() => setOpen(false)}
             />
             <MenuLink
-              href="/account#security"
-              icon={Fingerprint}
-              label="Security & biometrics"
-              hint="Face ID / Touch ID, password"
-              onNavigate={() => setOpen(false)}
-            />
-            <MenuLink
               href="/progress"
-              icon={ShieldCheck}
+              emoji="🎯"
               label="Progress & goals"
               hint="Outcomes over time"
               onNavigate={() => setOpen(false)}
@@ -341,7 +344,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
           {/* Data actions: Export / Import / Reset */}
           <div className="border-t border-brand-50 p-1.5 dark:border-brand-800">
             <p className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-brand-500">
-              Your data
+              💾 Your data
             </p>
             <button
               type="button"
@@ -350,7 +353,9 @@ export function AccountMenu({ className = "" }: { className?: string }) {
               disabled={busy === "export"}
               onClick={() => void exportData()}
             >
-              <Download className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
+              <span className="mt-0.5 w-6 shrink-0 text-center text-base leading-none" aria-hidden>
+                📤
+              </span>
               <span>
                 <span className="font-semibold text-brand-900 dark:text-brand-50">
                   {busy === "export" ? "Exporting…" : "Export data"}
@@ -367,7 +372,9 @@ export function AccountMenu({ className = "" }: { className?: string }) {
               disabled={busy === "import"}
               onClick={() => importRef.current?.click()}
             >
-              <Upload className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
+              <span className="mt-0.5 w-6 shrink-0 text-center text-base leading-none" aria-hidden>
+                📥
+              </span>
               <span>
                 <span className="font-semibold text-brand-900 dark:text-brand-50">
                   {busy === "import" ? "Importing…" : "Import data"}
@@ -386,7 +393,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
             />
             <MenuLink
               href="/account#session-data"
-              icon={RotateCcw}
+              emoji="🔄"
               label="Reset data"
               hint="Reset all or daily — type Reset to confirm"
               onNavigate={() => setOpen(false)}
@@ -398,7 +405,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
           <div className="border-t border-brand-50 px-3 py-2.5 dark:border-brand-800">
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 dark:text-brand-200">
-                <Palette className="h-3.5 w-3.5" />
+                <span aria-hidden>🎨</span>
                 Theme
               </span>
               <ThemeCycleButton />
@@ -415,7 +422,9 @@ export function AccountMenu({ className = "" }: { className?: string }) {
                 disabled={busy === "logout"}
                 onClick={() => void logout()}
               >
-                <LogOut className="h-4 w-4 text-brand-600" />
+                <span className="w-6 text-center text-base leading-none" aria-hidden>
+                  🚪
+                </span>
                 {busy === "logout" ? "Signing out…" : "Log out"}
               </button>
             ) : (
@@ -425,7 +434,9 @@ export function AccountMenu({ className = "" }: { className?: string }) {
                 className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-sm font-semibold text-brand-900 hover:bg-brand-50 dark:text-brand-50 dark:hover:bg-brand-900"
                 onClick={() => setOpen(false)}
               >
-                <ShieldCheck className="h-4 w-4 text-brand-600" />
+                <span className="w-6 text-center text-base leading-none" aria-hidden>
+                  🛡️
+                </span>
                 Sign in or register
               </Link>
             )}
@@ -438,14 +449,14 @@ export function AccountMenu({ className = "" }: { className?: string }) {
 
 function MenuLink({
   href,
-  icon: Icon,
+  emoji,
   label,
   hint,
   onNavigate,
   danger,
 }: {
   href: string;
-  icon: React.ComponentType<{ className?: string }>;
+  emoji: string;
   label: string;
   hint?: string;
   onNavigate?: () => void;
@@ -461,12 +472,12 @@ function MenuLink({
         danger && "hover:bg-rose-50 dark:hover:bg-rose-950/40"
       )}
     >
-      <Icon
-        className={cn(
-          "mt-0.5 h-4 w-4 shrink-0",
-          danger ? "text-rose-600" : "text-brand-600"
-        )}
-      />
+      <span
+        className="mt-0.5 w-6 shrink-0 text-center text-base leading-none"
+        aria-hidden
+      >
+        {emoji}
+      </span>
       <span>
         <span
           className={cn(

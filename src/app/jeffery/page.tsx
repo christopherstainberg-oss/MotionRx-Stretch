@@ -19,7 +19,7 @@ import {
   useConversationSpeed,
 } from "@/lib/use-conversation-speed";
 import { isAnswerComplete } from "@/lib/assessment-story-conversation";
-import { Bot, MessageCircleQuestion, Send, Sparkles } from "lucide-react";
+import { Bot, MessageCircleQuestion, Pencil, Send, Sparkles } from "lucide-react";
 
 export default function JefferyPage() {
   const [messages, setMessages] = useState<JefferyMessage[]>([]);
@@ -281,18 +281,7 @@ export default function JefferyPage() {
           />
         </div>
         {jefferySettle.showControls ? (
-          <div className="mt-2 space-y-2 rounded-lg bg-amber-50 px-2.5 py-2 dark:bg-amber-900/30">
-            <p className="text-xs font-medium text-amber-950 dark:text-amber-100">
-              {jefferySettle.editing
-                ? "Editing — type freely. Send continues the conversation immediately."
-                : (
-                  <>
-                    Draft ready — <strong>{jefferySettle.remainingSec}s</strong> left.{" "}
-                    <strong>Send</strong> continues now; <strong>Edit</strong> pauses auto-send so
-                    you can revise.
-                  </>
-                )}
-            </p>
+          <div className="mt-3">
             <ConversationSettleActions
               settling={jefferySettle.settling}
               editing={jefferySettle.editing}
@@ -331,15 +320,8 @@ export default function JefferyPage() {
               }}
               sendLabel="Send"
               editLabel="Edit"
-              hint={
-                jefferySettle.editing
-                  ? "Editing — buttons stay fixed. Send continues without waiting."
-                  : jefferySettle.settling
-                    ? `Auto-send in ${jefferySettle.remainingSec}s — or Send now to continue immediately.`
-                    : "Send continues the conversation · Edit keeps the timer paused while you type."
-              }
             />
-            <div className="h-20 lg:h-16" aria-hidden />
+            <div className="h-24 sm:h-20" aria-hidden />
           </>
         ) : null}
       </div>
@@ -466,20 +448,26 @@ export default function JefferyPage() {
             {jefferySettle.showControls && (
               <button
                 type="button"
-                className="btn-secondary !px-3"
+                className={
+                  jefferySettle.editing
+                    ? "btn-settle-edit btn-settle-edit-active !min-h-[44px] !flex-none !px-3"
+                    : "btn-settle-edit !min-h-[44px] !flex-none !px-3"
+                }
                 onClick={() => {
                   jefferySettle.edit();
                   requestAnimationFrame(() => inputRef.current?.focus());
                 }}
                 disabled={loading}
                 aria-label="Edit answer"
+                aria-pressed={jefferySettle.editing || undefined}
               >
+                <Pencil className="h-4 w-4" />
                 Edit
               </button>
             )}
             <button
               type="submit"
-              className="btn-primary min-w-[48px] px-3 sm:px-4"
+              className="btn-settle-send !min-h-[44px] !flex-none min-w-[48px] !px-3 sm:!px-4"
               disabled={loading || !input.trim()}
               aria-label="Send message"
             >

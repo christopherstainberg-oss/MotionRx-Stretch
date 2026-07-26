@@ -1450,18 +1450,7 @@ export default function AssessmentPage() {
                   />
                 </div>
                 {storySettle.showControls ? (
-                  <div className="mt-2 space-y-2 rounded-lg bg-amber-50 px-2.5 py-2 dark:bg-amber-900/30">
-                    <p className="text-xs font-medium text-amber-950 dark:text-amber-100">
-                      {storySettle.editing
-                        ? "Editing — type freely. Send continues the conversation immediately."
-                        : (
-                          <>
-                            Answer detected — <strong>{storySettle.remainingSec}s</strong> left.
-                            Use <strong>Send</strong> to continue now, or <strong>Edit</strong> to
-                            pause and revise.
-                          </>
-                        )}
-                    </p>
+                  <div className="mt-3">
                     <ConversationSettleActions
                       settling={storySettle.settling}
                       editing={storySettle.editing}
@@ -1473,7 +1462,7 @@ export default function AssessmentPage() {
                     />
                   </div>
                 ) : null}
-                {/* Fixed Send/Edit while typing after Edit — stays above tab bar */}
+                {/* Fixed Send/Edit bar — brand theme, above mobile tab bar */}
                 {storySettle.showControls ? (
                   <>
                     <ConversationSettleActions
@@ -1485,16 +1474,8 @@ export default function AssessmentPage() {
                       onEdit={editStoryAnswer}
                       sendLabel="Send"
                       editLabel="Edit"
-                      hint={
-                        storySettle.editing
-                          ? "Editing — buttons stay fixed. Send continues without waiting."
-                          : storySettle.settling
-                            ? `Sending in ${storySettle.remainingSec}s — or Send now to continue immediately.`
-                            : "Send continues the conversation · Edit keeps the timer paused while you type."
-                      }
                     />
-                    {/* Spacer so fixed bar does not cover the last lines of the answer box */}
-                    <div className="h-20 lg:h-16" aria-hidden />
+                    <div className="h-24 sm:h-20" aria-hidden />
                   </>
                 ) : null}
                 {openStoryQuestion ? (

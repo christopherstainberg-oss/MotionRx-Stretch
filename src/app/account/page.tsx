@@ -579,17 +579,32 @@ export default function AccountPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-brand-950">Account & settings</h1>
+        <h1 className="text-2xl font-bold text-brand-950">👤 Account & settings</h1>
         <p className="mt-1 text-sm text-brand-700/85">
           Security, biometrics, export/import, appearance, and session controls.
         </p>
-        <Link
-          href="/analytics"
-          className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-brand-700 hover:text-brand-900"
-        >
-          <BarChart3 className="h-4 w-4" />
-          Open User Analytics
-        </Link>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link
+            href="/analytics"
+            className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-800 ring-1 ring-brand-100 hover:bg-brand-100 dark:bg-brand-900 dark:text-brand-100 dark:ring-brand-700"
+          >
+            📊 User Analytics
+          </Link>
+          {user ? (
+            <a
+              href="#password"
+              className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-800 ring-1 ring-brand-100 hover:bg-brand-100 dark:bg-brand-900 dark:text-brand-100 dark:ring-brand-700"
+            >
+              🔑 Change password
+            </a>
+          ) : null}
+          <a
+            href="#security"
+            className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-800 ring-1 ring-brand-100 hover:bg-brand-100 dark:bg-brand-900 dark:text-brand-100 dark:ring-brand-700"
+          >
+            🔐 Face ID / Touch ID
+          </a>
+        </div>
       </div>
 
       {(msg || err) && (
@@ -611,7 +626,7 @@ export default function AccountPage() {
 
       <section id="profile" className="card scroll-mt-24 space-y-4 p-5">
         <div>
-          <h2 className="font-semibold text-brand-900">Profile details</h2>
+          <h2 className="font-semibold text-brand-900">👤 Profile details</h2>
           <p className="mt-0.5 text-xs text-brand-600">
             Name, email, member since, photo, and role — also available from the top-bar Account menu.
           </p>
@@ -789,7 +804,7 @@ export default function AccountPage() {
       {/* Export / Import */}
       <section id="data-portability" className="card scroll-mt-24 space-y-4 p-5">
         <div>
-          <h2 className="font-semibold text-brand-900">Export & import data</h2>
+          <h2 className="font-semibold text-brand-900">💾 Export & import data</h2>
           <p className="mt-1 text-xs text-brand-600">
             Download a private JSON backup of your plans, sessions, journal, and device data—or
             restore one. Never share export files publicly.
@@ -802,7 +817,7 @@ export default function AccountPage() {
             disabled={exportBusy}
             onClick={exportData}
           >
-            <Download className="h-4 w-4" />
+            <span aria-hidden>📤</span>
             {exportBusy ? "Exporting…" : "Export data"}
           </button>
           <button
@@ -811,7 +826,7 @@ export default function AccountPage() {
             disabled={importBusy}
             onClick={() => importInputRef.current?.click()}
           >
-            <Upload className="h-4 w-4" />
+            <span aria-hidden>📥</span>
             {importBusy ? "Importing…" : "Import data"}
           </button>
           <input
@@ -827,10 +842,7 @@ export default function AccountPage() {
       {/* Face ID / Touch ID */}
       <section id="security" className="card scroll-mt-24 space-y-4 p-5">
         <div>
-          <h2 className="flex items-center gap-2 font-semibold text-brand-900">
-            <Fingerprint className="h-5 w-5 text-brand-600" />
-            Security & biometrics
-          </h2>
+          <h2 className="font-semibold text-brand-900">🔐 Security & biometrics</h2>
           <p className="mt-1 text-xs text-brand-600">
             Use your device biometrics (Face ID, Touch ID, Windows Hello, or fingerprint) for faster
             sign-in. Requires a registered account and a secure context (HTTPS or localhost).
@@ -853,11 +865,11 @@ export default function AccountPage() {
               disabled={bioBusy}
               onClick={enableBiometrics}
             >
-              <ScanFace className="h-4 w-4" />
+              <span aria-hidden>🔐</span>
               {bioBusy
                 ? "Waiting for device…"
                 : bioCreds.length
-                  ? "Add another device"
+                  ? "➕ Add another device"
                   : "Enable Face ID / Touch ID"}
             </button>
             {bioCreds.length > 0 ? (
@@ -897,7 +909,7 @@ export default function AccountPage() {
       {/* Logout / Reset selectors */}
       <section id="session-data" className="card scroll-mt-24 space-y-4 p-5">
         <div>
-          <h2 className="font-semibold text-brand-900">Session & data</h2>
+          <h2 className="font-semibold text-brand-900">🔄 Session & data</h2>
           <p className="mt-1 text-xs text-brand-600">
             Choose an action below. Resets clear data permanently and cannot be undone—export a
             backup first if you need one.
@@ -920,9 +932,9 @@ export default function AccountPage() {
               }}
               disabled={actionBusy || !authChecked}
             >
-              {user && <option value="logout">Log out</option>}
-              <option value="reset-all">Reset all data</option>
-              <option value="reset-daily">Reset daily data</option>
+              {user && <option value="logout">🚪 Log out</option>}
+              <option value="reset-all">🔄 Reset all data</option>
+              <option value="reset-daily">📅 Reset daily data</option>
             </select>
           </div>
 
@@ -1010,7 +1022,7 @@ export default function AccountPage() {
 
       <form id="preferences" onSubmit={savePrefs} className="card scroll-mt-24 space-y-5 p-5">
         <div>
-          <h2 className="font-semibold text-brand-900">Preferences</h2>
+          <h2 className="font-semibold text-brand-900">🔔 Preferences</h2>
           <p className="mt-0.5 text-xs text-brand-600">
             Preferred name, branding, reminders, session length, and notifications.
           </p>
@@ -1094,16 +1106,19 @@ export default function AccountPage() {
         </button>
       </form>
 
-      {user && (
+      {user ? (
         <form
           id="password"
           onSubmit={changePassword}
           className="card scroll-mt-24 space-y-4 p-5"
         >
-          <h2 className="font-semibold text-brand-900">Change password</h2>
-          <p className="text-xs text-brand-600">
-            Requires current password. Rotates session version and signs out other sessions.
-          </p>
+          <div>
+            <h2 className="font-semibold text-brand-900">🔑 Change password</h2>
+            <p className="mt-1 text-xs text-brand-600">
+              Enter your current password, then choose a new one (8–128 characters). This rotates your
+              session and signs out other devices.
+            </p>
+          </div>
           <div>
             <label className="label" htmlFor="cur-pw">
               Current password
@@ -1134,18 +1149,29 @@ export default function AccountPage() {
               required
               minLength={8}
               maxLength={128}
+              placeholder="At least 8 characters"
             />
           </div>
-          <button type="submit" className="btn-secondary">
+          <button type="submit" className="btn-primary inline-flex items-center gap-2">
+            <span aria-hidden>🔑</span>
             Update password
           </button>
         </form>
+      ) : (
+        <section id="password" className="card scroll-mt-24 space-y-3 p-5">
+          <h2 className="font-semibold text-brand-900">🔑 Change password</h2>
+          <p className="text-sm text-brand-700">
+            Sign in with a registered account to change your password.
+          </p>
+          <Link href="/login" className="btn-primary inline-flex items-center gap-2">
+            <span aria-hidden>🛡️</span>
+            Sign in or register
+          </Link>
+        </section>
       )}
 
       <section className="card space-y-3 p-5">
-        <h2 className="flex items-center gap-2 font-semibold text-brand-900">
-          <Download className="h-5 w-5" /> PWA install & offline
-        </h2>
+        <h2 className="font-semibold text-brand-900">📱 PWA install & offline</h2>
         <ul className="list-disc space-y-2 pl-5 text-sm text-brand-800">
           <li>
             <strong>Desktop (Chrome/Edge):</strong> install icon in the address bar.

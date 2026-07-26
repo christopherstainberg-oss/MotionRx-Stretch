@@ -742,18 +742,7 @@ export default function JournalPage() {
               />
             </div>
             {journalSettle.showControls ? (
-              <div className="mt-2 space-y-2 rounded-lg bg-amber-50 px-2.5 py-2 dark:bg-amber-900/30">
-                <p className="text-xs font-medium text-amber-950 dark:text-amber-100">
-                  {journalSettle.editing
-                    ? "Editing — type freely. Send continues the conversation immediately."
-                    : (
-                      <>
-                        Answer detected — <strong>{journalSettle.remainingSec}s</strong> left.{" "}
-                        <strong>Send</strong> continues now; <strong>Edit</strong> pauses so you can
-                        revise.
-                      </>
-                    )}
-                </p>
+              <div className="mt-3">
                 <ConversationSettleActions
                   settling={journalSettle.settling}
                   editing={journalSettle.editing}
@@ -776,15 +765,8 @@ export default function JournalPage() {
                   onEdit={editJournalAnswer}
                   sendLabel="Send"
                   editLabel="Edit"
-                  hint={
-                    journalSettle.editing
-                      ? "Editing — buttons stay fixed. Send continues without waiting."
-                      : journalSettle.settling
-                        ? `Sending in ${journalSettle.remainingSec}s — or Send now to continue immediately.`
-                        : "Send continues the conversation · Edit keeps the timer paused while you type."
-                  }
                 />
-                <div className="h-20 lg:h-16" aria-hidden />
+                <div className="h-24 sm:h-20" aria-hidden />
               </>
             ) : null}
             {openJournalQuestion ? (
