@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { getActorId, ownsRecord } from "@/lib/auth";
+import { getActorId, ownsRecord, signInRequiredResponse } from "@/lib/auth";
 import { readDb, updateDb } from "@/lib/storage";
 import type { SessionLog } from "@/lib/types";
 import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
 
 export async function GET() {
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
   const db = await readDb();
   const sessions = db.sessions
     .filter((s) => s.userId === userId)
@@ -27,7 +29,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid session" }, { status: 400 });
   }
 
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
   const painBefore = clampPain(body.averagePainBefore);
   const painAfter = clampPain(body.averagePainAfter);
   const difficultyFelt = clampDifficulty(body.difficultyFelt);

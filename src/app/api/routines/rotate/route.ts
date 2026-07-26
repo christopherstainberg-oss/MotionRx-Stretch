@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getActorId, ownsRecord } from "@/lib/auth";
+import { getActorId, ownsRecord, signInRequiredResponse } from "@/lib/auth";
 import {
   ensureRoutineItems,
   rotateEntireRoutine,
@@ -24,7 +24,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "routine required" }, { status: 400 });
   }
 
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
   const db = await readDb();
   const existing = db.routines.find((r) => r.id === routine.id);
   if (existing?.userId && !ownsRecord(existing.userId, userId)) {

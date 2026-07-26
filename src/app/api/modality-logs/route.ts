@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getActorId, ownsRecord } from "@/lib/auth";
+import { getActorId, ownsRecord, signInRequiredResponse } from "@/lib/auth";
 import { getModalityById } from "@/data/modalities";
 import { readDb, updateDb } from "@/lib/storage";
 import type { ModalityLog } from "@/lib/types";
@@ -7,7 +7,9 @@ import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
 import { v4 as uuid } from "uuid";
 
 export async function GET() {
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
   const db = await readDb();
   const logs = db.modalityLogs
     .filter((l) => l.userId === userId)
@@ -30,7 +32,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Valid modalityId required" }, { status: 400 });
   }
 
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
   const log: ModalityLog = {
     id: body.id || uuid(),
     userId,

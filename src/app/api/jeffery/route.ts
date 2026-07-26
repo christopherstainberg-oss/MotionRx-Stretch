@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
-import { getActorId } from "@/lib/auth";
+import { getActorId, signInRequiredResponse } from "@/lib/auth";
 import { jefferyReply, newThread } from "@/lib/jeffery";
 import { readDb, updateDb } from "@/lib/storage";
 import { v4 as uuid } from "uuid";
 import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
 
 export async function GET() {
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+  if (!actor) return signInRequiredResponse();
+  const { userId } = actor;
   const db = await readDb();
   let thread = db.jefferyThreads.find((t) => t.userId === userId);
   if (!thread) {
@@ -40,7 +42,9 @@ export async function POST(req: Request) {
       ? sanitizeText(body.clinicalContext, 6000)
       : "";
 
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+  if (!actor) return signInRequiredResponse();
+  const { userId } = actor;
   const db = await readDb();
 
   let thread = db.jefferyThreads.find((t) => t.userId === userId);

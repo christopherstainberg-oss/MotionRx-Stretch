@@ -288,7 +288,7 @@ export default function UserAnalyticsPage() {
                 )}
               </div>
               <p className="text-[11px] text-brand-500">
-                Showing {filteredUsers.length} of {adminUsers.length} registered users. Guest sessions
+                Showing {filteredUsers.length} of {adminUsers.length} registered users. Sessions
                 are not listed.
               </p>
             </div>
@@ -299,7 +299,7 @@ export default function UserAnalyticsPage() {
       <div>
         <h2 className="text-lg font-semibold text-brand-900">Your mobility metrics</h2>
         <p className="mt-0.5 text-xs text-brand-600">
-          Private to your account or guest session on this device.
+          Private to your signed-in account on this device.
         </p>
       </div>
 
@@ -501,7 +501,7 @@ export default function UserAnalyticsPage() {
           </section>
 
           <p className="text-center text-[11px] text-brand-400">
-            Generated {new Date(data.generatedAt).toLocaleString()} · Private to your account/guest
+            Generated {new Date(data.generatedAt).toLocaleString()} · Private to your account
             session
           </p>
         </>

@@ -304,36 +304,15 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
               </p>
               {!signedIn ? (
                 <>
-                  <p className="text-sm text-brand-600">Browsing as guest</p>
+                  <p className="text-sm text-brand-600">
+                    Sign in required to use MotionRx Stretch.
+                  </p>
                   <Link
                     href="/login"
                     className="btn-primary w-full py-3"
                     onClick={() => setMenuOpen(false)}
                   >
-                    Sign in
-                  </Link>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Link
-                      href="/account"
-                      className="btn-secondary justify-center py-2.5 text-center text-sm"
-                      onClick={() => setMenuOpen(false)}
-                    >
-                      Settings
-                    </Link>
-                    <Link
-                      href="/analytics"
-                      className="btn-secondary justify-center py-2.5 text-center text-sm"
-                      onClick={() => setMenuOpen(false)}
-                    >
-                      Analytics
-                    </Link>
-                  </div>
-                  <Link
-                    href="/account#session-data"
-                    className="btn-ghost w-full justify-center py-2 text-sm"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    Export · Import · Reset
+                    Sign in or register
                   </Link>
                 </>
               ) : (

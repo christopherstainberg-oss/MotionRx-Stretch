@@ -1,15 +1,44 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { Nav } from "@/components/Nav";
 import { PwaRegister } from "@/components/PwaRegister";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { VideoCatalogRefresh } from "@/components/VideoCatalogRefresh";
 import { DEFAULT_APP_NAME } from "@/data/names";
+import { apiFetch } from "@/lib/api-client";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const isAuthScreen = pathname === "/login" || pathname === "/";
+  const [authReady, setAuthReady] = useState(isAuthScreen);
+
+  useEffect(() => {
+    if (isAuthScreen) {
+      setAuthReady(true);
+      return;
+    }
+    let cancelled = false;
+    setAuthReady(false);
+    apiFetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        if (!d.user) {
+          router.replace("/login");
+          return;
+        }
+        setAuthReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) router.replace("/login");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthScreen, pathname, router]);
 
   if (isAuthScreen) {
     return (
@@ -19,6 +48,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
         <VideoCatalogRefresh />
+        <PwaRegister />
+      </div>
+    );
+  }
+
+  if (!authReady) {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-brand-50/50 dark:bg-brand-950">
+        <OfflineBanner />
+        <p className="text-sm font-medium text-brand-700 dark:text-brand-200">
+          Checking your account…
+        </p>
         <PwaRegister />
       </div>
     );

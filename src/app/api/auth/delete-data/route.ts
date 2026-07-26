@@ -3,7 +3,6 @@ import {
   applyClearGuestCookie,
   applyClearSessionCookie,
   getSessionUser,
-  peekGuestId,
   purgeActorData,
 } from "@/lib/auth";
 import { assertDataDirWritable, updateDb } from "@/lib/storage";
@@ -15,9 +14,7 @@ import { assertSameOrigin, contentLengthOk } from "@/lib/security";
 const CONFIRM_PHRASE = "Delete";
 
 /**
- * Permanently wipe the current actor's data.
- * - Registered user: deletes account profile + all owned records + session
- * - Guest: deletes guest-owned records + guest cookie
+ * Permanently wipe the signed-in user's account and owned data.
  * Body: { confirm: "Delete" }
  */
 export async function POST(req: Request) {
@@ -54,36 +51,32 @@ export async function POST(req: Request) {
     await assertDataDirWritable();
 
     const sessionUser = await getSessionUser();
-    const guestId = peekGuestId();
-    // Do not call getOrCreateGuestId — never invent an id just to wipe.
-    const actorId = sessionUser?.id || guestId;
-    const isRegistered = Boolean(sessionUser);
+    if (!sessionUser) {
+      return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    }
 
+    const actorId = sessionUser.id;
     let avatarKey: string | undefined;
     let summary = { removedRows: 0, removedUser: false };
 
-    if (actorId) {
-      await updateDb((db) => {
-        const result = purgeActorData(db, actorId, {
-          removeUserProfile: isRegistered,
-        });
-        summary = { removedRows: result.removedRows, removedUser: result.removedUser };
-        avatarKey = result.avatarKey;
+    await updateDb((db) => {
+      const result = purgeActorData(db, actorId, {
+        removeUserProfile: true,
       });
-      if (avatarKey) {
-        await deleteUploadKey(avatarKey);
-      }
+      summary = { removedRows: result.removedRows, removedUser: result.removedUser };
+      avatarKey = result.avatarKey;
+    });
+    if (avatarKey) {
+      await deleteUploadKey(avatarKey);
     }
 
     const res = NextResponse.json({
       ok: true,
       deleted: true,
-      wasGuest: !isRegistered,
+      wasGuest: false,
       removedRows: summary.removedRows,
       removedUser: summary.removedUser,
-      message: isRegistered
-        ? "Your account and all associated data have been permanently deleted."
-        : "Guest account data has been permanently deleted from this device session.",
+      message: "Your account and all associated data have been permanently deleted.",
     });
 
     applyClearSessionCookie(res);

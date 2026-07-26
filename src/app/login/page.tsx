@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Eye, EyeOff, Fingerprint } from "lucide-react";
 import { AppLogo } from "@/components/Icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -124,7 +123,7 @@ export default function LoginPage() {
       router.push("/home");
       router.refresh();
     } catch {
-      setError("Could not reach the server. Check your connection, or continue as a guest.");
+      setError("Could not reach the server. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -325,27 +324,6 @@ export default function LoginPage() {
               Enter your email first if you have multiple devices enrolled.
             </p>
           )}
-
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center" aria-hidden>
-              <div className="w-full border-t border-brand-100 dark:border-brand-800" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="bg-white px-3 font-medium text-brand-500 dark:bg-brand-950">
-                or
-              </span>
-            </div>
-          </div>
-
-          <Link
-            href="/home"
-            className="btn-secondary flex w-full justify-center py-3 text-center text-sm font-semibold"
-          >
-            Continue as guest
-          </Link>
-          <p className="mt-2 text-center text-xs text-brand-500">
-            Guest data stays on this device. Create an account anytime to save it.
-          </p>
         </div>
 
         <p className="mt-6 text-center text-[11px] leading-relaxed text-brand-400">

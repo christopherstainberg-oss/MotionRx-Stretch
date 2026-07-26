@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getActorId, getSessionUser, peekGuestId } from "@/lib/auth";
+import { getActorId, getSessionUser, signInRequiredResponse } from "@/lib/auth";
 import { readDb } from "@/lib/storage";
 import { buildExportPackage } from "@/lib/user-data-export";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
@@ -22,16 +22,16 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
     const user = await getSessionUser();
-    const guestId = peekGuestId();
-    const { userId, isGuest } = await getActorId();
-    const actorId = user?.id || guestId || userId;
+    const actorId = actor.userId;
 
     const db = await readDb();
     const pkg = buildExportPackage({
       db,
       actorId,
-      isGuest: !user,
+      isGuest: false,
       user: user || null,
     });
 

@@ -3,7 +3,7 @@ import path from "path";
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
-import type { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { readDb, updateDb, type DbShape } from "@/lib/storage";
 import type { UserPreferences, UserProfile } from "@/lib/types";
 import { v4 as uuid } from "uuid";
@@ -150,16 +150,10 @@ export function clearGuestCookie() {
   cookies().set(GUEST_COOKIE, "", sessionCookieOptions(0));
 }
 
-/** Stable guest id for anonymous data isolation (not a security principal) */
-export function getOrCreateGuestId(): string {
-  const jar = cookies();
-  const existing = jar.get(GUEST_COOKIE)?.value;
-  if (existing && /^guest_[a-f0-9-]{8,}$/i.test(existing)) return existing;
-  const id = `guest_${uuid()}`;
-  jar.set(GUEST_COOKIE, id, sessionCookieOptions(60 * 60 * 24 * 365));
-  return id;
-}
-
+/**
+ * Guest accounts are removed. Never creates a guest id.
+ * Kept only to migrate leftover `motionrx_guest` cookies after legacy sessions sign in.
+ */
 export function peekGuestId(): string | null {
   const existing = cookies().get(GUEST_COOKIE)?.value;
   if (existing && /^guest_[a-f0-9-]{8,}$/i.test(existing)) return existing;
@@ -191,11 +185,19 @@ export async function getSessionUser(): Promise<UserProfile | null> {
   return normalized;
 }
 
-/** Authenticated user id or isolated guest id */
-export async function getActorId(): Promise<{ userId: string; isGuest: boolean }> {
+/**
+ * Signed-in user only. Guest / anonymous actors are not supported.
+ * Returns null when there is no session — callers should respond 401.
+ */
+export async function getActorId(): Promise<{ userId: string; isGuest: false } | null> {
   const user = await getSessionUser();
-  if (user) return { userId: user.id, isGuest: false };
-  return { userId: getOrCreateGuestId(), isGuest: true };
+  if (!user) return null;
+  return { userId: user.id, isGuest: false };
+}
+
+/** JSON 401 for unauthenticated API access */
+export function signInRequiredResponse() {
+  return NextResponse.json({ error: "Sign in required" }, { status: 401 });
 }
 
 export function assertCanEditProfile(actorId: string, targetId: string): boolean {

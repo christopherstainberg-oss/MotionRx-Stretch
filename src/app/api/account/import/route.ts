@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getActorId, getSessionUser } from "@/lib/auth";
+import { getActorId, getSessionUser, signInRequiredResponse } from "@/lib/auth";
 import { assertDataDirWritable, updateDb } from "@/lib/storage";
 import {
   applyImportPackage,
@@ -34,7 +34,9 @@ export async function POST(req: Request) {
     await assertDataDirWritable();
 
     const user = await getSessionUser();
-    const { userId } = await getActorId();
+    const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
     const actorId = user?.id || userId;
 
     let body: unknown;

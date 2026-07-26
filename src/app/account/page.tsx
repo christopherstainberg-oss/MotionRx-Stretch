@@ -361,7 +361,7 @@ export default function AccountPage() {
       clearLocalUserData({ preserveTheme: true, scope });
       setResetConfirmText("");
       setMsg(data.message || (scope === "daily" ? "Daily data reset." : "All data reset."));
-      // Stay signed in / stay guest — soft reload so pages pick up empty state
+      // Stay signed in — soft reload so pages pick up empty state
       window.location.href = "/home";
     } catch {
       // Offline: still honor typed confirm for device-local data
@@ -788,7 +788,7 @@ export default function AccountPage() {
           <div>
             <p className="text-sm text-brand-700">
               {authChecked
-                ? "You are browsing as a guest. Progress stays on this device until you create an account."
+                ? "Sign in or register to manage your account and save progress."
                 : "Checking session…"}
             </p>
             {authChecked && (

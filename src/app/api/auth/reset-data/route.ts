@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import {
   getSessionUser,
-  peekGuestId,
   resetActorData,
   type ResetDataScope,
 } from "@/lib/auth";
@@ -80,14 +79,10 @@ export async function POST(req: Request) {
     await assertDataDirWritable();
 
     const sessionUser = await getSessionUser();
-    const guestId = peekGuestId();
-    const actorId = sessionUser?.id || guestId;
-    if (!actorId) {
-      return NextResponse.json(
-        { error: "No account or guest session found to reset." },
-        { status: 400 }
-      );
+    if (!sessionUser) {
+      return NextResponse.json({ error: "Sign in required" }, { status: 401 });
     }
+    const actorId = sessionUser.id;
 
     let removedRows = 0;
     await updateDb((db) => {
@@ -104,7 +99,7 @@ export async function POST(req: Request) {
       ok: true,
       reset: true,
       scope,
-      wasGuest: !sessionUser,
+      wasGuest: false,
       removedRows,
       message,
     });

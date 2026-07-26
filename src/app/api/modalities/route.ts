@@ -7,7 +7,7 @@ import {
   type ModalitySetting,
   type ModalityTiming,
 } from "@/data/modalities";
-import { getActorId } from "@/lib/auth";
+import { getActorId, signInRequiredResponse } from "@/lib/auth";
 import {
   buildVisitModalityPlan,
   recommendModalities,
@@ -28,7 +28,9 @@ export async function GET(req: Request) {
   }
 
   if (mode === "recommend" || mode === "plan") {
-    const { userId } = await getActorId();
+    const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
     const db = await readDb();
     const painScore = Number(searchParams.get("pain") ?? 3);
     const timing = (searchParams.get("timing") as ModalityTiming) || "between-visits";
@@ -117,7 +119,9 @@ export async function GET(req: Request) {
   }
 
   if (mode === "history") {
-    const { userId } = await getActorId();
+    const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
     const db = await readDb();
     const plans = db.modalityPlans
       .filter((p) => p.userId === userId)
@@ -166,7 +170,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
   const db = await readDb();
   const sessions = db.sessions
     .filter((s) => s.userId === userId)

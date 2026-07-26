@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getActorId } from "@/lib/auth";
+import { getActorId, signInRequiredResponse } from "@/lib/auth";
 import { readDb, updateDb } from "@/lib/storage";
 import type { BodyPart, PainProfile } from "@/lib/types";
 import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
@@ -8,7 +8,9 @@ import { normalizeSex } from "@/lib/clinical-history";
 import { v4 as uuid } from "uuid";
 
 export async function GET() {
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
   const db = await readDb();
   const profiles = db.painProfiles
     .filter((p) => p.userId === userId)
@@ -29,7 +31,9 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
   const descriptorIds = Array.isArray(body.descriptorIds)
     ? body.descriptorIds.map(String).slice(0, 24)
     : [];

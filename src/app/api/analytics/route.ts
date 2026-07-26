@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { getActorId } from "@/lib/auth";
+import { getActorId, signInRequiredResponse } from "@/lib/auth";
 import { readDb } from "@/lib/storage";
 import { computeAnalytics } from "@/lib/analytics";
 
 export async function GET() {
   try {
-    const { userId } = await getActorId();
+    const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
     const db = await readDb();
     const sessions = db.sessions.filter((s) => s.userId === userId);
     const journal = db.journal.filter((j) => j.userId === userId);

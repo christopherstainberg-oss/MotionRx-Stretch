@@ -178,7 +178,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
     user?.preferredName ||
     user?.displayName ||
     user?.name?.split(/\s+/)[0] ||
-    (checked && !user ? "Guest" : "Account");
+    "Account";
 
   const photo = photoSrc();
 
@@ -280,10 +280,10 @@ export function AccountMenu({ className = "" }: { className?: string }) {
             ) : (
               <div className="mt-1.5">
                 <p className="font-semibold text-brand-950 dark:text-brand-50">
-                  👋 Guest session
+                  Not signed in
                 </p>
                 <p className="text-xs text-brand-600">
-                  Data stays on this device until you create an account.
+                  Sign in or register to save your plans and progress.
                 </p>
               </div>
             )}

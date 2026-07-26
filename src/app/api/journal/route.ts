@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { getActorId, ownsRecord } from "@/lib/auth";
+import { getActorId, ownsRecord, signInRequiredResponse } from "@/lib/auth";
 import { readDb, updateDb } from "@/lib/storage";
 import type { JournalEntry } from "@/lib/types";
 import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
 
 export async function GET() {
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
   const db = await readDb();
   const entries = db.journal
     .filter((j) => j.userId === userId)
@@ -27,7 +29,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid entry" }, { status: 400 });
   }
 
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
   const clamp15 = (n: unknown, fallback: 1 | 2 | 3 | 4 | 5 = 3): 1 | 2 | 3 | 4 | 5 =>
     ([1, 2, 3, 4, 5].includes(Number(n)) ? Number(n) : fallback) as 1 | 2 | 3 | 4 | 5;
 

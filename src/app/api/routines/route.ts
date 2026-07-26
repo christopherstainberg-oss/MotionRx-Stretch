@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getActorId, ownsRecord } from "@/lib/auth";
+import { getActorId, ownsRecord, signInRequiredResponse } from "@/lib/auth";
 import { readDb, updateDb } from "@/lib/storage";
 import type { Routine } from "@/lib/types";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
@@ -7,7 +7,9 @@ import { clientIp, rateLimit } from "@/lib/rate-limit";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
   const db = await readDb();
 
   if (id) {
@@ -41,7 +43,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid routine items" }, { status: 400 });
   }
 
-  const { userId } = await getActorId();
+  const actor = await getActorId();
+    if (!actor) return signInRequiredResponse();
+    const { userId } = actor;
   const db = await readDb();
   const existing = db.routines.find((r) => r.id === body.id);
   if (existing?.userId && !ownsRecord(existing.userId, userId)) {
