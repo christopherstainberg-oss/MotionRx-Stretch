@@ -155,6 +155,69 @@ const GOAL_CHIPS = [
   "recover gently",
 ];
 
+/** Parse free-text goals into plan-engine string list (one goal per line or semicolon). */
+function parseGoalsFreeText(text: string): string[] {
+  return (text || "")
+    .split(/[\n;]+/)
+    .map((line) => line.replace(/^[-•*\u2022\d.)\s]+/, "").trim())
+    .filter((s) => s.length >= 2)
+    .slice(0, 16);
+}
+
+/** Join goal chips/list into free-text lines for the Goals box. */
+function goalsToFreeText(list: string[]): string {
+  return Array.from(new Set(list.map((g) => g.trim()).filter(Boolean))).join("\n");
+}
+
+/**
+ * Auto-populate Goals free text from story intelligence + body areas.
+ * Prefers user-stated goals; falls back to assumed + region-aware suggestions.
+ */
+function buildAutoGoalsFreeText(opts: {
+  statedGoals?: string[];
+  assumedGoals?: string[];
+  areas?: BodyPart[];
+  functionalLimits?: string[];
+}): string {
+  const lines: string[] = [];
+  const push = (g: string) => {
+    const t = g.trim();
+    if (!t) return;
+    if (lines.some((x) => x.toLowerCase() === t.toLowerCase())) return;
+    lines.push(t);
+  };
+
+  for (const g of opts.statedGoals || []) push(g);
+  for (const g of opts.assumedGoals || []) push(g);
+
+  // Region-aware educational goals when story is thin
+  if (lines.length < 2) {
+    const areas = opts.areas || [];
+    if (areas.some((a) => /neck|jaw|shoulder|upper-back|thoracic/.test(a))) {
+      push("tolerate desk / screen time with less neck and shoulder stiffness");
+    }
+    if (areas.some((a) => /lower-back|pelvis|hip|glute/.test(a))) {
+      push("move, sit, and stand with less low-back or hip irritation");
+    }
+    if (areas.some((a) => /knee|hamstring|quad|calf|ankle|foot/.test(a))) {
+      push("walk stairs and daily distances with more confidence");
+    }
+    if (areas.some((a) => /wrist|hand|elbow|forearm/.test(a))) {
+      push("use hands and arms for daily tasks with less flare");
+    }
+    for (const lim of (opts.functionalLimits || []).slice(0, 2)) {
+      push(`improve ease with: ${lim}`);
+    }
+  }
+
+  if (!lines.length) {
+    push("move with less stiffness and more confidence in daily activities");
+    push("build a short, sustainable home mobility routine I can stick with");
+  }
+
+  return lines.slice(0, 8).join("\n");
+}
+
 /**
  * IMPORTANT: Keep presentational helpers OUTSIDE AssessmentPage.
  * Nested function components remount on every parent render, which steals
@@ -298,6 +361,10 @@ export default function AssessmentPage() {
   const [symptoms, setSymptoms] = useState<string[]>([]);
   const [customSymptom, setCustomSymptom] = useState("");
   const [goals, setGoals] = useState<string[]>([]);
+  /** Free-text goals box (auto-fills from story; chips sync into this) */
+  const [goalsText, setGoalsText] = useState("");
+  const [goalsAutoFill, setGoalsAutoFill] = useState(true);
+  const goalsUserEditedRef = useRef(false);
   const [minutes, setMinutes] = useState(15);
   const [difficulty, setDifficulty] = useState<Difficulty>("beginner");
   const [preferKinds, setPreferKinds] = useState<"auto" | MovementKind[]>("auto");
@@ -624,6 +691,11 @@ export default function AssessmentPage() {
     setAreas(parsedPreview.areas);
     setSymptoms(parsedPreview.symptoms);
     setGoals(parsedPreview.goals);
+    if (parsedPreview.goals?.length) {
+      const text = goalsToFreeText(parsedPreview.goals);
+      setGoalsText(text);
+      goalsUserEditedRef.current = false;
+    }
     setPreferKinds(parsedPreview.preferKinds);
     const pain: Partial<Record<BodyPart, number>> = {};
     for (const a of parsedPreview.areas) pain[a] = parsedPreview.estimatedPain;
@@ -773,6 +845,27 @@ export default function AssessmentPage() {
     () => getStoryIntel(storyPromptCtx),
     [storyPromptCtx]
   );
+
+  // Auto-populate Goals free-text from story + areas (until user edits)
+  useEffect(() => {
+    if (!goalsAutoFill || goalsUserEditedRef.current) return;
+    const next = buildAutoGoalsFreeText({
+      statedGoals: storyIntel.goals,
+      assumedGoals: storyIntel.assumedGoals,
+      areas,
+      functionalLimits: storyIntel.functionalLimits,
+    });
+    if (!next.trim()) return;
+    setGoalsText((prev) => (prev === next ? prev : next));
+    const parsed = parseGoalsFreeText(next);
+    setGoals((prev) => (sameStringArray(prev, parsed) ? prev : parsed));
+  }, [
+    goalsAutoFill,
+    storyIntel.goals,
+    storyIntel.assumedGoals,
+    storyIntel.functionalLimits,
+    areas,
+  ]);
 
   const storyPriorPrompt = useMemo(
     () => buildStoryPriorPrompt(storyPromptCtx),
@@ -2088,15 +2181,75 @@ export default function AssessmentPage() {
             />
           </SubSection>
 
-          <SubSection title="Goals" hint="What you want this plan to help with.">
+          <SubSection
+            title="Goals"
+            hint="Free-text goals auto-fill from your story and body regions—edit anytime."
+            action={
+              <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700 dark:text-brand-200">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 accent-brand-600"
+                  checked={goalsAutoFill}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setGoalsAutoFill(on);
+                    if (on) {
+                      goalsUserEditedRef.current = false;
+                      const next = buildAutoGoalsFreeText({
+                        statedGoals: storyIntel.goals,
+                        assumedGoals: storyIntel.assumedGoals,
+                        areas,
+                        functionalLimits: storyIntel.functionalLimits,
+                      });
+                      setGoalsText(next);
+                      setGoals(parseGoalsFreeText(next));
+                    }
+                  }}
+                />
+                Auto-fill from story
+              </label>
+            }
+          >
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-brand-800 dark:text-brand-100">
+                Your goals (free text)
+              </span>
+              <textarea
+                className="input min-h-[120px] resize-y text-base leading-relaxed"
+                value={goalsText}
+                onChange={(e) => {
+                  goalsUserEditedRef.current = true;
+                  const v = e.target.value;
+                  setGoalsText(v);
+                  setGoals(parseGoalsFreeText(v));
+                }}
+                placeholder={
+                  "One goal per line — e.g.\nWalk 20 minutes without flare\nSleep through the night more easily\nTolerate desk work with less stiffness"
+                }
+                aria-label="Goals free text"
+                autoComplete="off"
+                spellCheck
+              />
+            </label>
+            <p className="text-[11px] leading-relaxed text-brand-500">
+              Suggestions update from Describe Your Issue when auto-fill is on. Type your own goals
+              or tap chips below to add them. Each line becomes a plan goal.
+            </p>
             <div className="flex flex-wrap gap-2">
               {GOAL_CHIPS.map((g) => {
-                const on = goals.includes(g);
+                const on = goals.some((x) => x.toLowerCase() === g.toLowerCase());
                 return (
                   <button
                     key={g}
                     type="button"
-                    onClick={() => setGoals(toggle(goals, g))}
+                    onClick={() => {
+                      goalsUserEditedRef.current = true;
+                      const nextList = on
+                        ? goals.filter((x) => x.toLowerCase() !== g.toLowerCase())
+                        : [...goals, g];
+                      setGoals(nextList);
+                      setGoalsText(goalsToFreeText(nextList));
+                    }}
                     className={`rounded-full border px-3 py-1.5 text-sm transition ${chipClass(on)}`}
                   >
                     {g}
@@ -2104,6 +2257,14 @@ export default function AssessmentPage() {
                 );
               })}
             </div>
+            {(storyIntel.goals?.length || storyIntel.assumedGoals?.length) ? (
+              <p className="text-[11px] text-brand-600 dark:text-brand-300">
+                From your story:{" "}
+                {[...(storyIntel.goals || []), ...(storyIntel.assumedGoals || [])]
+                  .slice(0, 4)
+                  .join(" · ")}
+              </p>
+            ) : null}
           </SubSection>
 
           <FooterNav onBack={() => setStep(1)} onNext={() => setStep(3)} />
