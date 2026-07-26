@@ -1408,7 +1408,7 @@ export default function AssessmentPage() {
                     }}
                     placeholder={
                       continuousFlow && guideStoryQa
-                        ? "Answer under each ▸ line — the next question appears automatically when you pause…"
+                        ? "Answer under each ▸ line — or type Skip to pass a question. Next question appears when you pause…"
                         : storyPriorPrompt.placeholder
                     }
                     aria-label="Describe your issue"
@@ -1484,8 +1484,10 @@ export default function AssessmentPage() {
                   </p>
                 )}
                 <p className="mt-1 text-[10px] leading-relaxed text-brand-500">
-                  Each ▸ line is a question. Type under it; after your edit window the next question
-                  is added. Adjust conversation speed above (shared with Journal &amp; Jeffery).
+                  Each ▸ line is a question. Type your answer under it, or type{" "}
+                  <strong>Skip</strong> to pass and move on. After your edit window (or Send), the
+                  next question is added. Adjust conversation speed above (shared with Journal &amp;
+                  Jeffery).
                 </p>
               </div>
 

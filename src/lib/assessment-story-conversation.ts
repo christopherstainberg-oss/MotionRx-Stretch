@@ -115,10 +115,31 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * User can skip an interview question by typing "Skip" (case-insensitive).
+ * Also accepts a few common pass variants so continuous flow can advance.
+ */
+export function isSkipAnswer(answer: string): boolean {
+  const a = (answer || "").trim().toLowerCase();
+  if (!a) return false;
+  // Whole-line skip only (not "I skip steps" mid-sentence)
+  if (/^skip[.!?…]*$/i.test(a)) return true;
+  if (
+    /^(skip (this|question|it|for now)|pass|n\/a|n\.a\.|na|no answer|prefer not to say)[.!?…]*$/i.test(
+      a
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /** Enough substance to treat a reply as a finished turn and advance the interview. */
 export function isAnswerComplete(answer: string): boolean {
   const a = (answer || "").trim();
   if (!a) return false;
+  // Explicit skip advances immediately
+  if (isSkipAnswer(a)) return true;
   // Very short ack still counts if multi-word or has meaningful tokens
   const words = a.split(/\s+/).filter(Boolean);
   if (words.length >= 2) return true;
@@ -219,6 +240,9 @@ export function decideStoryFlow(ctx: {
 }
 
 function continuousBridge(name: string, lastAnswer: string): string {
+  if (isSkipAnswer(lastAnswer)) {
+    return `${name}, no problem — we’ll skip that one and keep going:`;
+  }
   const snip = storySnippet(lastAnswer, 48);
   if (snip) {
     return `${name}, thanks — holding “${snip}.” Let’s keep going:`;
