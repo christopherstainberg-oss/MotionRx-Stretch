@@ -99,7 +99,7 @@ export async function resolveLiveVideo(opts: {
     kind: opts.kind,
   });
 
-  // Content-best institutional match for written movement name (may beat library default)
+  // Content-best match for written movement (technique-locked when possible)
   const contentBest = movementHint
     ? bestCatalogVideoForMovement({
         name: movementHint,
@@ -111,6 +111,8 @@ export async function resolveLiveVideo(opts: {
       })
     : undefined;
 
+  // Library preferred ID wins when it is still in our institutional catalog.
+  // Never re-rank to a different technique family while preferred is live.
   const preferredId =
     opts.preferredId?.trim() ||
     contentBest?.youtubeId ||
@@ -125,16 +127,23 @@ export async function resolveLiveVideo(opts: {
     ordered.push(enrichCatalogVideo(v));
   };
 
-  // Prefer the library's chosen ID only if it is still in the institutional catalog.
-  // Non-catalog fitness-creator / legacy IDs are never served, even if still on YouTube.
-  const preferredMeta = getCatalogVideoById(preferredId);
-  if (preferredMeta) {
-    push(preferredMeta);
-  }
-  // Lead with content-best match for written exercise/stretch title
+  const preferredMeta = getCatalogVideoById(preferredId)
+    ? enrichCatalogVideo(getCatalogVideoById(preferredId)!)
+    : undefined;
+  if (preferredMeta) push(preferredMeta);
   if (contentBest) push(contentBest);
 
-  // Rank remaining catalog by content match so swaps stay on-topic
+  // Fallback chain: same technique family only, then same region, then ranked catalog
+  const techKey = technique || preferredMeta?.techniques?.[0];
+  if (techKey) {
+    for (const raw of allCatalogVideos()) {
+      const v = enrichCatalogVideo(raw);
+      if ((v.techniques || []).some((t) => t.toLowerCase() === techKey.toLowerCase())) {
+        push(v);
+      }
+    }
+  }
+
   const ranked = allCatalogVideos()
     .map((v) => ({
       v: enrichCatalogVideo(v),
@@ -142,14 +151,19 @@ export async function resolveLiveVideo(opts: {
         name: movementHint || preferredMeta?.title,
         region,
         bodyParts: opts.bodyParts,
-        technique: technique || preferredMeta?.techniques?.[0],
+        technique: techKey,
         tags: opts.tags,
         kind: opts.kind,
+        requireTechnique: Boolean(techKey),
       }),
     }))
     .sort((a, b) => b.score - a.score);
 
-  for (const { v } of ranked) push(v);
+  for (const { v, score } of ranked) {
+    // Skip garbage fallbacks that failed technique gate
+    if (techKey && score < -20) continue;
+    push(v);
+  }
   for (const v of candidatesForRegion(region)) push(v);
 
   // Pass 1: prefer confirmed-live, in relevance order

@@ -341,10 +341,11 @@ export const INSTITUTIONAL_VIDEOS: Record<string, InstitutionalVideo> = {
     institution: "Cleveland Clinic",
     source: "Cleveland Clinic Patient Education",
     regions: ["back", "lowerBack", "core"],
-    techniques: ["back-extensor", "prone-strength", "posture", "bird-dog"],
+    // Superman only — never pair with bird-dog / dead-bug (different motor patterns)
+    techniques: ["superman", "back-extensor", "prone-strength"],
     kind: "exercise",
     accuracyTier: "technique",
-    aliases: ["superman", "back extension", "prone extension", "bird dog"],
+    aliases: ["superman", "back extension", "prone extension", "prone back raise"],
   },
   // —— Cleveland Clinic (exercise physiologist / balance education) ——
   cleveland_balance: {
@@ -365,6 +366,10 @@ export const INSTITUTIONAL_VIDEOS: Record<string, InstitutionalVideo> = {
  * matching of *written* stretch/exercise names → institutional demos.
  * Merged at score time so catalog entries stay lean.
  */
+/**
+ * Narrow technique claims: a video may only "own" demos it actually shows.
+ * Over-broad technique bags caused glute-bridge → yoga, bird-dog → superman, etc.
+ */
 const VIDEO_ENRICHMENT: Partial<
   Record<
     keyof typeof INSTITUTIONAL_VIDEOS,
@@ -372,174 +377,250 @@ const VIDEO_ENRICHMENT: Partial<
   >
 > = {
   nia_hamstring: {
-    techniques: ["hamstring", "posterior-chain"],
+    techniques: ["hamstring"],
     kind: "stretch",
     accuracyTier: "technique",
     aliases: ["hamstring", "back of leg", "posterior thigh", "straight leg stretch"],
   },
   nia_ankle: {
-    techniques: ["ankle", "calf", "calf-raise"],
-    kind: "both",
+    techniques: ["ankle", "calf"],
+    kind: "stretch",
     accuracyTier: "technique",
-    aliases: ["ankle", "calf", "heel raise", "dorsiflexion", "plantarflexion"],
+    aliases: ["ankle stretch", "calf stretch", "dorsiflexion", "plantarflexion", "heel cord"],
   },
   nia_shoulder_arm: {
-    techniques: ["shoulder", "chest-open", "scapular"],
+    techniques: ["shoulder", "scapular"],
     kind: "stretch",
     accuracyTier: "regional",
-    aliases: ["shoulder stretch", "arm stretch", "upper trap", "pectoral"],
+    aliases: ["shoulder stretch", "arm stretch", "upper arm"],
   },
   nia_back: {
-    techniques: ["spinal-flex", "spinal-safe", "lower-back"],
+    techniques: ["spinal-flex", "lower-back"],
     kind: "stretch",
     accuracyTier: "regional",
-    aliases: ["back stretch", "low back", "lumbar", "knee to chest"],
+    aliases: ["back stretch", "low back stretch", "lumbar stretch"],
   },
   nia_balance_one_foot: {
-    techniques: ["balance", "single-leg"],
+    techniques: ["balance"],
     kind: "exercise",
     accuracyTier: "technique",
-    aliases: ["single leg balance", "stand on one foot", "proprioception"],
+    aliases: ["single leg balance", "stand on one foot", "one foot balance"],
   },
   nia_balance_heel_toe: {
-    techniques: ["balance", "tandem", "gait"],
+    techniques: ["balance"],
     kind: "exercise",
     accuracyTier: "technique",
     aliases: ["heel to toe", "tandem walk", "balance walk"],
   },
   nia_wall_pushups: {
-    techniques: ["wall-push", "push-up", "chest"],
+    techniques: ["wall-push"],
     kind: "exercise",
     accuracyTier: "technique",
-    aliases: ["wall push", "wall pushup", "push-up", "upper body strength"],
+    aliases: ["wall push", "wall pushup", "wall push-up", "wall push ups"],
   },
   nia_lower_strength: {
-    techniques: ["sit-to-stand", "leg-strength", "hip-strength", "step", "tke", "wall-sit"],
+    // LE strength block — bridges, stands, steps (not yoga, not SLR/TKE form demos)
+    techniques: ["sit-to-stand", "leg-strength", "hip-strength", "step", "wall-sit", "glute-bridge", "calf-raise"],
     kind: "exercise",
     accuracyTier: "technique",
     aliases: [
       "sit to stand",
       "chair stand",
       "leg strength",
+      "lower body strength",
       "squat",
       "step up",
-      "quad set",
-      "terminal knee",
+      "glute bridge",
+      "bridge",
+      "wall sit",
+      "heel raise",
+      "calf raise",
     ],
   },
   nia_upper_strength: {
-    techniques: ["row-pull", "shoulder-strength", "scapular"],
+    techniques: ["row-pull", "shoulder-strength"],
     kind: "exercise",
     accuracyTier: "regional",
-    aliases: ["row", "pull", "upper body strength", "scapular"],
+    aliases: ["upper body strength", "arm strength", "shoulder strength"],
   },
   cleveland_chest: {
-    techniques: ["chest-open", "pec"],
+    techniques: ["chest-open"],
     kind: "stretch",
     accuracyTier: "technique",
-    aliases: ["chest stretch", "doorway", "pec stretch", "pectoral"],
+    aliases: ["chest stretch", "assisted chest", "doorway chest", "pec stretch", "pectoral stretch"],
   },
   cleveland_cat_cow: {
-    techniques: ["cat-cow", "spinal-flex", "spinal-safe"],
+    techniques: ["cat-cow"],
     kind: "stretch",
     accuracyTier: "technique",
-    aliases: ["cat cow", "cat-cow", "spinal mobility", "flexion extension"],
+    aliases: ["cat cow", "cat-cow", "cat and cow"],
   },
   cleveland_side_bend: {
     techniques: ["thoracic-rotation", "side-bend"],
     kind: "stretch",
     accuracyTier: "technique",
-    aliases: ["side bend", "lateral flexion", "thoracic"],
+    aliases: ["side bend", "standing side bend", "lateral flexion"],
+  },
+  cleveland_balance: {
+    techniques: ["balance"],
+    kind: "exercise",
+    accuracyTier: "technique",
+    aliases: ["balance exercises", "stability", "build stability"],
   },
   mayo_shoulders: {
-    techniques: ["shoulder", "scapular", "cervical", "chin-tuck", "posture"],
+    techniques: ["shoulder", "posture", "scapular"],
     kind: "stretch",
     accuracyTier: "regional",
-    aliases: ["shoulder", "neck", "chin tuck", "upper body", "posture", "desk"],
+    aliases: ["shoulders", "upper body break", "shoulder mobility"],
   },
   mayo_band_strength: {
-    techniques: ["rotator-cuff", "band-row", "shoulder-strength", "serratus"],
+    techniques: ["rotator-cuff", "serratus", "band-row", "shoulder-strength"],
     kind: "exercise",
     accuracyTier: "technique",
     aliases: [
-      "band",
+      "bands and weights",
       "rotator cuff",
       "external rotation",
-      "shoulder er",
-      "row",
-      "serratus",
+      "shoulder strengthening",
       "resistance band",
+      "serratus",
     ],
   },
   mayo_low_back: {
-    techniques: ["spinal-safe", "hip-hinge", "core-control", "bird-dog"],
+    techniques: ["spinal-safe", "hip-hinge", "bird-dog", "core-control"],
     kind: "both",
     accuracyTier: "technique",
-    aliases: ["low back pain", "lumbar", "hip hinge", "back safe", "core"],
+    aliases: ["low back pain", "exercise with low back", "lumbar", "hip hinge", "bird dog", "bird-dog"],
   },
   mayo_desk_five: {
-    techniques: ["desk-mobility", "sit-to-stand", "posture", "calf-raise"],
+    techniques: ["desk-mobility", "wrist-hand", "wrist-load", "posture"],
     kind: "both",
     accuracyTier: "regional",
-    aliases: ["desk", "workday", "office", "sit to stand", "posture break"],
+    aliases: ["desk exercises", "without leaving your desk", "office mobility", "wrist", "hand"],
   },
   mayo_workday: {
-    techniques: ["desk-mobility", "cervical", "posture"],
+    techniques: ["desk-mobility", "cervical", "chin-tuck", "neck-side", "cervical-iso", "posture"],
     kind: "stretch",
     accuracyTier: "regional",
-    aliases: ["workday", "desk stretch", "neck", "office stretch"],
+    aliases: ["workday stretching", "stretching throughout", "neck stretch", "chin tuck", "cervical"],
+  },
+  mayo_stretching_pt: {
+    techniques: ["chest-open", "shoulder", "neck-side"],
+    kind: "stretch",
+    accuracyTier: "regional",
+    aliases: ["stretching exercises", "pt demonstration", "shoulder stretch"],
+  },
+  mayo_or_stretch: {
+    techniques: ["full-body", "general"],
+    kind: "stretch",
+    accuracyTier: "general",
+    aliases: ["or-stretch", "between surgery", "micro stretch break"],
   },
   dartmouth_standing: {
-    techniques: ["sit-to-stand", "balance", "leg-strength", "step"],
+    techniques: ["sit-to-stand", "leg-strength", "balance"],
     kind: "exercise",
     accuracyTier: "technique",
-    aliases: ["standing exercise", "sit to stand", "chair rise", "leg strength", "older adult"],
+    aliases: ["standing exercises", "sit to stand", "chair rise", "older adults standing"],
   },
   hopkins_movement: {
-    techniques: ["functional", "leg-strength", "balance", "general"],
+    techniques: ["general", "functional"],
     kind: "both",
     accuracyTier: "regional",
-    aliases: ["facilitate movement", "functional mobility", "home exercise"],
+    aliases: ["facilitate movement", "functional mobility"],
   },
   hopkins_move_more: {
-    techniques: ["desk-mobility", "carry-walk", "posture"],
+    techniques: ["carry-walk", "desk-mobility"],
     kind: "both",
     accuracyTier: "regional",
     aliases: ["move more", "throughout the day", "simple exercises"],
   },
   vha_seated_core: {
-    techniques: ["core", "dead-bug", "core-lateral"],
+    techniques: ["dead-bug", "core-lateral", "core"],
     kind: "exercise",
     accuracyTier: "regional",
-    aliases: ["seated core", "core strength", "trunk", "dead bug"],
+    aliases: ["seated core", "core strengthening", "trunk strength", "dead bug"],
   },
   vha_taichi_back: {
-    techniques: ["spinal-safe", "balance", "lower-back"],
+    techniques: ["spinal-safe", "balance"],
     kind: "both",
     accuracyTier: "regional",
-    aliases: ["tai chi", "lower back health", "gentle back"],
+    aliases: ["tai chi", "lower back health"],
   },
   vha_lower_yoga: {
-    techniques: ["hip-glute", "hip-flexor", "hamstring", "adductor"],
+    // Stretch / yoga LE only — NOT glute-bridge strength or sit-to-stand
+    techniques: ["hip-glute", "hip-flexor", "adductor", "quad"],
     kind: "stretch",
     accuracyTier: "regional",
-    aliases: ["hip stretch", "glute", "figure four", "lower body yoga", "hamstring"],
+    aliases: [
+      "lower-body yoga",
+      "hip stretch",
+      "figure four",
+      "piriformis",
+      "hip flexor",
+      "groin",
+      "quad stretch",
+      "quadriceps stretch",
+    ],
   },
   vha_upper_yoga: {
-    techniques: ["shoulder", "neck-side", "chest-open", "thoracic-rotation"],
+    techniques: ["neck-side", "thoracic-rotation", "shoulder"],
     kind: "stretch",
     accuracyTier: "regional",
-    aliases: ["upper body yoga", "shoulder yoga", "neck stretch"],
+    aliases: ["upper-body yoga", "shoulder yoga", "neck mobility"],
+  },
+  vha_stretching: {
+    techniques: ["hamstring", "hip-flexor", "full-body"],
+    kind: "stretch",
+    accuracyTier: "regional",
+    aliases: ["get fit for life stretching", "stretching routine"],
   },
   nia_full_workout: {
+    techniques: ["full-body"],
     kind: "both",
     accuracyTier: "general",
-    aliases: ["full body", "workout", "older adults"],
+    aliases: ["full body workout", "15-minute workout"],
   },
   nia_flexibility_6: {
+    techniques: ["full-body", "general"],
     kind: "stretch",
     accuracyTier: "general",
-    aliases: ["flexibility", "stretch routine", "cool down"],
+    aliases: ["flexibility exercises", "flexibility routine"],
+  },
+  nia_flexibility_cooldown: {
+    techniques: ["calf", "ankle", "full-body"],
+    kind: "stretch",
+    accuracyTier: "regional",
+    aliases: ["cool down", "flexibility and cool down"],
+  },
+  nia_cooldown_flex: {
+    techniques: ["full-body", "general"],
+    kind: "stretch",
+    accuracyTier: "general",
+    aliases: ["cool down and flexibility"],
+  },
+  nia_strength_workout: {
+    techniques: ["leg-strength", "hip-strength", "full-body"],
+    kind: "exercise",
+    accuracyTier: "general",
+    aliases: ["strength training workout"],
+  },
+  mayo_fab5: {
+    techniques: ["sit-to-stand", "wall-push", "calf-raise", "leg-strength"],
+    kind: "exercise",
+    accuracyTier: "regional",
+    aliases: ["fab 5", "get you moving"],
+  },
+  mayo_move_work: {
+    techniques: ["desk-mobility", "posture"],
+    kind: "both",
+    accuracyTier: "regional",
+    aliases: ["move more at work"],
+  },
+  mayo_flexibility: {
+    techniques: ["full-body", "general"],
+    kind: "stretch",
+    accuracyTier: "general",
+    aliases: ["get your body flexible", "right way flexible"],
   },
 };
 
@@ -599,7 +680,9 @@ export function inferTechniqueFromMovement(opts: {
     { re: /\bankle alphabet|ankle mobility|ankle circle\b/, tech: "ankle" },
     { re: /\bglute bridge|bridge\b/, tech: "glute-bridge" },
     { re: /\bbird.?dog\b/, tech: "bird-dog" },
+    { re: /\bsuperman|prone (back )?extension|prone back raise\b/, tech: "spinal-safe" },
     { re: /\bdead.?bug\b/, tech: "dead-bug" },
+    { re: /\bglute bridge|hip bridge\b/, tech: "glute-bridge" },
     { re: /\bsit.?to.?stand|chair stand|stand from sit\b/, tech: "sit-to-stand" },
     { re: /\bwall push|wall push.?up\b/, tech: "wall-push" },
     { re: /\bstep.?up|step.?down\b/, tech: "step" },
@@ -741,14 +824,16 @@ export type TechniqueKey =
 type VideoCatalogKey = keyof typeof INSTITUTIONAL_VIDEOS;
 
 /**
- * Best institutional demo per technique (form + safety focused).
- * Maps to the closest *content-accurate* catalog entry — not a generic filler.
- * Catalog titles are shown honestly (never relabeled as a different exercise).
+ * Canonical institutional demo per technique family.
+ * Matching LOCKS to this map unless another catalog entry explicitly owns the
+ * same technique key (see bestCatalogVideoForMovement). Prevents generic
+ * “full body / yoga / OR stretch” demos from stealing specific movements.
  */
 export const VIDEO_BY_TECHNIQUE: Record<TechniqueKey, VideoCatalogKey> = {
-  "chin-tuck": "mayo_shoulders",
-  "neck-side": "mayo_shoulders",
-  cervical: "mayo_shoulders",
+  "chin-tuck": "mayo_workday",
+  "neck-side": "mayo_workday",
+  cervical: "mayo_workday",
+  "cervical-iso": "mayo_workday",
   "chest-open": "cleveland_chest",
   "cat-cow": "cleveland_cat_cow",
   "spinal-flex": "nia_back",
@@ -756,34 +841,34 @@ export const VIDEO_BY_TECHNIQUE: Record<TechniqueKey, VideoCatalogKey> = {
   "hip-glute": "vha_lower_yoga",
   "hip-flexor": "vha_lower_yoga",
   hamstring: "nia_hamstring",
-  quad: "nia_flexibility_6",
+  quad: "vha_lower_yoga",
   calf: "nia_ankle",
   ankle: "nia_ankle",
-  "wrist-hand": "mayo_or_stretch",
+  "wrist-hand": "mayo_desk_five",
+  "wrist-load": "mayo_desk_five",
   "thoracic-rotation": "cleveland_side_bend",
   scapular: "mayo_shoulders",
   "glute-bridge": "nia_lower_strength",
-  "bird-dog": "cleveland_superman",
+  // Bird-dog is a core motor-control pattern (not Superman prone extension)
+  "bird-dog": "mayo_low_back",
   "sit-to-stand": "dartmouth_standing",
   "wall-push": "nia_wall_pushups",
   "dead-bug": "vha_seated_core",
   step: "nia_lower_strength",
   "row-pull": "nia_upper_strength",
   balance: "cleveland_balance",
-  "calf-raise": "nia_ankle",
+  "calf-raise": "nia_lower_strength",
   "carry-walk": "hopkins_move_more",
   "rotator-cuff": "mayo_band_strength",
   serratus: "mayo_band_strength",
   "core-lateral": "vha_seated_core",
   "hip-hinge": "mayo_low_back",
   "knee-rom": "nia_lower_strength",
-  slr: "nia_lower_strength",
+  slr: "nia_hamstring", // SLR shares posterior-chain setup cues with hamstring education
   tke: "nia_lower_strength",
   "foot-intrinsic": "nia_ankle",
-  "wrist-load": "mayo_or_stretch",
   "wall-sit": "nia_lower_strength",
   adductor: "vha_lower_yoga",
-  "cervical-iso": "mayo_shoulders",
   "desk-mobility": "mayo_desk_five",
   "full-body": "nia_full_workout",
   general: "nia_flexibility_6",
@@ -800,10 +885,19 @@ function normalizeMatchText(s: string): string {
     .trim();
 }
 
+/** True if catalog video explicitly owns this technique key */
+function videoOwnsTechnique(video: InstitutionalVideo, technique: string): boolean {
+  const t = technique.toLowerCase().trim();
+  if (!t) return false;
+  return (video.techniques || []).some((x) => x.toLowerCase() === t);
+}
+
 /**
  * Score how well a catalog video matches a *written* stretch/exercise name,
  * technique family, body region, and movement kind.
- * Institutional technique demos outrank generic full-body education.
+ *
+ * Technique ownership is required for high scores — loose region/token overlap
+ * alone cannot beat a locked technique map entry.
  */
 export function scoreCatalogVideoMatch(
   video: InstitutionalVideo,
@@ -814,6 +908,8 @@ export function scoreCatalogVideoMatch(
     bodyParts?: string[];
     tags?: string[];
     kind?: "stretch" | "exercise";
+    /** When true, videos that do not own the technique get a hard penalty */
+    requireTechnique?: boolean;
   }
 ): number {
   const v = enrichCatalogVideo(video);
@@ -835,110 +931,53 @@ export function scoreCatalogVideoMatch(
     }) ||
     "";
 
-  // —— Technique family (strongest signal for instructional accuracy) ——
+  // —— Technique ownership (hard gate for instructional accuracy) ——
   if (technique) {
-    if (v.techniques?.some((t) => t.toLowerCase() === technique)) score += 55;
-    else if (
-      v.techniques?.some(
-        (t) =>
-          t.toLowerCase().includes(technique) ||
-          technique.includes(t.toLowerCase().replace(/-/g, " "))
-      )
-    ) {
-      score += 28;
-    }
-    // Technique map primary gets scored again in bestCatalog — still reward title match
-    const techWords = technique.replace(/-/g, " ").split(" ").filter((w) => w.length >= 3);
-    for (const w of techWords) {
-      if (title.includes(w) || aliasHay.includes(w)) score += 10;
+    const owns = videoOwnsTechnique(v, technique);
+    if (owns) {
+      score += 80;
+    } else if (opts.requireTechnique) {
+      // Hard reject: wrong technique family must not win on weak token overlap
+      score -= 120;
+    } else {
+      // Soft partial: only if technique words appear in title/aliases (not region spam)
+      const techWords = technique
+        .replace(/-/g, " ")
+        .split(" ")
+        .filter((w) => w.length >= 3 && !STOP_WORDS.has(w));
+      let partial = 0;
+      for (const w of techWords) {
+        if (title.includes(w) || aliasHay.includes(w)) partial += 8;
+      }
+      score += Math.min(partial, 16);
+      score -= 25; // still disfavor non-owners
     }
   }
 
-  // —— Alias phrase match (written name ↔ catalog aliases) ——
+  // —— Exact alias phrase match (written name ↔ catalog aliases) ——
   for (const alias of v.aliases || []) {
     const a = normalizeMatchText(alias);
-    if (a.length >= 4 && name.includes(a)) score += 32;
-    else if (a.length >= 4 && tagBlob.includes(a)) score += 14;
+    if (a.length < 4) continue;
+    if (name === a || name.includes(a)) score += 40;
+    else if (tagBlob.includes(a)) score += 12;
   }
 
-  // —— Region tags ——
+  // —— Region tags (secondary to technique) ——
   const region = (opts.region || "").toString();
-  if (region && v.regions.includes(region)) score += 16;
+  if (region && v.regions.includes(region)) score += 10;
   for (const bp of opts.bodyParts || []) {
     const r = inferRegionFromBodyParts([bp]);
-    if (v.regions.includes(r) || v.regions.includes(bp.replace(/-/g, ""))) score += 8;
-    const bpWord = bp.replace(/-/g, " ");
-    if (title.includes(bpWord) || hay.includes(bpWord)) score += 6;
+    if (v.regions.includes(r) || v.regions.includes(bp.replace(/-/g, ""))) score += 5;
   }
 
-  // —— Name token overlap (specificity of written exercise/stretch title) ——
+  // —— Name token overlap — only title/alias, not bag-of-regions ——
   const tokens = name.split(" ").filter((t) => t.length >= 3 && !STOP_WORDS.has(t));
-  const strongTokens = [
-    "hamstring",
-    "quad",
-    "quadriceps",
-    "calf",
-    "ankle",
-    "shoulder",
-    "neck",
-    "chin",
-    "tuck",
-    "chest",
-    "hip",
-    "glute",
-    "bridge",
-    "balance",
-    "push",
-    "wall",
-    "cat",
-    "cow",
-    "bird",
-    "dog",
-    "superman",
-    "row",
-    "step",
-    "sit",
-    "stand",
-    "flexor",
-    "piriformis",
-    "thoracic",
-    "wrist",
-    "core",
-    "dead",
-    "bug",
-    "side",
-    "bend",
-    "hinge",
-    "rotator",
-    "cuff",
-    "serratus",
-    "scapular",
-    "isometric",
-    "terminal",
-    "extension",
-    "pelvic",
-    "lumbar",
-    "cervical",
-    "doorway",
-    "tandem",
-    "heel",
-    "raise",
-    "alphabet",
-    "figure",
-    "four",
-  ];
   for (const t of tokens) {
-    if (title.includes(t)) score += 14;
-    else if (aliasHay.includes(t)) score += 12;
-    else if (hay.includes(t)) score += 6;
-  }
-  for (const t of strongTokens) {
-    if (name.includes(t) && (title.includes(t) || aliasHay.includes(t) || hay.includes(t))) {
-      score += 20;
-    }
+    if (title.includes(t)) score += 12;
+    else if (aliasHay.includes(t)) score += 10;
   }
 
-  // Multi-word phrase hits (e.g. "sit to stand", "chin tuck")
+  // Multi-word phrase hits require title or alias (never generic region hay)
   const phrases = [
     "sit to stand",
     "chin tuck",
@@ -948,6 +987,8 @@ export function scoreCatalogVideoMatch(
     "wall push",
     "hip hinge",
     "heel raise",
+    "calf raise",
+    "glute bridge",
     "terminal knee",
     "external rotation",
     "straight leg",
@@ -955,40 +996,49 @@ export function scoreCatalogVideoMatch(
     "doorway chest",
     "hip flexor",
     "low back",
+    "back of leg",
+    "assisted chest",
   ];
   for (const ph of phrases) {
-    if (name.includes(ph) && (title.includes(ph) || aliasHay.includes(ph) || hay.includes(ph))) {
-      score += 36;
+    if (name.includes(ph) && (title.includes(ph) || aliasHay.includes(ph))) {
+      score += 45;
     }
   }
 
-  // —— Kind alignment (stretch demo for stretch, strength for exercise) ——
+  // —— Kind alignment ——
   const kind = opts.kind || inferKindFromName(name);
   if (kind && v.kind && v.kind !== "both") {
-    if (v.kind === kind) score += 12;
-    else score -= 10;
+    if (v.kind === kind) score += 16;
+    else score -= 35; // stretch must not get strength workout; exercise must not get yoga stretch
   }
-  if (kind === "stretch" && /strength|workout|pushup|row|band/i.test(v.title) && !/stretch|flexibility|yoga|mobility/i.test(v.title)) {
-    score -= 8;
+  if (
+    kind === "stretch" &&
+    /strength|workout|pushup|push-up|band|weights/i.test(v.title) &&
+    !/stretch|flexibility|yoga|mobility/i.test(v.title)
+  ) {
+    score -= 40;
   }
-  if (kind === "exercise" && /stretch|flexibility|cool down/i.test(v.title) && !/strength|exercise|balance|form/i.test(v.title)) {
-    score -= 6;
+  if (
+    kind === "exercise" &&
+    /yoga|cool down|flexibility exercises/i.test(v.title) &&
+    !/strength|balance|form|exercise|pushup|stand/i.test(v.title)
+  ) {
+    score -= 40;
   }
 
   // —— Accuracy tier ——
-  if (v.accuracyTier === "technique") score += 14;
+  if (v.accuracyTier === "technique") score += 18;
   else if (v.accuracyTier === "regional") score += 4;
-  else if (v.accuracyTier === "general") score -= 6;
+  else if (v.accuracyTier === "general") score -= 30;
 
-  // Prefer technique-specific demos over generic "minute" / lifestyle when name is specific
-  if (tokens.length >= 2 && /minute|importance|move more|full workout|15-minute|wellness|podcast/i.test(v.title)) {
-    score -= 18;
-  }
-  if (v.techniques && v.techniques.length > 0) score += 6;
-
-  // Institution quality soft boost (already all institutional)
-  if (/mayo|cleveland|hopkins|nih|nia|dartmouth|veterans|va\b/i.test(v.institution)) {
-    score += 3;
+  // Generic lifestyle / “minute” fillers lose when we have a named movement
+  if (
+    tokens.length >= 1 &&
+    /minute|importance|move more|full workout|15-minute|wellness|podcast|between surgery|or-stretch/i.test(
+      v.title
+    )
+  ) {
+    score -= 50;
   }
 
   return score;
@@ -1022,7 +1072,30 @@ function inferKindFromName(name: string): "stretch" | "exercise" | undefined {
   return undefined;
 }
 
-/** Best catalog video for free-text movement name (+ optional technique/region/kind). */
+function formatMatchedVideo(
+  v: InstitutionalVideo,
+  movementName?: string
+): {
+  youtubeId: string;
+  title: string;
+  source: string;
+  institution: string;
+} {
+  return {
+    youtubeId: v.youtubeId,
+    title: v.title,
+    source: movementName
+      ? `${v.source} · Educational match for: ${movementName}`
+      : v.source,
+    institution: v.institution,
+  };
+}
+
+/**
+ * Best catalog video for a written stretch/exercise.
+ * When a technique key is known, the VIDEO_BY_TECHNIQUE primary is locked unless
+ * another entry *explicitly owns the same technique* and scores higher.
+ */
 export function bestCatalogVideoForMovement(opts: {
   name?: string;
   technique?: TechniqueKey | string;
@@ -1050,32 +1123,46 @@ export function bestCatalogVideoForMovement(opts: {
     bodyParts: opts.bodyParts,
     tags: opts.tags,
     kind: opts.kind,
+    requireTechnique: Boolean(inferredTech),
   };
 
-  let best: InstitutionalVideo | undefined;
-  let bestScore = -1;
-
-  // Prefer technique map first as a strong candidate
+  // —— Technique lock path ——
   if (inferredTech && inferredTech in VIDEO_BY_TECHNIQUE) {
-    const key = VIDEO_BY_TECHNIQUE[inferredTech as TechniqueKey];
-    const v = enrichCatalogVideo(INSTITUTIONAL_VIDEOS[key]);
-    const s = scoreCatalogVideoMatch(v, scoreOpts) + 35;
-    best = v;
-    bestScore = s;
+    const mapKey = VIDEO_BY_TECHNIQUE[inferredTech as TechniqueKey];
+    const primary = enrichCatalogVideo(INSTITUTIONAL_VIDEOS[mapKey]);
+    let best = primary;
+    let bestScore =
+      scoreCatalogVideoMatch(primary, { ...scoreOpts, requireTechnique: false }) + 100;
+
+    // Only peers that own the same technique can dethrone the map primary
+    for (const raw of Object.values(INSTITUTIONAL_VIDEOS)) {
+      const v = enrichCatalogVideo(raw);
+      if (v.youtubeId === primary.youtubeId) continue;
+      if (!videoOwnsTechnique(v, inferredTech)) continue;
+      const s = scoreCatalogVideoMatch(v, scoreOpts);
+      if (s > bestScore) {
+        bestScore = s;
+        best = v;
+      }
+    }
+    return best;
   }
 
+  // —— No technique: score full catalog with kind/name, reject weak general fillers ——
+  let best: InstitutionalVideo | undefined;
+  let bestScore = -Infinity;
   for (const raw of Object.values(INSTITUTIONAL_VIDEOS)) {
     const v = enrichCatalogVideo(raw);
-    const s = scoreCatalogVideoMatch(v, scoreOpts);
+    const s = scoreCatalogVideoMatch(v, { ...scoreOpts, requireTechnique: false });
     if (s > bestScore) {
       bestScore = s;
       best = v;
     }
   }
 
-  if (best && bestScore >= 18) return best;
+  if (best && bestScore >= 20) return best;
 
-  // Fall back to region primary when score is weak
+  // Region primary as last resort (still institutional)
   return enrichCatalogVideo(VIDEO_BY_REGION[region] || INSTITUTIONAL_VIDEOS.nia_flexibility_6);
 }
 
@@ -1093,21 +1180,22 @@ export function videoForTechnique(
     kind?: "stretch" | "exercise";
   }
 ) {
+  // Infer kind from technique map entry when caller omits it (stretch vs exercise demos)
+  let kind = opts?.kind;
+  if (!kind && technique in VIDEO_BY_TECHNIQUE) {
+    const key = VIDEO_BY_TECHNIQUE[technique as TechniqueKey];
+    const mapped = enrichCatalogVideo(INSTITUTIONAL_VIDEOS[key]);
+    if (mapped.kind === "stretch" || mapped.kind === "exercise") kind = mapped.kind;
+  }
+
   const v = bestCatalogVideoForMovement({
     technique,
     name: movementName,
     bodyParts: opts?.bodyParts,
     tags: opts?.tags,
-    kind: opts?.kind,
+    kind,
   });
-  return {
-    youtubeId: v.youtubeId,
-    title: v.title,
-    source: movementName
-      ? `${v.source} · Educational match for: ${movementName}`
-      : v.source,
-    institution: v.institution,
-  };
+  return formatMatchedVideo(v, movementName);
 }
 
 /**
@@ -1140,14 +1228,7 @@ export function videoForMovement(opts: {
     tags: opts.tags,
     kind: opts.kind,
   });
-  return {
-    youtubeId: v.youtubeId,
-    title: v.title,
-    source: movementName
-      ? `${v.source} · Educational match for: ${movementName}`
-      : v.source,
-    institution: v.institution,
-  };
+  return formatMatchedVideo(v, movementName);
 }
 
 /** Flat list of every catalog youtubeId (for audits / oEmbed re-checks) */

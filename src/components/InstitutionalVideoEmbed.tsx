@@ -140,9 +140,9 @@ export function InstitutionalVideoEmbed({
               {active.source}
             </p>
             <p className="mt-1 text-xs leading-relaxed text-brand-500">
-              Institutional education is matched to this movement by technique and body region.
-              Follow the written steps above for the exact MotionRx cues — the video demonstrates
-              related clinical form from a vetted healthcare source.
+              Matched to this stretch/exercise by technique family, movement name, and body region.
+              Follow the written MotionRx steps for exact cues; the institutional video demonstrates
+              the same movement pattern from a vetted healthcare source (not generic filler).
             </p>
             {live?.swapped && (
               <p className="mt-1 text-xs text-amber-700">
