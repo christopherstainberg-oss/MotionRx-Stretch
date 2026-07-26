@@ -145,17 +145,7 @@ const BODY_AREA_GROUPS: Array<{ id: string; label: string; parts: BodyPart[] }> 
 
 const AREAS: BodyPart[] = BODY_AREA_GROUPS.flatMap((g) => g.parts);
 
-const GOAL_CHIPS = [
-  "improve flexibility",
-  "build strength",
-  "reduce stiffness",
-  "move easier at work",
-  "prepare for sport",
-  "better posture",
-  "recover gently",
-];
-
-/** Parse free-text goals into plan-engine string list (one goal per line or semicolon). */
+/** Parse free-text goals into plan-engine string list (semicolons, commas, or newlines). */
 function parseGoalsFreeText(text: string): string[] {
   return (text || "")
     .split(/[\n;]+/)
@@ -164,13 +154,13 @@ function parseGoalsFreeText(text: string): string[] {
     .slice(0, 16);
 }
 
-/** Join goal chips/list into free-text lines for the Goals box. */
+/** Join a goal list into one single-line free-text value. */
 function goalsToFreeText(list: string[]): string {
-  return Array.from(new Set(list.map((g) => g.trim()).filter(Boolean))).join("\n");
+  return Array.from(new Set(list.map((g) => g.trim()).filter(Boolean))).join("; ");
 }
 
 /**
- * Auto-populate Goals free text from story intelligence + body areas.
+ * Auto-populate the single-line Goals field from story intelligence + body areas.
  * Prefers user-stated goals; falls back to assumed + region-aware suggestions.
  */
 function buildAutoGoalsFreeText(opts: {
@@ -215,7 +205,8 @@ function buildAutoGoalsFreeText(opts: {
     push("build a short, sustainable home mobility routine I can stick with");
   }
 
-  return lines.slice(0, 8).join("\n");
+  // One line in the box; multiple goals separated by "; "
+  return lines.slice(0, 6).join("; ");
 }
 
 /**
@@ -361,7 +352,7 @@ export default function AssessmentPage() {
   const [symptoms, setSymptoms] = useState<string[]>([]);
   const [customSymptom, setCustomSymptom] = useState("");
   const [goals, setGoals] = useState<string[]>([]);
-  /** Free-text goals box (auto-fills from story; chips sync into this) */
+  /** Single-line goals field (auto-fills from story until the user edits) */
   const [goalsText, setGoalsText] = useState("");
   const [goalsAutoFill, setGoalsAutoFill] = useState(true);
   const goalsUserEditedRef = useRef(false);
@@ -2183,7 +2174,7 @@ export default function AssessmentPage() {
 
           <SubSection
             title="Goals"
-            hint="Free-text goals auto-fill from your story and body regions—edit anytime."
+            hint="One-line goals auto-fill from your story—edit anytime."
             action={
               <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700 dark:text-brand-200">
                 <input
@@ -2212,10 +2203,11 @@ export default function AssessmentPage() {
           >
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-brand-800 dark:text-brand-100">
-                Your goals (free text)
+                Your goals
               </span>
-              <textarea
-                className="input min-h-[120px] resize-y text-base leading-relaxed"
+              <input
+                type="text"
+                className="input w-full text-base"
                 value={goalsText}
                 onChange={(e) => {
                   goalsUserEditedRef.current = true;
@@ -2223,48 +2215,12 @@ export default function AssessmentPage() {
                   setGoalsText(v);
                   setGoals(parseGoalsFreeText(v));
                 }}
-                placeholder={
-                  "One goal per line — e.g.\nWalk 20 minutes without flare\nSleep through the night more easily\nTolerate desk work with less stiffness"
-                }
+                placeholder="e.g. Walk 20 minutes without flare; sleep more easily"
                 aria-label="Goals free text"
                 autoComplete="off"
                 spellCheck
               />
             </label>
-            <p className="text-[11px] leading-relaxed text-brand-500">
-              Suggestions update from Describe Your Issue when auto-fill is on. Type your own goals
-              or tap chips below to add them. Each line becomes a plan goal.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {GOAL_CHIPS.map((g) => {
-                const on = goals.some((x) => x.toLowerCase() === g.toLowerCase());
-                return (
-                  <button
-                    key={g}
-                    type="button"
-                    onClick={() => {
-                      goalsUserEditedRef.current = true;
-                      const nextList = on
-                        ? goals.filter((x) => x.toLowerCase() !== g.toLowerCase())
-                        : [...goals, g];
-                      setGoals(nextList);
-                      setGoalsText(goalsToFreeText(nextList));
-                    }}
-                    className={`rounded-full border px-3 py-1.5 text-sm transition ${chipClass(on)}`}
-                  >
-                    {g}
-                  </button>
-                );
-              })}
-            </div>
-            {(storyIntel.goals?.length || storyIntel.assumedGoals?.length) ? (
-              <p className="text-[11px] text-brand-600 dark:text-brand-300">
-                From your story:{" "}
-                {[...(storyIntel.goals || []), ...(storyIntel.assumedGoals || [])]
-                  .slice(0, 4)
-                  .join(" · ")}
-              </p>
-            ) : null}
           </SubSection>
 
           <FooterNav onBack={() => setStep(1)} onNext={() => setStep(3)} />
