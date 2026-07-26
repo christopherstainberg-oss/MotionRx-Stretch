@@ -32,7 +32,6 @@ export function useConversationSpeed() {
   const setDelayMs = useCallback((ms: number) => {
     const next = saveConversationDelayMs(ms);
     setDelayMsState(next);
-    // Same-tab listeners (other mounts) via custom event
     try {
       window.dispatchEvent(
         new CustomEvent("motionrx-conversation-speed", { detail: next })
@@ -71,16 +70,18 @@ export function useConversationSpeed() {
 
 /**
  * After a complete answer is detected (`armed`), wait `delayMs` before `settled`.
- * Any change to `resetKey` restarts the countdown (user is editing).
- * **Edit** pauses until the next keystroke; **Send** settles immediately.
+ * Any change to `resetKey` restarts the countdown (user is editing content).
+ *
+ * **Edit** pauses the timer and keeps Send/Edit controls fixed until Send or resume.
+ * **Send** settles immediately so conversation flow continues without hesitation.
  */
 export function useAnswerSettleCountdown(opts: {
   /** When true, countdown runs toward commit */
   armed: boolean;
-  /** Changes reset the timer (user is still editing) */
+  /** Changes reset the timer (user is still editing content) */
   resetKey: string;
   delayMs: number;
-  /** Fires once when countdown reaches 0 while armed */
+  /** Fires once when countdown reaches 0 while armed (not used for Send — Send is immediate in callers) */
   onSettled?: () => void;
 }): {
   remainingMs: number;
@@ -89,9 +90,14 @@ export function useAnswerSettleCountdown(opts: {
   settled: boolean;
   /** Paused via Edit — waiting for user to type again */
   editing: boolean;
-  /** Pause countdown; stay paused until resetKey changes */
+  /**
+   * True after Edit (and while settling) so Send/Edit stay fixed while the user types.
+   * Cleared on Send, cancel, or when the answer is no longer armed.
+   */
+  showControls: boolean;
+  /** Pause countdown; keep controls fixed until type/Send */
   edit: () => void;
-  /** Commit immediately (Send) */
+  /** Commit immediately (Send) — no delay */
   sendNow: () => void;
   cancel: () => void;
 } {
@@ -99,13 +105,18 @@ export function useAnswerSettleCountdown(opts: {
   const [remainingMs, setRemainingMs] = useState(0);
   const [settled, setSettled] = useState(false);
   const [editing, setEditing] = useState(false);
+  /** Keep Edit/Send bar fixed after Edit while user types */
+  const [holdControls, setHoldControls] = useState(false);
   const [epoch, setEpoch] = useState(0);
   const settledOnceRef = useRef(false);
+  const onSettledRef = useRef(onSettled);
+  onSettledRef.current = onSettled;
 
   const cancel = useCallback(() => {
     setRemainingMs(0);
     setSettled(false);
     setEditing(false);
+    setHoldControls(false);
     settledOnceRef.current = false;
     setEpoch((e) => e + 1);
   }, []);
@@ -114,36 +125,54 @@ export function useAnswerSettleCountdown(opts: {
     setRemainingMs(0);
     setSettled(false);
     setEditing(true);
+    setHoldControls(true);
     settledOnceRef.current = false;
     setEpoch((e) => e + 1);
   }, []);
 
+  /** Immediate commit — no settle delay, clear edit hold, fire settled once */
   const sendNow = useCallback(() => {
     setEditing(false);
+    setHoldControls(false);
     setRemainingMs(0);
-    settledOnceRef.current = true;
-    setSettled(true);
-    onSettled?.();
-  }, [onSettled]);
+    if (!settledOnceRef.current) {
+      settledOnceRef.current = true;
+      setSettled(true);
+      // Synchronous callback so callers can advance in the same turn
+      onSettledRef.current?.();
+    } else {
+      setSettled(true);
+    }
+  }, []);
 
-  // User typed after Edit → clear pause and restart countdown
+  // User typed after Edit → release pause, keep fixed controls, restart countdown
   useEffect(() => {
     if (editing) {
       setEditing(false);
     }
+    // Typing means not yet committed
     settledOnceRef.current = false;
+    setSettled(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when content changes
   }, [resetKey]);
 
+  // Drop fixed controls when answer is no longer complete (disarmed)
   useEffect(() => {
     if (!armed) {
       setRemainingMs(0);
       setSettled(false);
       setEditing(false);
+      setHoldControls(false);
       settledOnceRef.current = false;
+    }
+  }, [armed]);
+
+  useEffect(() => {
+    if (!armed) {
       return;
     }
 
+    // Edit pause: no auto-timer, but Send stays available via showControls
     if (editing) {
       setRemainingMs(0);
       setSettled(false);
@@ -166,11 +195,14 @@ export function useAnswerSettleCountdown(opts: {
       if (left <= 0 && !done) {
         done = true;
         window.clearInterval(tick);
-        settledOnceRef.current = true;
-        setSettled(true);
-        onSettled?.();
+        if (!settledOnceRef.current) {
+          settledOnceRef.current = true;
+          setHoldControls(false);
+          setSettled(true);
+          onSettledRef.current?.();
+        }
       }
-    }, 100);
+    }, 50); // snappier tick so last second feels responsive
 
     return () => {
       window.clearInterval(tick);
@@ -178,12 +210,17 @@ export function useAnswerSettleCountdown(opts: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [armed, resetKey, delayMs, epoch, editing]);
 
+  const settling = Boolean(armed && !editing && remainingMs > 0 && !settled);
+  // Keep Edit/Send fixed after Edit while typing, and during the settle window
+  const showControls = Boolean(editing || holdControls || settling || (armed && !settled));
+
   return {
     remainingMs,
     remainingSec: Math.ceil(remainingMs / 1000),
-    settling: armed && !editing && remainingMs > 0 && !settled,
-    settled: armed && settled,
-    editing: armed && editing,
+    settling,
+    settled: Boolean(settled),
+    editing: Boolean(editing),
+    showControls,
     edit,
     sendNow,
     cancel,

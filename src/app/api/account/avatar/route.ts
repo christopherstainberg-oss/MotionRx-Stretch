@@ -91,6 +91,7 @@ export async function POST(req: Request) {
       const u = db.users.find((x) => x.id === user.id);
       if (!u) return;
       u.avatarKey = saved.key;
+      u.avatarSource = "upload";
     });
     await deleteUploadKey(previous);
 
@@ -119,6 +120,9 @@ export async function DELETE(req: Request) {
     const u = db.users.find((x) => x.id === user.id);
     if (!u) return;
     delete u.avatarKey;
+    if (u.avatarSource === "upload") {
+      u.avatarSource = "none";
+    }
   });
   await deleteUploadKey(previous);
   const fresh = await getSessionUser();

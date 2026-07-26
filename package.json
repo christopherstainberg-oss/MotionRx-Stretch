@@ -9,11 +9,14 @@
     "start": "next start",
     "lint": "next lint",
     "test:story-intel": "tsx scripts/test-story-intelligence.mjs",
+    "test:gravatar": "tsx scripts/test-gravatar.mjs",
     "db:seed": "tsx scripts/seed.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "postinstall": "echo Ready"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.2",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",

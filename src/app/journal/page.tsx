@@ -296,29 +296,26 @@ export default function JournalPage() {
     delayMs: conversationDelayMs,
   });
 
+  /** Send — continue conversation immediately (no settle wait). */
   function commitJournalAdvanceNow() {
-    if (!pendingJournalAdvance || pendingJournalAdvance.type !== "advance") {
-      journalSettle.sendNow();
-      return;
-    }
-    if (flowLockRef.current) return;
-    const action = pendingJournalAdvance;
-    flowLockRef.current = true;
+    const action =
+      pendingJournalAdvance && pendingJournalAdvance.type === "advance"
+        ? pendingJournalAdvance
+        : null;
+    journalSettle.cancel();
+    if (!action) return;
+    flowLockRef.current = false;
     setBody((prev) => {
       if (journalEndsWithOpenQuestion(prev)) return prev;
       return appendJournalFlowQuestion(prev, action.prompt, action.bridge);
     });
     lastFlowAppendRef.current = action.prompt.id;
-    journalSettle.cancel();
-    focusJournalEnd();
-    window.setTimeout(() => {
-      flowLockRef.current = false;
-    }, 400);
+    requestAnimationFrame(() => focusJournalEnd());
   }
 
   function editJournalAnswer() {
     journalSettle.edit();
-    focusJournalEnd();
+    requestAnimationFrame(() => focusJournalEnd());
   }
 
   // Seed opening question promptly
@@ -342,23 +339,13 @@ export default function JournalPage() {
     }, 400);
   }, [guideJournalQa, continuousFlow, flowStatus, body, step]);
 
-  /** After edit window: record answer and append next clinical question */
+  /** After edit window: same path as Send — append next question immediately */
   useEffect(() => {
     if (!journalSettle.settled || !pendingJournalAdvance) return;
-    if (flowLockRef.current) return;
     if (pendingJournalAdvance.type !== "advance") return;
-    const action = pendingJournalAdvance;
-    flowLockRef.current = true;
-    setBody((prev) => {
-      if (journalEndsWithOpenQuestion(prev)) return prev;
-      return appendJournalFlowQuestion(prev, action.prompt, action.bridge);
-    });
-    lastFlowAppendRef.current = action.prompt.id;
-    focusJournalEnd();
-    window.setTimeout(() => {
-      flowLockRef.current = false;
-    }, 400);
-  }, [journalSettle.settled, pendingJournalAdvance]);
+    commitJournalAdvanceNow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once when settled
+  }, [journalSettle.settled]);
 
   useEffect(() => {
     if (step < 4 || (!body.trim() && !title.trim())) {
@@ -754,15 +741,15 @@ export default function JournalPage() {
                 settleRemainingSec={journalSettle.remainingSec}
               />
             </div>
-            {journalSettle.settling || journalSettle.editing ? (
+            {journalSettle.showControls ? (
               <div className="mt-2 space-y-2 rounded-lg bg-amber-50 px-2.5 py-2 dark:bg-amber-900/30">
                 <p className="text-xs font-medium text-amber-950 dark:text-amber-100">
                   {journalSettle.editing
-                    ? "Editing — revise your answer below, then Send or pause and type again to restart the timer."
+                    ? "Editing — type freely. Send continues the conversation immediately."
                     : (
                       <>
                         Answer detected — <strong>{journalSettle.remainingSec}s</strong> left.{" "}
-                        <strong>Send</strong> records now; <strong>Edit</strong> pauses so you can
+                        <strong>Send</strong> continues now; <strong>Edit</strong> pauses so you can
                         revise.
                       </>
                     )}
@@ -777,6 +764,28 @@ export default function JournalPage() {
                   editLabel="Edit"
                 />
               </div>
+            ) : null}
+            {journalSettle.showControls ? (
+              <>
+                <ConversationSettleActions
+                  fixed
+                  settling={journalSettle.settling}
+                  editing={journalSettle.editing}
+                  remainingSec={journalSettle.remainingSec}
+                  onSend={commitJournalAdvanceNow}
+                  onEdit={editJournalAnswer}
+                  sendLabel="Send"
+                  editLabel="Edit"
+                  hint={
+                    journalSettle.editing
+                      ? "Editing — buttons stay fixed. Send continues without waiting."
+                      : journalSettle.settling
+                        ? `Sending in ${journalSettle.remainingSec}s — or Send now to continue immediately.`
+                        : "Send continues the conversation · Edit keeps the timer paused while you type."
+                  }
+                />
+                <div className="h-20 lg:h-16" aria-hidden />
+              </>
             ) : null}
             {openJournalQuestion ? (
               <p className="mt-1.5 text-sm leading-snug text-brand-900 dark:text-brand-50">

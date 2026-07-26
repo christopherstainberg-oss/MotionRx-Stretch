@@ -9,6 +9,8 @@ import type { UserPreferences, UserProfile } from "@/lib/types";
 import { v4 as uuid } from "uuid";
 import { isValidEmail } from "@/lib/rate-limit";
 import { sanitizeDisplayName } from "@/lib/security";
+import { isAdminUser } from "@/lib/admin";
+import { gravatarUrl } from "@/lib/gravatar";
 
 export const SESSION_COOKIE = "motionrx_session";
 export const GUEST_COOKIE = "motionrx_guest";
@@ -218,6 +220,117 @@ export function migrateGuestData(db: DbShape, guestId: string, userId: string) {
   reassign(db.communityPosts);
 }
 
+/**
+ * Remove all server-side records owned by actorId.
+ * Optionally removes the user profile (registered accounts only).
+ * Does not touch other users' data. System community posts are kept.
+ */
+export function purgeActorData(
+  db: DbShape,
+  actorId: string,
+  options: { removeUserProfile?: boolean } = {}
+): { removedRows: number; removedUser: boolean; avatarKey?: string } {
+  if (!actorId) return { removedRows: 0, removedUser: false };
+
+  let removedRows = 0;
+  const filterOwned = <T extends { userId?: string }>(rows: T[]): T[] => {
+    const kept: T[] = [];
+    for (const r of rows) {
+      if (r.userId === actorId) {
+        removedRows += 1;
+      } else {
+        kept.push(r);
+      }
+    }
+    return kept;
+  };
+
+  db.sessions = filterOwned(db.sessions);
+  db.journal = filterOwned(db.journal);
+  db.routines = filterOwned(db.routines);
+  db.painProfiles = filterOwned(db.painProfiles);
+  db.jefferyThreads = filterOwned(db.jefferyThreads);
+  db.modalityPlans = filterOwned(db.modalityPlans);
+  db.modalityLogs = filterOwned(db.modalityLogs);
+  db.communityPosts = filterOwned(db.communityPosts);
+
+  let removedUser = false;
+  let avatarKey: string | undefined;
+  if (options.removeUserProfile) {
+    const idx = db.users.findIndex((u) => u.id === actorId);
+    if (idx >= 0) {
+      avatarKey = db.users[idx].avatarKey || undefined;
+      db.users.splice(idx, 1);
+      removedUser = true;
+    }
+  }
+
+  return { removedRows, removedUser, avatarKey };
+}
+
+export type ResetDataScope = "all" | "daily";
+
+function inDayRange(iso: string | undefined, dayStartMs: number, dayEndMs: number): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return false;
+  return t >= dayStartMs && t < dayEndMs;
+}
+
+/**
+ * Reset data for an actor without deleting their login account.
+ * - all: every owned record (plans, sessions, journal, etc.)
+ * - daily: only records timestamped within [dayStart, dayEnd)
+ */
+export function resetActorData(
+  db: DbShape,
+  actorId: string,
+  options: {
+    scope: ResetDataScope;
+    /** Inclusive start (ISO), required for daily */
+    dayStart?: string;
+    /** Exclusive end (ISO), required for daily */
+    dayEnd?: string;
+  }
+): { removedRows: number; scope: ResetDataScope } {
+  if (!actorId) return { removedRows: 0, scope: options.scope };
+
+  if (options.scope === "all") {
+    const result = purgeActorData(db, actorId, { removeUserProfile: false });
+    return { removedRows: result.removedRows, scope: "all" };
+  }
+
+  const startMs = new Date(options.dayStart || 0).getTime();
+  const endMs = new Date(options.dayEnd || 0).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return { removedRows: 0, scope: "daily" };
+  }
+
+  let removedRows = 0;
+  const filterDay = <T extends { userId?: string }>(
+    rows: T[],
+    getIso: (row: T) => string | undefined
+  ): T[] => {
+    const kept: T[] = [];
+    for (const r of rows) {
+      if (r.userId === actorId && inDayRange(getIso(r), startMs, endMs)) {
+        removedRows += 1;
+      } else {
+        kept.push(r);
+      }
+    }
+    return kept;
+  };
+
+  db.sessions = filterDay(db.sessions, (s) => s.startedAt || s.completedAt);
+  db.journal = filterDay(db.journal, (j) => j.createdAt);
+  db.modalityLogs = filterDay(db.modalityLogs, (m) => m.usedAt);
+  db.painProfiles = filterDay(db.painProfiles, (p) => p.updatedAt);
+  // Do not wipe long-lived plans / Jeffery history on daily reset
+
+  return { removedRows, scope: "daily" };
+}
+
 export async function bumpSessionVersion(userId: string): Promise<number> {
   let next = 0;
   await updateDb((db) => {
@@ -308,6 +421,20 @@ export function publicUser(user: UserProfile) {
   const preferred =
     (typeof user.preferredName === "string" && user.preferredName.trim()) ||
     undefined;
+  const webauthnCount = Array.isArray(user.webauthnCredentials)
+    ? user.webauthnCredentials.length
+    : 0;
+  const avatarSource =
+    user.avatarSource === "gravatar" || user.avatarSource === "upload" || user.avatarSource === "none"
+      ? user.avatarSource
+      : user.avatarKey
+        ? "upload"
+        : "none";
+  const gUrl = gravatarUrl(user.email, 256);
+  const hasUpload = Boolean(user.avatarKey);
+  const hasAvatar =
+    (avatarSource === "upload" && hasUpload) || avatarSource === "gravatar";
+
   return {
     id: user.id,
     email: user.email,
@@ -317,8 +444,24 @@ export function publicUser(user: UserProfile) {
     displayName: preferred || user.name,
     twoFactorEnabled: Boolean(user.twoFactorEnabled && enrolled),
     twoFactorEnrolled: enrolled,
+    /** Face ID / Touch ID / platform passkeys enrolled */
+    biometricsEnabled: webauthnCount > 0,
+    biometricDeviceCount: webauthnCount,
     avatarKey: user.avatarKey || null,
-    hasAvatar: Boolean(user.avatarKey),
+    avatarSource,
+    gravatarUrl: gUrl,
+    /** Resolved display URL preference for clients */
+    avatarDisplayUrl:
+      avatarSource === "gravatar"
+        ? gUrl
+        : hasUpload
+          ? "/api/account/avatar"
+          : null,
+    hasAvatar,
+    hasUploadAvatar: hasUpload,
+    isAdmin: isAdminUser(user),
+    role: isAdminUser(user) ? ("admin" as const) : ("user" as const),
+    createdAt: user.createdAt,
     preferences: {
       reminderTimes: user.preferences.reminderTimes ?? [],
       notificationsEnabled: Boolean(user.preferences.notificationsEnabled),

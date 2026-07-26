@@ -6,6 +6,9 @@ const nextConfig = {
     remotePatterns: [
       { protocol: "https", hostname: "i.ytimg.com" },
       { protocol: "https", hostname: "img.youtube.com" },
+      { protocol: "https", hostname: "www.gravatar.com" },
+      { protocol: "https", hostname: "secure.gravatar.com" },
+      { protocol: "https", hostname: "*.gravatar.com" },
     ],
   },
   async redirects() {
@@ -31,7 +34,8 @@ const nextConfig = {
             "default-src 'self'",
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
             "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' data: https://i.ytimg.com https://img.youtube.com",
+            // Gravatar CDN hosts (www / secure / numbered mirrors) for profile photos
+            "img-src 'self' data: https://i.ytimg.com https://img.youtube.com https://www.gravatar.com https://secure.gravatar.com https://*.gravatar.com",
             "frame-src https://www.youtube-nocookie.com https://www.youtube.com",
             "connect-src 'self' https://api.x.ai",
             "font-src 'self' data:",

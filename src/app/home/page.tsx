@@ -56,7 +56,7 @@ const SECONDARY = [
   { href: "/library", title: "Stretches", icon: Library, text: "Mobility library" },
   { href: "/exercises", title: "Exercises", icon: Dumbbell, text: "Strength & control" },
   { href: "/modalities", title: "Modalities", icon: Sparkles, text: "Heat, ice, pacing" },
-  { href: "/insights", title: "Insights", icon: ListChecks, text: "Your big picture" },
+  { href: "/analytics", title: "User Analytics", icon: ListChecks, text: "Sessions & trends" },
 ] as const;
 
 export default function HomePage() {

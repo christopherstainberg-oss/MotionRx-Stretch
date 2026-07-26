@@ -214,17 +214,19 @@ export default function JefferyPage() {
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
+    jefferySettle.cancel();
     await sendMessage(input);
   }
 
-  // Auto-send after settle window (edit resets timer via resetKey=input)
+  // Auto-send after settle window — same path as Send (immediate, no extra wait)
   useEffect(() => {
     if (!jefferySettle.settled || !jefferyDraftReady) return;
     const text = input.trim();
     if (!text || lastAutoSentRef.current === text) return;
+    jefferySettle.cancel();
     void sendMessage(text);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- send once when settled
-  }, [jefferySettle.settled, jefferyDraftReady]);
+  }, [jefferySettle.settled]);
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4 pb-8">
@@ -278,15 +280,15 @@ export default function JefferyPage() {
             settleRemainingSec={jefferySettle.remainingSec}
           />
         </div>
-        {jefferySettle.settling || jefferySettle.editing ? (
+        {jefferySettle.showControls ? (
           <div className="mt-2 space-y-2 rounded-lg bg-amber-50 px-2.5 py-2 dark:bg-amber-900/30">
             <p className="text-xs font-medium text-amber-950 dark:text-amber-100">
               {jefferySettle.editing
-                ? "Editing — revise your message, then Send or type again to restart the timer."
+                ? "Editing — type freely. Send continues the conversation immediately."
                 : (
                   <>
                     Draft ready — <strong>{jefferySettle.remainingSec}s</strong> left.{" "}
-                    <strong>Send</strong> records now; <strong>Edit</strong> pauses auto-send so
+                    <strong>Send</strong> continues now; <strong>Edit</strong> pauses auto-send so
                     you can revise.
                   </>
                 )}
@@ -298,16 +300,47 @@ export default function JefferyPage() {
               onSend={() => {
                 const text = input.trim();
                 if (!text) return;
+                jefferySettle.cancel();
                 void sendMessage(text);
               }}
               onEdit={() => {
                 jefferySettle.edit();
-                inputRef.current?.focus();
+                requestAnimationFrame(() => inputRef.current?.focus());
               }}
               sendLabel="Send"
               editLabel="Edit"
             />
           </div>
+        ) : null}
+        {jefferySettle.showControls ? (
+          <>
+            <ConversationSettleActions
+              fixed
+              settling={jefferySettle.settling}
+              editing={jefferySettle.editing}
+              remainingSec={jefferySettle.remainingSec}
+              onSend={() => {
+                const text = input.trim();
+                if (!text) return;
+                jefferySettle.cancel();
+                void sendMessage(text);
+              }}
+              onEdit={() => {
+                jefferySettle.edit();
+                requestAnimationFrame(() => inputRef.current?.focus());
+              }}
+              sendLabel="Send"
+              editLabel="Edit"
+              hint={
+                jefferySettle.editing
+                  ? "Editing — buttons stay fixed. Send continues without waiting."
+                  : jefferySettle.settling
+                    ? `Auto-send in ${jefferySettle.remainingSec}s — or Send now to continue immediately.`
+                    : "Send continues the conversation · Edit keeps the timer paused while you type."
+              }
+            />
+            <div className="h-20 lg:h-16" aria-hidden />
+          </>
         ) : null}
       </div>
 
@@ -430,13 +463,13 @@ export default function JefferyPage() {
             disabled={loading}
           />
           <div className="flex shrink-0 gap-2">
-            {(jefferySettle.settling || jefferySettle.editing) && (
+            {jefferySettle.showControls && (
               <button
                 type="button"
                 className="btn-secondary !px-3"
                 onClick={() => {
                   jefferySettle.edit();
-                  inputRef.current?.focus();
+                  requestAnimationFrame(() => inputRef.current?.focus());
                 }}
                 disabled={loading}
                 aria-label="Edit answer"

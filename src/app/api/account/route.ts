@@ -33,6 +33,8 @@ const AccountPatchSchema = z
     name: z.string().max(80).optional(),
     /** Preferred/nickname for coaching — no re-auth required */
     preferredName: z.string().max(40).optional(),
+    /** Profile photo source: uploaded file, Gravatar, or none */
+    avatarSource: z.enum(["upload", "gravatar", "none"]).optional(),
     /** Optional step-up for security-sensitive updates */
     currentPassword: z.string().min(8).max(128).optional(),
   })
@@ -128,6 +130,9 @@ export async function PATCH(req: Request) {
       if (body.preferredName !== undefined) {
         const pn = sanitizeDisplayName(body.preferredName, 40);
         u.preferredName = pn || undefined;
+      }
+      if (body.avatarSource !== undefined) {
+        u.avatarSource = body.avatarSource;
       }
     });
 

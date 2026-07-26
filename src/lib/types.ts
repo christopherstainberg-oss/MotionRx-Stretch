@@ -174,6 +174,27 @@ export interface RoutineModality {
   order?: number;
 }
 
+/** Platform authenticator (Face ID / Touch ID / Windows Hello) credential */
+export interface WebAuthnCredential {
+  /** Base64url credential id */
+  id: string;
+  /** Base64url-encoded public key */
+  publicKey: string;
+  counter: number;
+  /** human label e.g. "iPhone Face ID" */
+  name?: string;
+  transports?: string[];
+  createdAt: string;
+  lastUsedAt?: string;
+  deviceType?: string;
+  backedUp?: boolean;
+}
+
+export type UserRole = "user" | "admin";
+
+/** How the profile photo is resolved */
+export type AvatarSource = "upload" | "gravatar" | "none";
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -190,11 +211,20 @@ export interface UserProfile {
   sessionVersion: number;
   /** Server-assigned avatar object key (never client path) */
   avatarKey?: string;
+  /**
+   * Preferred avatar resolution. When "gravatar", email-based Gravatar is used.
+   * When "upload", avatarKey is used if present.
+   */
+  avatarSource?: AvatarSource;
+  /** Elevated role — also granted via ADMIN_EMAILS env for listed emails */
+  role?: UserRole;
   createdAt: string;
   preferences: UserPreferences;
   goals: Goal[];
   favorites: string[];
   painBaseline: Partial<Record<BodyPart, number>>;
+  /** Face ID / Touch ID / platform passkeys */
+  webauthnCredentials?: WebAuthnCredential[];
 }
 
 export interface UserPreferences {

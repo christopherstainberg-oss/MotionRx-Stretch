@@ -6,8 +6,10 @@ import { useEffect, useState } from "react";
 import { AppLogo } from "./Icons";
 import { ThemeCycleButton } from "./ThemeToggle";
 import { GlobalSearch } from "./GlobalSearch";
+import { AccountMenu } from "./AccountMenu";
 import { cn } from "@/lib/utils";
 import {
+  BarChart3,
   BookOpen,
   Bot,
   Dumbbell,
@@ -15,6 +17,7 @@ import {
   Library,
   ListChecks,
   ListPlus,
+  LogOut,
   Menu,
   Network,
   Sparkles,
@@ -23,6 +26,7 @@ import {
   User,
   X,
 } from "lucide-react";
+import { apiFetch } from "@/lib/api-client";
 
 /** Plan path — primary journey */
 const planLinks = [
@@ -39,6 +43,7 @@ const toolLinks = [
   { href: "/modalities", label: "Modalities", icon: Sparkles },
   { href: "/builder", label: "Builder", icon: ListPlus },
   { href: "/insights", label: "Insights", icon: Network },
+  { href: "/analytics", label: "User Analytics", icon: BarChart3 },
   { href: "/progress", label: "Progress", icon: TrendingUp },
   { href: "/account", label: "Account", icon: User },
 ];
@@ -97,6 +102,18 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
     };
   }, [menuOpen]);
 
+  async function logout() {
+    try {
+      await apiFetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      /* still leave session UI */
+    }
+    setSignedIn(false);
+    setDisplayName(null);
+    setMenuOpen(false);
+    window.location.href = "/login";
+  }
+
   return (
     <>
       <a
@@ -148,7 +165,9 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
             })}
           </nav>
 
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+            {/* Account section — Logout, Reset, Import, Export, Analytics, profile */}
+            <AccountMenu />
             <ThemeCycleButton className="hidden sm:inline-flex" />
             <button
               type="button"
@@ -279,17 +298,84 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
               <p className="mt-1 text-[11px] text-brand-500">Theme: Auto · Light · Dark</p>
             </div>
 
-            {!signedIn ? (
-              <div className="px-4 pb-4">
-                <Link href="/login" className="btn-primary w-full py-3" onClick={() => setMenuOpen(false)}>
-                  Sign in
-                </Link>
-              </div>
-            ) : (
-              <div className="px-4 pb-4 text-sm text-brand-600">
-                Signed in as {displayName || "user"}
-              </div>
-            )}
+            <div className="space-y-2 border-t border-brand-50 px-4 py-4 dark:border-brand-800">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                Account
+              </p>
+              {!signedIn ? (
+                <>
+                  <p className="text-sm text-brand-600">Browsing as guest</p>
+                  <Link
+                    href="/login"
+                    className="btn-primary w-full py-3"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    Sign in
+                  </Link>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Link
+                      href="/account"
+                      className="btn-secondary justify-center py-2.5 text-center text-sm"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Settings
+                    </Link>
+                    <Link
+                      href="/analytics"
+                      className="btn-secondary justify-center py-2.5 text-center text-sm"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Analytics
+                    </Link>
+                  </div>
+                  <Link
+                    href="/account#session-data"
+                    className="btn-ghost w-full justify-center py-2 text-sm"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    Export · Import · Reset
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-brand-600">
+                    Signed in as{" "}
+                    <span className="font-semibold text-brand-900">{displayName || "user"}</span>
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Link
+                      href="/account"
+                      className="btn-secondary justify-center py-2.5 text-sm"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Account
+                    </Link>
+                    <Link
+                      href="/analytics"
+                      className="btn-secondary justify-center py-2.5 text-sm"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      Analytics
+                    </Link>
+                  </div>
+                  <Link
+                    href="/account#session-data"
+                    className="btn-ghost w-full justify-center py-2 text-sm"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    Export · Import · Reset
+                  </Link>
+                  <button
+                    type="button"
+                    className="btn-secondary inline-flex w-full items-center justify-center gap-1.5 py-2.5 text-sm"
+                    onClick={logout}
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Log out
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

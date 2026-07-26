@@ -26,7 +26,10 @@ type Props = {
   editLabel?: string;
 };
 
-/** Send / Edit actions shown during the answer settle window */
+/**
+ * Send / Edit actions during the answer settle window.
+ * Use `fixed` so buttons stay pinned above the mobile tab bar while typing after Edit.
+ */
 export function ConversationSettleActions({
   settling,
   editing,
@@ -36,6 +39,9 @@ export function ConversationSettleActions({
   sendLabel = "Send",
   editLabel = "Edit",
   className = "",
+  /** Pin bar above bottom nav so it stays visible while typing */
+  fixed = false,
+  hint,
 }: {
   settling?: boolean;
   editing?: boolean;
@@ -45,37 +51,95 @@ export function ConversationSettleActions({
   sendLabel?: string;
   editLabel?: string;
   className?: string;
+  fixed?: boolean;
+  hint?: string;
 }) {
   if (!onSend && !onEdit) return null;
-  if (!settling && !editing) return null;
+
+  const bar = (
+    <div
+      className={
+        fixed
+          ? `pointer-events-auto border-t border-amber-200/90 bg-amber-50/95 shadow-[0_-8px_30px_-12px_rgba(15,61,58,0.25)] backdrop-blur-md dark:border-amber-900 dark:bg-amber-950/95 ${className}`
+          : `flex flex-wrap items-center gap-2 ${className}`
+      }
+      style={
+        fixed
+          ? {
+              paddingBottom: "max(0.75rem, var(--safe-bottom))",
+            }
+          : undefined
+      }
+    >
+      <div
+        className={
+          fixed
+            ? "mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+            : "contents"
+        }
+      >
+        {(fixed || hint) && (
+          <p className="text-xs font-medium text-amber-950 dark:text-amber-100">
+            {hint ||
+              (editing
+                ? "Editing — type freely. Send continues the conversation immediately."
+                : settling && remainingSec != null && remainingSec > 0
+                  ? `Answer ready — ${remainingSec}s. Send now or Edit to revise.`
+                  : "Send continues the conversation · Edit pauses the timer")}
+          </p>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {onSend ? (
+            <button
+              type="button"
+              className="btn-primary inline-flex items-center gap-1.5 !px-4 !py-2 text-sm font-semibold shadow-sm"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onSend();
+              }}
+              aria-label={sendLabel}
+            >
+              <Send className="h-4 w-4" />
+              {sendLabel}
+              {settling && remainingSec != null && remainingSec > 0 ? (
+                <span className="tabular-nums opacity-90">({remainingSec}s)</span>
+              ) : null}
+            </button>
+          ) : null}
+          {onEdit ? (
+            <button
+              type="button"
+              className="btn-secondary inline-flex items-center gap-1.5 !px-4 !py-2 text-sm font-semibold"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onEdit();
+              }}
+              aria-label={editLabel}
+            >
+              <Pencil className="h-4 w-4" />
+              {editLabel}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (!fixed) return bar;
 
   return (
-    <div className={`flex flex-wrap items-center gap-2 ${className}`}>
-      {onSend ? (
-        <button
-          type="button"
-          className="btn-primary !px-3 !py-1.5 text-xs"
-          onClick={onSend}
-          aria-label={sendLabel}
-        >
-          <Send className="h-3.5 w-3.5" />
-          {sendLabel}
-          {settling && remainingSec != null && remainingSec > 0 ? (
-            <span className="opacity-90">({remainingSec}s)</span>
-          ) : null}
-        </button>
-      ) : null}
-      {onEdit ? (
-        <button
-          type="button"
-          className="btn-secondary !px-3 !py-1.5 text-xs"
-          onClick={onEdit}
-          aria-label={editLabel}
-        >
-          <Pencil className="h-3.5 w-3.5" />
-          {editLabel}
-        </button>
-      ) : null}
+    <div
+      className="pointer-events-none fixed inset-x-0 z-[60]"
+      style={{
+        // Sit above mobile tab bar so controls stay reachable while typing
+        bottom: "calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px))",
+      }}
+      role="toolbar"
+      aria-label="Answer actions"
+    >
+      {bar}
     </div>
   );
 }
@@ -200,7 +264,7 @@ export function ConversationSpeedControl({
       {settling && settleRemainingSec != null && settleRemainingSec > 0 ? (
         <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-950 dark:bg-amber-900/30 dark:text-amber-100">
           Recording answer in <strong>{settleRemainingSec}s</strong> — edit freely to adjust; the
-          next question waits until you pause.
+          next question waits until you pause. Or press <strong>Send</strong> to continue now.
         </p>
       ) : null}
     </div>

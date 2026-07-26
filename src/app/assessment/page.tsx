@@ -867,29 +867,28 @@ export default function AssessmentPage() {
     delayMs: conversationDelayMs,
   });
 
+  /** Send — continue conversation immediately (no settle wait, no lock hesitation). */
   function commitStoryAdvanceNow() {
-    if (!pendingStoryAdvance || pendingStoryAdvance.type !== "advance") {
-      storySettle.sendNow();
-      return;
-    }
-    if (flowLockRef.current) return;
-    const action = pendingStoryAdvance;
-    flowLockRef.current = true;
+    const action =
+      pendingStoryAdvance && pendingStoryAdvance.type === "advance"
+        ? pendingStoryAdvance
+        : null;
+    // Always clear settle state first so UI unblocks immediately
+    storySettle.cancel();
+    if (!action) return;
+    flowLockRef.current = false;
     setParagraph((prev) => {
       if (storyEndsWithOpenQuestion(prev)) return prev;
       return appendFlowQuestion(prev, action.prompt, action.bridge);
     });
     lastFlowAppendRef.current = action.prompt.id;
-    storySettle.cancel();
-    focusStoryEnd();
-    window.setTimeout(() => {
-      flowLockRef.current = false;
-    }, 400);
+    // Focus next answer slot without artificial delay
+    requestAnimationFrame(() => focusStoryEnd());
   }
 
   function editStoryAnswer() {
     storySettle.edit();
-    focusStoryEnd();
+    requestAnimationFrame(() => focusStoryEnd());
   }
 
   // Seed opening question promptly (not held by edit window)
@@ -914,26 +913,16 @@ export default function AssessmentPage() {
   }, [guideStoryQa, continuousFlow, flowStatus, paragraph]);
 
   /**
-   * After settle countdown: record answer + ask next question.
-   * Any edit while settling restarts the timer (resetKey = paragraph).
+   * After settle countdown: record answer + ask next question immediately.
+   * Send uses commitStoryAdvanceNow (same append path, zero hesitation).
    */
   useEffect(() => {
     if (!storySettle.settled || !pendingStoryAdvance) return;
-    if (flowLockRef.current) return;
     if (pendingStoryAdvance.type !== "advance") return;
-
-    const action = pendingStoryAdvance;
-    flowLockRef.current = true;
-    setParagraph((prev) => {
-      if (storyEndsWithOpenQuestion(prev)) return prev;
-      return appendFlowQuestion(prev, action.prompt, action.bridge);
-    });
-    lastFlowAppendRef.current = action.prompt.id;
-    focusStoryEnd();
-    window.setTimeout(() => {
-      flowLockRef.current = false;
-    }, 400);
-  }, [storySettle.settled, pendingStoryAdvance]);
+    // Re-use Send path so auto-advance and manual Send behave identically
+    commitStoryAdvanceNow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once when settled
+  }, [storySettle.settled]);
 
   function askCoach(question?: string) {
     const q = (question ?? coachQuestion).trim();
@@ -1460,15 +1449,15 @@ export default function AssessmentPage() {
                     settleRemainingSec={storySettle.remainingSec}
                   />
                 </div>
-                {storySettle.settling || storySettle.editing ? (
+                {storySettle.showControls ? (
                   <div className="mt-2 space-y-2 rounded-lg bg-amber-50 px-2.5 py-2 dark:bg-amber-900/30">
                     <p className="text-xs font-medium text-amber-950 dark:text-amber-100">
                       {storySettle.editing
-                        ? "Editing — change your answer below, then Send or wait for the timer after you pause."
+                        ? "Editing — type freely. Send continues the conversation immediately."
                         : (
                           <>
                             Answer detected — <strong>{storySettle.remainingSec}s</strong> left.
-                            Use <strong>Send</strong> to record now, or <strong>Edit</strong> to
+                            Use <strong>Send</strong> to continue now, or <strong>Edit</strong> to
                             pause and revise.
                           </>
                         )}
@@ -1483,6 +1472,30 @@ export default function AssessmentPage() {
                       editLabel="Edit"
                     />
                   </div>
+                ) : null}
+                {/* Fixed Send/Edit while typing after Edit — stays above tab bar */}
+                {storySettle.showControls ? (
+                  <>
+                    <ConversationSettleActions
+                      fixed
+                      settling={storySettle.settling}
+                      editing={storySettle.editing}
+                      remainingSec={storySettle.remainingSec}
+                      onSend={commitStoryAdvanceNow}
+                      onEdit={editStoryAnswer}
+                      sendLabel="Send"
+                      editLabel="Edit"
+                      hint={
+                        storySettle.editing
+                          ? "Editing — buttons stay fixed. Send continues without waiting."
+                          : storySettle.settling
+                            ? `Sending in ${storySettle.remainingSec}s — or Send now to continue immediately.`
+                            : "Send continues the conversation · Edit keeps the timer paused while you type."
+                      }
+                    />
+                    {/* Spacer so fixed bar does not cover the last lines of the answer box */}
+                    <div className="h-20 lg:h-16" aria-hidden />
+                  </>
                 ) : null}
                 {openStoryQuestion ? (
                   <p className="mt-1.5 text-sm leading-snug text-brand-900 dark:text-brand-50">
