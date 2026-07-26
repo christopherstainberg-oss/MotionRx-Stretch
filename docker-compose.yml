@@ -45,6 +45,8 @@ services:
       PORT: "3000"
       XAI_API_KEY: ${XAI_API_KEY:-}
       XAI_MODEL: ${XAI_MODEL:-grok-4-1-fast-non-reasoning}
+      # Extra admin emails (Christopher Stainberg is built-in primary admin)
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
     volumes:
       - motionrx-data:/app/data
     networks:

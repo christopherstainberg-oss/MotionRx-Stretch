@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { isAdminUser, toAdminUserRow } from "@/lib/admin";
+import { buildAdminDirectory, isAdminUser, PRIMARY_ADMIN_NAME } from "@/lib/admin";
 import { readDb } from "@/lib/storage";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { assertSameOrigin } from "@/lib/security";
 
 /**
- * Administrator directory: total users, emails, account creation dates.
- * Only accessible to ADMIN_EMAILS / role=admin accounts.
+ * Administrator directory + platform analytics.
+ * Accounts created, usernames, emails, engagement metrics.
+ * Access: Christopher Stainberg (built-in), role=admin, or ADMIN_EMAILS.
  */
 export async function GET(req: Request) {
   try {
@@ -34,40 +35,19 @@ export async function GET(req: Request) {
     }
 
     const db = await readDb();
-    const users = [...db.users]
-      .map(toAdminUserRow)
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-
-    const withAvatar = users.filter(
-      (u) => u.hasUploadAvatar || u.avatarSource === "gravatar"
-    ).length;
-    const withBiometrics = users.filter((u) => u.biometricsEnabled).length;
-    const admins = users.filter((u) => u.role === "admin").length;
-
-    // Newest / oldest for summary cards
-    const newest = users[0] || null;
-    const oldest =
-      users.length > 0
-        ? [...users].sort(
-            (a, b) =>
-              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-          )[0]
-        : null;
+    const { summary, users } = buildAdminDirectory(db);
 
     return NextResponse.json({
       ok: true,
       admin: true,
-      summary: {
-        totalUsers: users.length,
-        withAvatar,
-        withBiometrics,
-        adminCount: admins,
-        newestAccountCreatedAt: newest?.createdAt || null,
-        oldestAccountCreatedAt: oldest?.createdAt || null,
+      primaryAdmin: PRIMARY_ADMIN_NAME,
+      viewer: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: "admin",
       },
+      summary,
       users,
     });
   } catch (e) {

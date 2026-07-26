@@ -9,7 +9,7 @@ import type { UserPreferences, UserProfile } from "@/lib/types";
 import { v4 as uuid } from "uuid";
 import { isValidEmail } from "@/lib/rate-limit";
 import { sanitizeDisplayName } from "@/lib/security";
-import { isAdminUser } from "@/lib/admin";
+import { ensureAdminRole, isAdminUser } from "@/lib/admin";
 import { gravatarUrl } from "@/lib/gravatar";
 
 export const SESSION_COOKIE = "motionrx_session";
@@ -182,6 +182,18 @@ export async function getSessionUser(): Promise<UserProfile | null> {
   if (!user) return null;
   const normalized = normalizeUser(user);
   if (normalized.sessionVersion !== parsed.sessionVersion) return null;
+  // Persist admin role for Christopher Stainberg / ADMIN_EMAILS (once)
+  if (ensureAdminRole(user)) {
+    try {
+      await updateDb((d) => {
+        const row = d.users.find((u) => u.id === user.id);
+        if (row) row.role = "admin";
+      });
+      normalized.role = "admin";
+    } catch {
+      /* non-fatal — isAdminUser still grants access without DB write */
+    }
+  }
   return normalized;
 }
 
@@ -380,6 +392,8 @@ export async function registerUser(input: {
     favorites: [],
     painBaseline: {},
   };
+  // Christopher Stainberg / ADMIN_EMAILS → admin on create
+  ensureAdminRole(user);
 
   // Check uniqueness inside the lock so concurrent registers cannot race.
   let duplicate = false;
