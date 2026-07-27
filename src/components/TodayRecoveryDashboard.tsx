@@ -13,12 +13,15 @@ import {
   AlertTriangle,
   CheckCircle2,
   Droplets,
+  HeartPulse,
   ListChecks,
   Moon,
   Stethoscope,
   TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { analyzeVitals } from "@/lib/vitals";
+import { labsPlanHints, loadLabReports } from "@/lib/labs-store";
 
 function readinessStyles(band: TodayRecoverySnapshot["readiness"]) {
   switch (band) {
@@ -48,11 +51,17 @@ export function TodayRecoveryDashboard({
   const [taskConfidence, setTaskConfidence] = useState(6);
   const [nextDayOk, setNextDayOk] = useState(true);
   const [romOk, setRomOk] = useState(true);
+  const [hrLine, setHrLine] = useState<string | null>(null);
+  const [labCaution, setLabCaution] = useState(false);
 
   const refresh = useCallback(() => {
     setSnap(
       buildTodayRecoverySnapshot({ surgeryId, surgeryDate, precautionIds })
     );
+    const vit = analyzeVitals();
+    const hr = vit.find((v) => v.key === "heart_rate");
+    setHrLine(hr ? `RHR ${hr.latest} bpm (${hr.status})` : null);
+    setLabCaution(labsPlanHints(loadLabReports()).caution);
   }, [surgeryId, surgeryDate, precautionIds]);
 
   useEffect(() => {
@@ -263,10 +272,28 @@ export function TodayRecoveryDashboard({
         </div>
       )}
 
+      {(hrLine || labCaution) && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-100 bg-brand-50/50 px-3 py-2 text-xs dark:border-brand-800 dark:bg-brand-950/40">
+          <HeartPulse className="h-3.5 w-3.5 text-brand-600" />
+          {hrLine && <span className="font-medium text-brand-800 dark:text-brand-100">{hrLine}</span>}
+          {labCaution && (
+            <span className="font-semibold text-amber-800 dark:text-amber-200">
+              Lab caution on file
+            </span>
+          )}
+          <Link href="/health" className="ml-auto font-semibold text-brand-700 underline">
+            Health →
+          </Link>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         <Link href="/routines/session" className="btn-primary flex-1 py-2.5 text-sm sm:flex-none">
           <ListChecks className="h-4 w-4" />
           Start session
+        </Link>
+        <Link href="/health" className="btn-secondary flex-1 py-2.5 text-sm sm:flex-none">
+          Vitals & labs
         </Link>
         <Link href="/assessment" className="btn-secondary flex-1 py-2.5 text-sm sm:flex-none">
           Update assess

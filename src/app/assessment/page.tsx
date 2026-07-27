@@ -61,6 +61,7 @@ import {
   SportSurgeryPickers,
   type SportSurgeryValue,
 } from "@/components/SportSurgeryPickers";
+import { VitalsLabsPanel } from "@/components/VitalsLabsPanel";
 import { ClinicalSymptomPicker } from "@/components/ClinicalSymptomPicker";
 import { AdlPicker } from "@/components/AdlPicker";
 import { ModalityPlanPanels } from "@/components/ModalitySuggestions";
@@ -1999,6 +2000,13 @@ export default function AssessmentPage() {
               concernParagraph={debouncedParagraph}
               compact
             />
+          </SubSection>
+
+          <SubSection
+            title="Light vitals & labs"
+            hint="Optional readiness signals. Upload CSV/TSV/TXT/JSON/PDF or paste lab text. Critical values favor protection — clinician care first."
+          >
+            <VitalsLabsPanel sex={sex || null} compact />
           </SubSection>
 
           <SubSection

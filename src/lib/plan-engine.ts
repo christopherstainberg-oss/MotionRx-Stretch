@@ -39,6 +39,9 @@ import {
   surgeryPhaseLabel,
 } from "@/data/surgeries";
 import { getActivityLevel } from "@/lib/activity-level";
+import { buildSportLatePhaseProgram } from "@/lib/sport-late-phase";
+import { vitalsPlanHints } from "@/lib/vitals";
+import { labsPlanHints } from "@/lib/labs-store";
 import {
   composePtSession,
   reorderItemsLikePtSession,
@@ -582,6 +585,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   });
 
   // Merge story-preferred IDs into rehab seeds (Describe Your Issue specificity)
+  // Note: latePhase preferred IDs merged after storyIntel is known (below rehabWithStory rebuild)
   const preferredStretchIds = Array.from(
     new Set([...storyPrefs.stretchIds, ...rehab.preferredStretchIds])
   );
@@ -636,15 +640,52 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   const surgery = input.surgeryId ? getSurgeryById(input.surgeryId) : undefined;
   const postOpWeeks = weeksSinceSurgery(input.surgeryDate);
   const activityLevel = getActivityLevel(input.activityLevel);
-  const sportPrefer = sports.flatMap((s) => s!.preferTags);
+  // Early post-op: force protective bias when within typical protect window
+  const earlyPostOp = Boolean(
+    surgery &&
+      postOpWeeks != null &&
+      postOpWeeks < (surgery.protectWeeksTypical || 6)
+  );
+  const latePhase = buildSportLatePhaseProgram({
+    sportIds: input.sportIds,
+    irritability: storyIntel?.irritability,
+    earlyPostOp,
+    protective:
+      storyIntel?.activityResponse === "delayed-worse" ||
+      storyIntel?.irritability === "high" ||
+      earlyPostOp,
+  });
+  // Seed sport-specific late-phase movements into HEP composition
+  if (latePhase) {
+    for (const id of latePhase.preferredStretchIds) {
+      if (!rehabWithStory.preferredStretchIds.includes(id)) {
+        rehabWithStory.preferredStretchIds.push(id);
+      }
+    }
+    for (const id of latePhase.preferredExerciseIds) {
+      if (!rehabWithStory.preferredExerciseIds.includes(id)) {
+        rehabWithStory.preferredExerciseIds.push(id);
+      }
+    }
+    for (const line of latePhase.evidenceLines) {
+      if (!rehabWithStory.evidenceNotes.includes(line)) {
+        rehabWithStory.evidenceNotes.push(line);
+      }
+    }
+  }
+  const vitalsHints =
+    typeof window !== "undefined" ? vitalsPlanHints() : null;
+  const labHints =
+    typeof window !== "undefined"
+      ? labsPlanHints(undefined, input.sex)
+      : null;
+  const sportPrefer = [
+    ...sports.flatMap((s) => s!.preferTags),
+    ...(latePhase?.preferTags || []),
+  ];
   const surgeryPrefer = surgery?.preferTags || [];
   const surgeryAvoid = surgery?.avoidTags || [];
   const activityPrefer = activityLevel?.preferTags || [];
-  // Early post-op: force protective bias when within typical protect window
-  const earlyPostOp =
-    surgery &&
-    postOpWeeks != null &&
-    postOpWeeks < (surgery.protectWeeksTypical || 6);
 
   const mergedPrefer = Array.from(
     new Set([
@@ -662,8 +703,13 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ...(homeBased ? ["home", "minimal-equipment", "chair", "wall"] : []),
     ])
   );
-  // Merge surgery avoid into avoid list
-  for (const t of surgeryAvoid) {
+  // Merge surgery / sport / vitals / labs avoid tags
+  for (const t of [
+    ...surgeryAvoid,
+    ...(latePhase?.avoidTags || []),
+    ...(vitalsHints?.avoidTags || []),
+    ...(labHints?.avoidTags || []),
+  ]) {
     if (!mergedAvoid.includes(t)) mergedAvoid.push(t);
   }
   if (earlyPostOp) {
@@ -805,6 +851,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     difficulty = "beginner";
   if (adlSummary?.maxDifficulty === "beginner") difficulty = "beginner";
   if (earlyPostOp || surgery?.maxDifficulty === "beginner") difficulty = "beginner";
+  if (vitalsHints?.caution || labHints?.critical) difficulty = "beginner";
 
   // Fold clinical symptom labels into free-text symptom chips for scoring
   const symptomLabels = Array.from(
@@ -969,6 +1016,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       (sleepCorr?.minutesScale ?? 1) *
       (surgery?.minutesScale ?? 1) *
       (activityLevel?.minutesScale ?? 1) *
+      (vitalsHints?.minutesScale ?? 1) *
+      (labHints?.minutesScale ?? 1) *
       (earlyPostOp ? 0.85 : 1)
   );
   if (
