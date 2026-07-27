@@ -32,18 +32,18 @@ export default function HealthPage() {
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold text-brand-950">
           <HeartPulse className="h-7 w-7 text-brand-600" />
-          Health · vitals & labs
+          Health
         </h1>
         <p className="mt-1 text-sm text-brand-700">
-          Light vitals, multi-format lab uploads, and sport late-phase criteria — educational
-          only, not diagnosis or emergency care.
+          Vitals, multi-format lab uploads, and sport late-phase criteria — educational only, not
+          diagnosis or emergency care.
         </p>
       </div>
 
       <HomeTodaySection />
 
       <section className="card space-y-3 p-4 sm:p-5">
-        <h2 className="text-base font-bold text-brand-950">Vitals & lab reports</h2>
+        <h2 className="text-base font-bold text-brand-950">Health</h2>
         <VitalsLabsPanel sex={sex} />
       </section>
 
@@ -52,15 +52,15 @@ export default function HealthPage() {
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
               <h2 className="text-base font-bold text-brand-950">
-                Sport late-phase program
+                Sport Late-Phase Program
               </h2>
               <p className="text-xs text-brand-600">
                 {sportProgram.sportName} · {sportProgram.impact} impact ·{" "}
-                {sportProgram.allowed ? "load blocks unlocked" : "base-focused"}
+                {sportProgram.allowed ? "Load Blocks Unlocked" : "Base-Focused"}
               </p>
             </div>
             <Link href="/assessment" className="text-xs font-semibold text-brand-700 underline">
-              Edit sports in Assess
+              Edit Sports In Assess
             </Link>
           </div>
           <p className="text-sm text-brand-700">{sportProgram.blockWhy}</p>
@@ -91,7 +91,7 @@ export default function HealthPage() {
           {sportProgram.criteriaChecklist.length > 0 && (
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">
-                RTP-style checklist (education)
+                RTP-Style Checklist (Education)
               </p>
               <ul className="mt-1 list-inside list-disc text-xs text-brand-700">
                 {sportProgram.criteriaChecklist.map((c) => (

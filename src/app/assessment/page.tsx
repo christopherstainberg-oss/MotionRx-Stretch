@@ -2003,7 +2003,7 @@ export default function AssessmentPage() {
           </SubSection>
 
           <SubSection
-            title="Light vitals & labs"
+            title="Vitals & Labs"
             hint="Optional readiness signals. Upload CSV/TSV/TXT/JSON/PDF or paste lab text. Critical values favor protection — clinician care first."
           >
             <VitalsLabsPanel sex={sex || null} compact />

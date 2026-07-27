@@ -291,7 +291,7 @@ export function buildSportLatePhaseProgram(opts: {
 
   const base: LatePhaseBlock = {
     id: "base-capacity",
-    title: "Base capacity",
+    title: "Base Capacity",
     weeksHint: "Ongoing foundation",
     focus: "Tissue tolerance, motor control, and general strength before sport skill load.",
     criteria: [
@@ -312,7 +312,7 @@ export function buildSportLatePhaseProgram(opts: {
 
   const sportMotor: LatePhaseBlock = {
     id: "sport-motor",
-    title: "Sport motor patterns",
+    title: "Sport Motor Patterns",
     weeksHint: "When base is green",
     focus: "Sport-adjacent movement (hinge, single-leg, scapular, landing prep) without full skill intensity.",
     criteria: pack.criteria.slice(0, 4),
@@ -330,7 +330,7 @@ export function buildSportLatePhaseProgram(opts: {
 
   const sportLoad: LatePhaseBlock = {
     id: "sport-load",
-    title: "Graded sport load",
+    title: "Graded Sport Load",
     weeksHint: "Only if criteria green",
     focus: "Volume and intensity closer to sport demands; still traffic-light dosed.",
     criteria: [
@@ -355,7 +355,7 @@ export function buildSportLatePhaseProgram(opts: {
 
   const criteriaBlock: LatePhaseBlock = {
     id: "criteria-check",
-    title: "RTP criteria checklist",
+    title: "RTP Criteria Checklist",
     weeksHint: "Before full return",
     focus: "Objective-ish self-checks (not formal hop testing / clearance).",
     criteria: unique([

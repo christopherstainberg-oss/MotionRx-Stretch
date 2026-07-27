@@ -12,6 +12,7 @@ import {
   LAB_TESTS,
   LAB_TEST_BY_KEY,
   interpretLabValue,
+  resolveRange,
   type LabReport,
   type LabValueEntry,
 } from "@/data/labs";
@@ -31,6 +32,7 @@ import {
 import {
   Activity,
   AlertTriangle,
+  ChevronDown,
   FileUp,
   HeartPulse,
   Trash2,
@@ -53,6 +55,8 @@ export function VitalsLabsPanel({
   compact?: boolean;
 }) {
   const [tab, setTab] = useState<"vitals" | "labs">("vitals");
+  /** All Labs catalog card — collapsed when Labs tab is opened */
+  const [allLabsExpanded, setAllLabsExpanded] = useState(false);
   const [vitals, setVitals] = useState<VitalReading[]>([]);
   const [labs, setLabs] = useState<LabReport[]>([]);
   const [hr, setHr] = useState("");
@@ -78,6 +82,24 @@ export function VitalsLabsPanel({
 
   const analysis = useMemo(() => analyzeVitals(vitals), [vitals]);
   const labHints = useMemo(() => labsPlanHints(labs, sex), [labs, sex]);
+
+  const labsByCategory = useMemo(() => {
+    const map = new Map<string, typeof LAB_TESTS>();
+    for (const t of LAB_TESTS) {
+      const list = map.get(t.category) || [];
+      list.push(t);
+      map.set(t.category, list);
+    }
+    return Array.from(map.entries());
+  }, []);
+
+  function openTab(next: "vitals" | "labs") {
+    setTab(next);
+    if (next === "labs") {
+      // Keep All Labs card collapsed when Labs is selected
+      setAllLabsExpanded(false);
+    }
+  }
 
   function saveVitals() {
     const num = (s: string) => {
@@ -215,7 +237,7 @@ export function VitalsLabsPanel({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => setTab("vitals")}
+          onClick={() => openTab("vitals")}
           className={cn(
             "rounded-full px-3 py-1 text-xs font-semibold ring-1",
             tab === "vitals"
@@ -224,11 +246,11 @@ export function VitalsLabsPanel({
           )}
         >
           <HeartPulse className="mr-1 inline h-3.5 w-3.5" />
-          Light vitals
+          Vitals
         </button>
         <button
           type="button"
-          onClick={() => setTab("labs")}
+          onClick={() => openTab("labs")}
           className={cn(
             "rounded-full px-3 py-1 text-xs font-semibold ring-1",
             tab === "labs"
@@ -298,7 +320,7 @@ export function VitalsLabsPanel({
               />
             </label>
             <label className="text-xs">
-              Weight lb
+              Weight Lb
               <input
                 className="input mt-0.5 w-full text-sm"
                 inputMode="decimal"
@@ -309,7 +331,7 @@ export function VitalsLabsPanel({
             </label>
           </div>
           <button type="button" className="btn-primary text-sm" onClick={saveVitals}>
-            Save vitals reading
+            Save Vitals Reading
           </button>
 
           {analysis.length > 0 && (
@@ -352,12 +374,73 @@ export function VitalsLabsPanel({
             ranges only — not a diagnosis.
           </p>
 
+          {/* All Labs catalog — expandable; starts collapsed when Labs is opened */}
+          <div className="overflow-hidden rounded-xl border border-brand-200 dark:border-brand-700">
+            <button
+              type="button"
+              onClick={() => setAllLabsExpanded((o) => !o)}
+              className="flex w-full items-center justify-between gap-2 bg-brand-50/80 px-3 py-2.5 text-left dark:bg-brand-950/50"
+              aria-expanded={allLabsExpanded}
+            >
+              <span className="text-sm font-semibold text-brand-950 dark:text-brand-50">
+                All Labs
+                <span className="ml-2 text-[11px] font-normal text-brand-500">
+                  {LAB_TESTS.length} Tests
+                </span>
+              </span>
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 shrink-0 text-brand-600 transition-transform",
+                  allLabsExpanded && "rotate-180"
+                )}
+              />
+            </button>
+            {allLabsExpanded && (
+              <div className="max-h-72 space-y-3 overflow-y-auto border-t border-brand-100 p-3 dark:border-brand-800">
+                {labsByCategory.map(([category, tests]) => (
+                  <div key={category}>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                      {category}
+                    </p>
+                    <ul className="space-y-1">
+                      {tests.map((t) => {
+                        const range = resolveRange(t, sex);
+                        const rangeLabel =
+                          range.low != null && range.high != null
+                            ? `${range.low}–${range.high}`
+                            : range.high != null
+                              ? `< ${range.high}`
+                              : range.low != null
+                                ? `> ${range.low}`
+                                : "—";
+                        return (
+                          <li
+                            key={t.key}
+                            className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 rounded-lg px-2 py-1.5 text-xs hover:bg-brand-50/60 dark:hover:bg-brand-900/30"
+                          >
+                            <span className="font-medium text-brand-900 dark:text-brand-100">
+                              {t.label}
+                            </span>
+                            <span className="text-brand-500">
+                              {t.unit || "—"}
+                              {rangeLabel !== "—" ? ` · Ref ${rangeLabel}` : ""}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {(labHints.caution || labHints.critical) && (
             <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/40">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
               <div className="space-y-1 text-xs text-amber-950 dark:text-amber-100">
                 {labHints.critical && (
-                  <p className="font-bold">Critical-range value(s) on file — seek clinician care.</p>
+                  <p className="font-bold">Critical-Range Value(s) On File — Seek Clinician Care.</p>
                 )}
                 {labHints.evidenceLines.map((l) => (
                   <p key={l}>{l}</p>
@@ -369,10 +452,10 @@ export function VitalsLabsPanel({
           <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-brand-300 bg-brand-50/40 px-4 py-6 text-center dark:border-brand-700 dark:bg-brand-950/40">
             <FileUp className="h-6 w-6 text-brand-600" />
             <span className="text-sm font-semibold text-brand-900 dark:text-brand-50">
-              {busy ? "Parsing…" : "Upload lab file(s)"}
+              {busy ? "Parsing…" : "Upload Lab File(s)"}
             </span>
             <span className="text-[11px] text-brand-500">
-              CSV · TSV · TXT · JSON · PDF (text) · multi-select
+              CSV · TSV · TXT · JSON · PDF (Text) · Multi-Select
             </span>
             <input
               type="file"
@@ -386,7 +469,7 @@ export function VitalsLabsPanel({
 
           <div>
             <label className="text-xs font-medium text-brand-700">
-              Or paste report text / CSV
+              Or Paste Report Text / CSV
             </label>
             <textarea
               className="input mt-1 min-h-[88px] w-full text-sm"
@@ -399,13 +482,13 @@ export function VitalsLabsPanel({
               className="btn-secondary mt-2 text-xs"
               onClick={parsePaste}
             >
-              Parse paste
+              Parse Paste
             </button>
           </div>
 
           <div className="flex flex-wrap items-end gap-2 rounded-lg border border-brand-100 p-3 dark:border-brand-800">
             <label className="min-w-[10rem] flex-1 text-xs">
-              Manual test
+              Manual Test
               <select
                 className="input mt-0.5 w-full text-sm"
                 value={manualKey}
@@ -436,6 +519,9 @@ export function VitalsLabsPanel({
             <p className="text-xs text-brand-700 dark:text-brand-200">{parseNote}</p>
           )}
 
+          <p className="text-xs font-semibold text-brand-800 dark:text-brand-200">
+            Your Lab Reports
+          </p>
           {labs.length > 0 ? (
             <ul className="space-y-3">
               {labs.slice(0, 8).map((r) => (
@@ -446,7 +532,7 @@ export function VitalsLabsPanel({
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="text-sm font-semibold text-brand-950 dark:text-brand-50">
-                        {r.fileName || "Lab report"} · {r.collectedAt}
+                        {r.fileName || "Lab Report"} · {r.collectedAt}
                       </p>
                       <p className="text-[11px] text-brand-500">
                         {r.fileType || "unknown"} · {r.values.length} values
@@ -459,7 +545,7 @@ export function VitalsLabsPanel({
                         deleteLabReport(r.id);
                         refresh();
                       }}
-                      aria-label="Delete report"
+                      aria-label="Delete Report"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -490,7 +576,7 @@ export function VitalsLabsPanel({
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-brand-500">No lab reports stored yet.</p>
+            <p className="text-xs text-brand-500">No Lab Reports Stored Yet.</p>
           )}
         </div>
       )}

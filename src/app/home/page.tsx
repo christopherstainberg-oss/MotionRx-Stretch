@@ -59,7 +59,7 @@ const SECONDARY = [
   { href: "/exercises", title: "Exercises", icon: Dumbbell, text: "Strength & control" },
   { href: "/modalities", title: "Modalities", icon: Sparkles, text: "Heat, ice, pacing" },
   { href: "/sleep", title: "Sleep", icon: Moon, text: "PSQI · correlated recovery" },
-  { href: "/health", title: "Health", icon: Dumbbell, text: "Vitals · labs · sport phase" },
+  { href: "/health", title: "Health", icon: Dumbbell, text: "Vitals · Labs · Sport Phase" },
   { href: "/analytics", title: "User Analytics", icon: ListChecks, text: "Sessions & trends" },
 ] as const;
 

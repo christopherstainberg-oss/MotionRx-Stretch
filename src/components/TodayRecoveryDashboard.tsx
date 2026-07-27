@@ -100,10 +100,10 @@ export function TodayRecoveryDashboard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">
-            Today · recovery balance
+            Today · Recovery Balance
           </p>
           <h2 className="text-base font-bold text-brand-950">
-            {snap.preferName}&apos;s readiness
+            {snap.preferName}&apos;s Readiness
           </h2>
         </div>
         <span
@@ -120,7 +120,7 @@ export function TodayRecoveryDashboard({
         <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <p className="font-semibold">Clearance / protection active</p>
+            <p className="font-semibold">Clearance / Protection Active</p>
             <p className="mt-0.5 text-xs leading-relaxed opacity-90">
               {snap.clearanceBody}
             </p>
@@ -212,12 +212,12 @@ export function TodayRecoveryDashboard({
         >
           <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
             <TrendingUp className="h-3.5 w-3.5" />
-            Progress gate
+            Progress Gate
           </div>
           <p className="mt-1 text-xs font-medium text-brand-800 dark:text-brand-200">
             {snap.lastProgression
-              ? `Last: pain ${snap.lastProgression.painNow}/10 · confidence ${snap.lastProgression.taskConfidence}/10`
-              : "Log ready-to-progress check"}
+              ? `Last: Pain ${snap.lastProgression.painNow}/10 · Confidence ${snap.lastProgression.taskConfidence}/10`
+              : "Log Ready-To-Progress Check"}
           </p>
           <p className="mt-1 text-[11px] text-brand-500">
             {showProgress ? "Hide form" : "Open check →"}
@@ -267,7 +267,7 @@ export function TodayRecoveryDashboard({
             Motion feels freer or more confident than last week
           </label>
           <button type="button" className="btn-primary w-full text-sm" onClick={submitProgression}>
-            Save progression check
+            Save Progression Check
           </button>
         </div>
       )}
@@ -278,7 +278,7 @@ export function TodayRecoveryDashboard({
           {hrLine && <span className="font-medium text-brand-800 dark:text-brand-100">{hrLine}</span>}
           {labCaution && (
             <span className="font-semibold text-amber-800 dark:text-amber-200">
-              Lab caution on file
+              Lab Caution On File
             </span>
           )}
           <Link href="/health" className="ml-auto font-semibold text-brand-700 underline">
@@ -290,13 +290,13 @@ export function TodayRecoveryDashboard({
       <div className="flex flex-wrap gap-2">
         <Link href="/routines/session" className="btn-primary flex-1 py-2.5 text-sm sm:flex-none">
           <ListChecks className="h-4 w-4" />
-          Start session
+          Start Session
         </Link>
         <Link href="/health" className="btn-secondary flex-1 py-2.5 text-sm sm:flex-none">
-          Vitals & labs
+          Vitals & Labs
         </Link>
         <Link href="/assessment" className="btn-secondary flex-1 py-2.5 text-sm sm:flex-none">
-          Update assess
+          Update Assess
         </Link>
         <Link href="/journal" className="btn-secondary flex-1 py-2.5 text-sm sm:flex-none">
           Journal
