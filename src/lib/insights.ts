@@ -88,10 +88,10 @@ export function correlateInsights(input: {
     // Journal sleep ratings vs PSQI
     const journalSleep = input.journal
       .map((j) => j.sleepQuality)
-      .filter((n): n is number => typeof n === "number");
+      .filter((n): n is 1 | 2 | 3 | 4 | 5 => typeof n === "number");
     if (journalSleep.length >= 2) {
       const avgJ =
-        journalSleep.slice(0, 5).reduce((a, b) => a + b, 0) /
+        journalSleep.slice(0, 5).reduce((a, b) => a + (b ?? 0), 0) /
         Math.min(5, journalSleep.length);
       const psqiAsJournal = sleep.journalSleepQuality;
       if (Math.abs(avgJ - psqiAsJournal) >= 1.5) {

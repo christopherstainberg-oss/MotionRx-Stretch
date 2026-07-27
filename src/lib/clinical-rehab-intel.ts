@@ -509,10 +509,9 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
     } else if (
       story.irritability === "low" &&
       story.activityResponse !== "worse" &&
-      story.activityResponse !== "delayed-worse" &&
       avgPain <= 5
     ) {
-      // Stated low irritability + better/same activity response → allow story progression phase
+      // Stated low irritability + better/same (delayed-worse already handled above) → allow story phase
       phase = storyPhase;
     } else if (
       story.activityResponse === "better" &&

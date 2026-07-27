@@ -247,20 +247,24 @@ export function composePtSession(opts: {
   functionalLimits?: string[];
 }): ComposedSession {
   const budget = phaseItemBudget(opts.phase, opts.minutesTarget);
-  const avoid = new Set((opts.avoidTags || []).map((t) => t.toLowerCase()));
+  const avoidTags = Array.from(
+    new Set((opts.avoidTags || []).map((t) => t.toLowerCase()))
+  );
   const stretchMap = new Map(opts.stretchCandidates.map((s) => [s.id, s]));
   const exerciseMap = new Map(opts.exerciseCandidates.map((e) => [e.id, e]));
 
   const stretchPool = opts.stretchCandidates.filter((s) => {
     const blob = `${s.name} ${s.tags.join(" ")}`.toLowerCase();
-    for (const t of avoid) {
+    for (let i = 0; i < avoidTags.length; i++) {
+      const t = avoidTags[i]!;
       if (t && t !== "all" && (blob.includes(t) || s.tags.includes(t))) return false;
     }
     return true;
   });
   const exercisePool = opts.exerciseCandidates.filter((e) => {
     const blob = `${e.name} ${e.tags.join(" ")}`.toLowerCase();
-    for (const t of avoid) {
+    for (let i = 0; i < avoidTags.length; i++) {
+      const t = avoidTags[i]!;
       if (t && t !== "all" && (blob.includes(t) || e.tags.includes(t))) return false;
     }
     return true;
