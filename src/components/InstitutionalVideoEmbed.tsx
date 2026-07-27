@@ -83,15 +83,24 @@ export function InstitutionalVideoEmbed({
       if (!data?.video?.youtubeId) throw new Error("empty_resolve");
       setLive(data.video);
     } catch (e) {
-      // Offline / API failure: still try preferred institutional ID so UX degrades gracefully
-      setLive({
-        youtubeId: video.youtubeId,
-        title: video.title,
-        source: video.source,
-        institution: video.institution,
-        swapped: false,
-        preferredId: video.youtubeId,
-      });
+      // Offline / API failure: only show preferred ID if institution string looks healthcare
+      const inst = (video.institution || "").toLowerCase();
+      const looksInstitutional =
+        /mayo|cleveland|hopkins|nih|nia|veterans|vha|dartmouth|dana-farber|apta|choosept|physical therapy association/.test(
+          inst
+        );
+      if (looksInstitutional && video.youtubeId) {
+        setLive({
+          youtubeId: video.youtubeId,
+          title: video.title,
+          source: video.source,
+          institution: video.institution,
+          swapped: false,
+          preferredId: video.youtubeId,
+        });
+      } else {
+        setLive(null);
+      }
       setError(e instanceof Error ? e.message : "resolve_failed");
     } finally {
       setLoading(false);
@@ -103,7 +112,10 @@ export function InstitutionalVideoEmbed({
   }, [resolve, attempt]);
 
   const active = live ?? video;
-  const embedSrc = `https://www.youtube-nocookie.com/embed/${active.youtubeId}?rel=0&modestbranding=1`;
+  const canEmbed = Boolean(active?.youtubeId && active?.institution);
+  const embedSrc = canEmbed
+    ? `https://www.youtube-nocookie.com/embed/${active.youtubeId}?rel=0&modestbranding=1`
+    : "";
 
   return (
     <div className={className}>
@@ -111,19 +123,31 @@ export function InstitutionalVideoEmbed({
         {loading && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-brand-950/90 text-brand-100">
             <Loader2 className="h-8 w-8 animate-spin text-brand-300" />
-            <p className="text-xs font-medium text-brand-200">Verifying educational video…</p>
+            <p className="text-xs font-medium text-brand-200">
+              Verifying institutional healthcare video…
+            </p>
           </div>
         )}
-        <iframe
-          key={active.youtubeId}
-          className="h-full w-full"
-          src={embedSrc}
-          title={active.title}
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-          loading="lazy"
-          referrerPolicy="strict-origin-when-cross-origin"
-        />
+        {!loading && !canEmbed ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center text-brand-100">
+            <ShieldCheck className="h-8 w-8 text-brand-300" />
+            <p className="text-sm font-medium">Institutional video unavailable offline</p>
+            <p className="text-xs text-brand-300">
+              MotionRx only embeds vetted hospital, NIH/VA, and healthcare association demos.
+            </p>
+          </div>
+        ) : (
+          <iframe
+            key={active.youtubeId}
+            className="h-full w-full"
+            src={embedSrc}
+            title={active.title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            loading="lazy"
+            referrerPolicy="strict-origin-when-cross-origin"
+          />
+        )}
       </div>
 
       {showAttribution && (
@@ -140,10 +164,10 @@ export function InstitutionalVideoEmbed({
               {active.source}
             </p>
             <p className="mt-1 text-xs leading-relaxed text-brand-500">
-              Matched to this listed stretch/exercise by technique family, written movement name,
-              and body region — not a random region filler. Follow the written MotionRx steps for
-              exact cues; the institutional video demonstrates the correlated movement pattern from
-              a vetted healthcare source.
+              Healthcare-only: matched to this stretch/exercise from MotionRx’s institutional catalog
+              (hospital systems, NIH/NIA, VA, academic medical centers, APTA ChoosePT). Fitness
+              creators and influencer channels are never embedded. Follow written MotionRx steps for
+              exact cues.
             </p>
             {live?.swapped && (
               <p className="mt-1 text-xs text-amber-700">

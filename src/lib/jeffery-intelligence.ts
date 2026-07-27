@@ -25,6 +25,8 @@ import {
   conversationalRegion,
   refineContinuousInterviewQuestions,
 } from "@/lib/interview-followups";
+import { buildSleepCorrelation } from "@/lib/psqi";
+import { parseInjuryTimeline, injuryTimelineLiveLines } from "@/lib/injury-timeline";
 
 export type JefferyTheme =
   | "primary"
@@ -189,7 +191,15 @@ export function analyzeJefferyIntelligence(
   if (story.aggravators.length) covered.push("aggravators");
   if (story.activityResponse !== "unknown") covered.push("activity-response");
   if (journal.moodWords.length || journal.coveredThemes.includes("mood")) covered.push("mood");
-  if (journal.sleepMentioned || story.sleepImpact) covered.push("sleep");
+  const sleepCorr =
+    typeof window !== "undefined" ? buildSleepCorrelation() : null;
+  if (
+    journal.sleepMentioned ||
+    story.sleepImpact ||
+    sleepCorr?.hasData
+  ) {
+    covered.push("sleep");
+  }
   if (journal.stressMentioned || story.stressImpact) covered.push("stress");
   if (story.goals.length || journal.coveredThemes.includes("goals")) covered.push("goals");
   if (story.fearAvoidance || journal.fearMentioned) covered.push("fear");
@@ -362,6 +372,9 @@ function buildJefferyLiveRead(s: {
       `Assumed context (not confirmed causes): ${s.story.assumedAggravators.slice(0, 3).join(", ")}.`
     );
   }
+  if (s.story.injuryTimeline) {
+    lines.push(...injuryTimelineLiveLines(s.story.injuryTimeline).slice(0, 2));
+  }
   if (s.journal.moodWords.length) {
     lines.push(`Mood language: ${s.journal.moodWords.slice(0, 3).join(", ")}.`);
   }
@@ -435,6 +448,32 @@ function buildJefferyAdaptive(s: {
     });
   }
 
+  const injuryTl = parseInjuryTimeline(
+    [s.story.raw, s.lastUser, s.journal.raw].filter(Boolean).join("\n")
+  );
+  if (injuryTl.source === "unknown" && s.coveredThemes.includes("primary")) {
+    push({
+      id: "jf-injury-timeline",
+      label: "How long since it started?",
+      question: `${s.name}, about how long has this been going on—0 weeks (just started), 1–6 weeks, a few months, or years? That frames when we might notice progress.`,
+      category: "bother",
+      theme: "primary",
+      reason: "Need injury timeline for phase & progress outlook",
+      priority: 93,
+    });
+  } else if (injuryTl.source === "stated" && injuryTl.progressOutlook[0]) {
+    const m0 = injuryTl.progressOutlook[0];
+    push({
+      id: "jf-progress-window",
+      label: "Progress check window",
+      question: `${s.name}, you are about ${injuryTl.label} into this. Over ${m0.windowLabel}, what change would count—pain 0–10, or a harder daily task 0–10 (like stairs or desk time)?`,
+      category: "goals",
+      theme: "goals",
+      reason: `Timeline ${injuryTl.label} → ${m0.windowLabel}`,
+      priority: 87,
+    });
+  }
+
   if (!s.coveredThemes.includes("pain")) {
     push({
       id: "jf-pain",
@@ -495,7 +534,29 @@ function buildJefferyAdaptive(s: {
     });
   }
 
-  if (!s.coveredThemes.includes("sleep") && s.coveredThemes.length >= 2) {
+  const sleepSnap =
+    typeof window !== "undefined" ? buildSleepCorrelation() : null;
+  if (sleepSnap?.hasData && sleepSnap.painAtNight) {
+    push({
+      id: "jf-sleep-pain-night",
+      label: "Night pain from PSQI?",
+      question: `${s.name}, your Sleep PSQI noted pain at night. Which positions wake you, and does ${regionPhrase} settle with pillows or a short evening mobility set?`,
+      category: "function",
+      theme: "sleep",
+      reason: "PSQI pain-at-night signal",
+      priority: 88,
+    });
+  } else if (sleepSnap?.hasData && (sleepSnap.global ?? 0) >= 8) {
+    push({
+      id: "jf-sleep-recovery",
+      label: "Sleep recovery & dosing?",
+      question: `${s.name}, PSQI is ${sleepSnap.global}/21 (${sleepSnap.bandLabel}). Should we keep sessions shorter this week so recovery catches up?`,
+      category: "plan",
+      theme: "sleep",
+      reason: "Elevated PSQI — recovery dosing",
+      priority: 86,
+    });
+  } else if (!s.coveredThemes.includes("sleep") && s.coveredThemes.length >= 2) {
     push({
       id: "jf-sleep",
       label: "Sleep link?",
@@ -504,6 +565,18 @@ function buildJefferyAdaptive(s: {
       theme: "sleep",
       reason: "Sleep not covered",
       priority: 72,
+    });
+  }
+
+  if (!sleepSnap?.hasData && s.coveredThemes.includes("primary")) {
+    push({
+      id: "jf-sleep-psqi-nudge",
+      label: "Log Sleep PSQI?",
+      question: `${s.name}, have you completed the Sleep PSQI questionnaire yet? A score helps me correlate recovery with pain and plan volume.`,
+      category: "function",
+      theme: "sleep",
+      reason: "No PSQI log — invite Sleep section",
+      priority: 58,
     });
   }
 

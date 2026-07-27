@@ -23,6 +23,7 @@ import type {
   SessionLog,
   SymptomInput,
 } from "@/lib/types";
+import { buildSleepCorrelation } from "@/lib/psqi";
 import { v4 as uuid } from "uuid";
 
 export interface ModalityEngineInput {
@@ -44,6 +45,8 @@ export interface ModalityEngineInput {
   limit?: number;
   /** User explicitly preparing for PT visit */
   visitContext?: "pre-visit" | "post-visit" | "none";
+  /** When true, force sleep-hygiene / position education boost from PSQI */
+  psqiSleepIssue?: boolean;
 }
 
 export interface ModalityScored {
@@ -115,9 +118,17 @@ function deriveClinicalFlags(input: ModalityEngineInput) {
   const postActivitySoreness =
     POST_ACT_RE.test(blob) || avgDelta > 0.3 || (lastPainAfter !== undefined && lastPainAfter >= 5);
   const fearAvoidance = FEAR_RE.test(blob);
-  const sleepIssue = SLEEP_RE.test(blob);
+  const sleepCorr =
+    typeof window !== "undefined" ? buildSleepCorrelation() : null;
+  const sleepIssue =
+    SLEEP_RE.test(blob) ||
+    Boolean(input.psqiSleepIssue) ||
+    Boolean(sleepCorr?.hasData && ((sleepCorr.global ?? 0) >= 5 || sleepCorr.painAtNight));
   const deskLoad = DESK_RE.test(blob) || hints.biases.includes("postural-endurance");
-  const highIrritability = effectivePain >= 7 || hints.redFlags.length > 0;
+  const highIrritability =
+    effectivePain >= 7 ||
+    hints.redFlags.length > 0 ||
+    (sleepCorr?.irritabilityBoost ?? 0) >= 1;
   const redFlags = hints.redFlags.length > 0;
 
   return {
@@ -137,6 +148,7 @@ function deriveClinicalFlags(input: ModalityEngineInput) {
     avgDelta,
     journalAvg,
     biases: hints.biases as ProgramBias[],
+    sleepModalityIds: sleepCorr?.modalityIds || [],
   };
 }
 
@@ -266,6 +278,13 @@ function scoreModality(
   if (flags.sleepIssue && m.tags.includes("sleep")) {
     score += 10;
     reasons.push("Sleep-related concerns noted");
+  }
+  if (
+    flags.sleepModalityIds?.length &&
+    flags.sleepModalityIds.includes(m.id)
+  ) {
+    score += 14;
+    reasons.push("Prioritized from your Sleep PSQI correlation");
   }
   if (flags.deskLoad && (m.tags.includes("desk") || m.tags.includes("ergonomics"))) {
     score += 10;

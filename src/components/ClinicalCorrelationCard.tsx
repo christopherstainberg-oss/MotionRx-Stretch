@@ -6,14 +6,22 @@ import {
   correlateAcrossApp,
   type CrossSectionCorrelation,
 } from "@/lib/clinical-context";
-import { BookOpen, Bot, ListChecks, Sparkles, Stethoscope } from "lucide-react";
+import { BookOpen, Bot, ListChecks, Moon, Sparkles, Stethoscope } from "lucide-react";
 
 type Props = {
   /** Compact single-line vs full multi-insight card */
   variant?: "full" | "compact";
   className?: string;
   /** Which section is viewing (highlights related insight) */
-  section?: "home" | "journal" | "jeffery" | "routines" | "modalities" | "insights" | "assessment";
+  section?:
+    | "home"
+    | "journal"
+    | "jeffery"
+    | "routines"
+    | "modalities"
+    | "insights"
+    | "assessment"
+    | "sleep";
 };
 
 /**
@@ -57,9 +65,21 @@ export function ClinicalCorrelationCard({
             </span>
             {" · "}
             <span className="line-clamp-2">{data.storySnippet}</span>
+            {data.sleep?.hasData ? (
+              <>
+                {" · "}
+                <span className="font-semibold text-sky-800 dark:text-sky-200">
+                  Sleep PSQI {data.sleep.global}/21
+                </span>
+              </>
+            ) : null}
             {" "}
             <Link href="/assessment" className="font-semibold text-brand-700 underline">
               Update story
+            </Link>
+            {" · "}
+            <Link href="/sleep" className="font-semibold text-sky-700 underline">
+              Sleep
             </Link>
           </>
         ) : (
@@ -69,6 +89,20 @@ export function ClinicalCorrelationCard({
               Add one
             </Link>{" "}
             so Plan, Journal, and Jeffery stay aligned.
+            {data.sleep?.hasData ? (
+              <>
+                {" "}
+                Sleep PSQI {data.sleep.global}/21 is already correlating recovery.
+              </>
+            ) : (
+              <>
+                {" "}
+                <Link href="/sleep" className="font-semibold text-sky-700 underline">
+                  Log Sleep PSQI
+                </Link>{" "}
+                to correlate recovery.
+              </>
+            )}
           </>
         )}
       </div>
@@ -84,6 +118,11 @@ export function ClinicalCorrelationCard({
     "modality-safety": Sparkles,
     "generate-plan": ListChecks,
     "start-assess": Stethoscope,
+    "sleep-core": Moon,
+    "start-sleep": Moon,
+    "sleep-modalities": Moon,
+    "injury-timeline": Sparkles,
+    "injury-timeline-missing": Sparkles,
   };
 
   return (
@@ -94,16 +133,21 @@ export function ClinicalCorrelationCard({
             Cross-app correlation
           </p>
           <h2 className="text-base font-bold text-brand-950">
-            {data.preferredName}&apos;s Assessment thread
+            {data.preferredName}&apos;s clinical thread
           </h2>
           <p className="mt-0.5 text-xs text-brand-600">
-            Story, Q&amp;A, history, and plan signals shared across sections
+            Story, Q&amp;A, Sleep PSQI, history, and plan signals shared across sections
             {section ? ` · viewing ${section}` : ""}.
           </p>
         </div>
-        <Link href="/assessment" className="btn-secondary text-xs">
-          Open Assessment
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/assessment" className="btn-secondary text-xs">
+            Assessment
+          </Link>
+          <Link href="/sleep" className="btn-secondary text-xs">
+            Sleep
+          </Link>
+        </div>
       </div>
 
       {data.summaryLines.length > 0 && (

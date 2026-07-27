@@ -20,6 +20,8 @@ import { BODY_PART_LABELS } from "@/data/stretch-library";
 import { ALL_THERAPEUTIC_QUESTIONS } from "@/data/therapeutic-questions";
 import { sampleTherapeuticQuestions } from "@/data/therapeutic-question-catalog";
 import { analyzeJournalIntelligence } from "@/lib/journal-intelligence";
+import { buildSleepCorrelation } from "@/lib/psqi";
+import { parseInjuryTimeline } from "@/lib/injury-timeline";
 
 export type JournalPrompt = {
   id: string;
@@ -275,10 +277,32 @@ export function analyzeJournalEntry(input: {
     jIntel.adaptiveQuestions[0]?.question ||
     hashPick(THERAPIST_QUESTIONS, text.slice(0, 40) + String(input.painOverall));
 
+  // Sync PSQI + injury timeline correlation for Jeffery bridge
+  let psqiLine = "";
+  if (typeof window !== "undefined") {
+    const sleep = buildSleepCorrelation();
+    if (sleep.hasData) {
+      psqiLine = `Sleep PSQI ${sleep.global}/21 (${sleep.bandLabel}) correlated; journal sleep ${input.sleepQuality ?? sleep.journalSleepQuality}/5.`;
+    } else if (input.sleepQuality != null) {
+      psqiLine = `Journal sleep quality ${input.sleepQuality}/5 (no PSQI yet).`;
+    }
+  } else if (input.sleepQuality != null) {
+    psqiLine = `Journal sleep quality ${input.sleepQuality}/5.`;
+  }
+  const injuryTl = parseInjuryTimeline(input.body || "");
+  const timelineLine =
+    injuryTl.source === "stated"
+      ? `Injury timeline: ${injuryTl.label} (${injuryTl.tissuePhase}). Progress window: ${injuryTl.progressOutlook[0]?.windowLabel || "n/a"} — ${injuryTl.progressOutlook[0]?.lookFor || ""}.`
+      : "";
+
   const jefferySummary = [
     `I hear you. From today's journal, the plan signal is **${signal}**.`,
     reasons.slice(0, 2).join(" "),
-    `Pain logged at **${input.painOverall}/10** (mood ${input.mood}/5${input.energy ? `, energy ${input.energy}/5` : ""}).`,
+    `Pain logged at **${input.painOverall}/10** (mood ${input.mood}/5${input.energy ? `, energy ${input.energy}/5` : ""}${
+      input.sleepQuality != null ? `, sleep ${input.sleepQuality}/5` : ""
+    }).`,
+    psqiLine,
+    timelineLine,
     jIntel.moodWords.length
       ? `Mood language: ${jIntel.moodWords.slice(0, 3).join(", ")}.`
       : "",

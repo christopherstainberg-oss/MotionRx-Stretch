@@ -12,6 +12,7 @@ import { summarizeConditions } from "@/data/clinical-conditions";
 import { summarizeDescriptors } from "@/data/pain-descriptors";
 import { clinicalHistorySummary, type SexSelection } from "@/lib/clinical-history";
 import { analyzeStoryIntelligence } from "@/lib/story-intelligence";
+import { parseInjuryTimeline } from "@/lib/injury-timeline";
 
 /** Clinical program phase for HEP structure */
 export type RehabPhase =
@@ -196,10 +197,12 @@ function detectPatterns(input: {
   const has = (...keys: string[]) => keys.some((k) => p.includes(k) || hist.includes(k));
   const area = (...bps: BodyPart[]) => bps.some((b) => areas.has(b));
 
+  // Post-op only with explicit surgical language or structured precautions — not soft clearance alone
   if (
-    input.clearanceRequired ||
-    has("surgery", "post-op", "postop", "replacement", "s/p", "fracture", "fusion") ||
-    (input.precautionIds && input.precautionIds.length > 0)
+    has("surgery", "post-op", "postop", "replacement", "s/p", "after my operation", "fusion surgery") ||
+    (input.precautionIds && input.precautionIds.length > 0) ||
+    (input.clearanceRequired &&
+      has("surgeon", "protocol", "weight bearing", "nwb", "ttwb", "sling", "brace after"))
   ) {
     patterns.push("post-op-conservative");
   }
@@ -262,20 +265,143 @@ function phaseFor(opts: {
   patterns: InjuryPattern[];
   clearanceRequired: boolean;
   daysSinceAcute?: number;
+  /** delayed-worse | worse | better | same | unknown */
+  activityResponse?: string;
+  irritability?: string;
+  functionalReady?: boolean;
 }): RehabPhase {
+  // Delayed post-activity flare or high irritability always protects first
+  if (
+    opts.activityResponse === "delayed-worse" ||
+    opts.irritability === "high" ||
+    opts.avgPain >= 7
+  ) {
+    return "protect-calm";
+  }
+  // Very early (0–7 days): protect unless pain is already low and calming
+  if (
+    opts.daysSinceAcute != null &&
+    opts.daysSinceAcute <= 7 &&
+    opts.avgPain >= 3
+  ) {
+    return "protect-calm";
+  }
   if (opts.clearanceRequired || opts.patterns.includes("post-op-conservative")) {
+    // Post-op / early post-event: first ~6 weeks more protective
+    if (opts.daysSinceAcute != null && opts.daysSinceAcute < 42) {
+      return opts.avgPain >= 3 ? "protect-calm" : "motor-control";
+    }
     return opts.avgPain >= 4 ? "protect-calm" : "motor-control";
   }
-  if (opts.avgPain >= 6 || opts.patterns.includes("lumbar-irritable") || opts.patterns.includes("neuro-sensitive")) {
+  // Protect when truly irritable / neuro — not every lumbar label at moderate pain
+  if (opts.avgPain >= 6 || opts.patterns.includes("neuro-sensitive")) {
+    return "protect-calm";
+  }
+  if (
+    opts.patterns.includes("lumbar-irritable") &&
+    (opts.avgPain >= 5 || opts.irritability === "high" || opts.activityResponse === "worse")
+  ) {
     return "protect-calm";
   }
   if (opts.avgPain >= 4) {
     return opts.patterns.includes("general-decond") ? "motor-control" : "mobility-restore";
   }
   if (opts.patterns.includes("balance-fall-risk")) return "motor-control";
+  // Low pain + stated function goals → capacity or function-return
+  if (opts.avgPain <= 2 && opts.functionalReady && opts.irritability === "low") {
+    return "function-return";
+  }
   if (opts.avgPain <= 2) return "capacity-load";
+  if (opts.activityResponse === "better" && opts.avgPain <= 3) return "motor-control";
   return "mobility-restore";
 }
+
+/**
+ * Condition-specific HEP seeds (library IDs) — outpatient educational protocols.
+ * Applied on top of injury patterns when free-text / chips match a condition.
+ */
+const CONDITION_PROTOCOL: Record<
+  string,
+  { stretches: string[]; exercises: string[]; preferTags: string[]; avoidTags: string[]; note: string }
+> = {
+  "cond-patellofemoral": {
+    stretches: ["supine-hamstring-strap", "quad-standing", "half-kneeling-hip-flexor"],
+    exercises: ["ex-side-lying-abduction", "ex-quad-set", "ex-sit-to-stand", "ex-glute-bridge"],
+    preferTags: ["hip-abduction", "quad-iso", "closed-chain", "glute"],
+    avoidTags: ["deep-knee-flexion-load", "deep-squat", "jump"],
+    note: "PFPS-style: hip/quad control, avoid painful deep loaded flexion early.",
+  },
+  "cond-acl-sprain": {
+    stretches: ["supine-hamstring-strap", "quad-standing", "childs-pose"],
+    exercises: ["ex-quad-set", "ex-terminal-knee-extension", "ex-glute-bridge", "ex-sit-to-stand"],
+    preferTags: ["quad", "hamstring", "neuromuscular", "closed-chain-gentle"],
+    avoidTags: ["plyometric", "cutting", "jump", "twist"],
+    note: "ACL-oriented early: quad activation, controlled closed-chain; no cutting/plyo.",
+  },
+  "cond-ankle-sprain": {
+    stretches: ["ankle-alphabet", "gastroc-wall"],
+    exercises: ["ex-heel-raises", "ex-tandem-balance", "ex-ankle-alphabet-strength", "ex-short-foot"],
+    preferTags: ["proprioception", "peroneal", "balance", "calf"],
+    avoidTags: ["jump", "cutting", "uneven-advanced"],
+    note: "Lateral ankle: ROM + progressive proprioception/balance before agility.",
+  },
+  "cond-achilles-tendinopathy": {
+    stretches: ["gastroc-wall", "soleus-wall", "ankle-alphabet"],
+    exercises: ["ex-heel-raises", "ex-wall-sit", "ex-sit-to-stand"],
+    preferTags: ["calf-raise", "isometric", "heavy-slow", "tendon"],
+    avoidTags: ["ballistic", "plyo", "sprint"],
+    note: "Achilles load management: progressive calf loading; avoid ballistic stretch early.",
+  },
+  "cond-plantar-fasciopathy": {
+    stretches: ["plantar-fascia-wall", "gastroc-wall", "ankle-alphabet"],
+    exercises: ["ex-heel-raises", "ex-short-foot", "ex-tandem-balance"],
+    preferTags: ["calf", "intrinsic-foot", "foot"],
+    avoidTags: ["barefoot-impact", "jump"],
+    note: "Plantar fascia: calf/foot mobility + progressive loading of plantar flexors/intrinsics.",
+  },
+  "cond-rotator-cuff": {
+    stretches: ["doorway-chest-stretch", "upper-trap-stretch", "open-book-thoracic"],
+    exercises: ["ex-shoulder-er-band", "ex-scapular-rows-band", "ex-serratus-punch", "ex-wall-pushup"],
+    preferTags: ["er-iso", "scapular", "rotator-cuff", "isometric"],
+    avoidTags: ["overhead-aggressive", "throw", "heavy-load"],
+    note: "RCRSP: scapular setting + graded ER/isometrics before aggressive overhead.",
+  },
+  "cond-cervical-strain": {
+    stretches: ["chin-tuck", "upper-trap-stretch", "doorway-chest-stretch", "open-book-thoracic"],
+    exercises: ["ex-cervical-isometrics", "ex-scapular-rows-band", "ex-thoracic-extension-foam"],
+    preferTags: ["cervical", "chin-tuck", "posture", "scapular"],
+    avoidTags: ["end-range", "ballistic", "heavy-load"],
+    note: "Cervical strain: deep neck flexor control, scapular endurance, thoracic mobility.",
+  },
+  "cond-low-back-strain": {
+    stretches: ["cat-cow", "pelvic-tilt", "childs-pose", "knee-to-chest"],
+    exercises: ["ex-bird-dog", "ex-dead-bug", "ex-glute-bridge", "ex-hip-hinge-dowel"],
+    preferTags: ["lumbar", "core", "glute", "motor-control", "hip-hinge"],
+    avoidTags: ["end-range-flexion-load", "twist-aggressive", "plyo"],
+    note: "Lumbar strain: protected mobility + lumbopelvic motor control + hip hinge pattern.",
+  },
+  "cond-discogenic-lbp": {
+    stretches: ["cat-cow", "pelvic-tilt", "open-book-thoracic", "childs-pose"],
+    exercises: ["ex-bird-dog", "ex-dead-bug", "ex-glute-bridge", "ex-hip-hinge-dowel"],
+    preferTags: ["extension", "core-control", "motor-control", "gentle"],
+    avoidTags: ["sit-flexion-bias", "sit-up", "end-range-flexion-load"],
+    note: "Discogenic pattern: motor control + prefer extension-friendly options; avoid loaded end-range flexion early.",
+  },
+  "cond-hamstring-strain": {
+    stretches: ["supine-hamstring-strap", "figure-four-glute", "half-kneeling-hip-flexor"],
+    exercises: ["ex-glute-bridge", "ex-bird-dog", "ex-hip-hinge-dowel"],
+    preferTags: ["nordic-progress", "bridge", "hamstring", "glute"],
+    avoidTags: ["endrange-hamstring-stretch", "sprint", "ballistic"],
+    note: "Hamstring strain: progressive load, avoid aggressive end-range stretch early.",
+  },
+  "cond-meniscus": {
+    stretches: ["supine-hamstring-strap", "quad-standing", "childs-pose"],
+    exercises: ["ex-quad-set", "ex-terminal-knee-extension", "ex-sit-to-stand", "ex-glute-bridge"],
+    preferTags: ["quad-set", "closed-chain-gentle", "bike"],
+    avoidTags: ["deep-squat", "twist", "pivot"],
+    note: "Meniscal irritation: quad activation, avoid deep loaded twist/compression early.",
+  },
+};
 
 /**
  * Build a clinical rehab plan used to drive intelligent hybrid routine creation.
@@ -340,11 +466,26 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
     currentMedicalHistory: input.currentMedicalHistory,
   });
 
+  const injuryTl =
+    story?.injuryTimeline ||
+    (paragraph.trim() ? parseInjuryTimeline(paragraph) : undefined);
+
   // Story-driven phase can override generic phase when free text is rich
   let phase = phaseFor({
     avgPain,
     patterns,
     clearanceRequired: cond.clearanceRequired,
+    activityResponse: story?.activityResponse,
+    irritability: story?.irritability,
+    functionalReady: Boolean(
+      story?.functionalLimits.length ||
+        story?.goals.length ||
+        story?.planHints.functionalGoals.length
+    ),
+    daysSinceAcute:
+      injuryTl?.source === "stated" && injuryTl.approxWeeksSince != null
+        ? Math.round(injuryTl.approxWeeksSince * 7)
+        : undefined,
   });
   if (story && (story.richness === "rich" || story.richness === "clinical" || story.richness === "moderate")) {
     const storyPhase = story.planHints.phaseBias;
@@ -356,12 +497,31 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
       "capacity-load",
       "function-return",
     ];
-    if (story.irritability === "high" || story.redFlagHints.length) {
+    if (
+      story.irritability === "high" ||
+      story.redFlagHints.length ||
+      story.activityResponse === "delayed-worse"
+    ) {
       phase = "protect-calm";
     } else if (order.indexOf(storyPhase) < order.indexOf(phase)) {
+      // Story more protective than heuristic
       phase = storyPhase;
-    } else if (story.irritability === "low" && avgPain <= 3) {
+    } else if (
+      story.irritability === "low" &&
+      story.activityResponse !== "worse" &&
+      story.activityResponse !== "delayed-worse" &&
+      avgPain <= 5
+    ) {
+      // Stated low irritability + better/same activity response → allow story progression phase
       phase = storyPhase;
+    } else if (
+      story.activityResponse === "better" &&
+      avgPain <= 5 &&
+      phase === "protect-calm" &&
+      !story.redFlagHints.length
+    ) {
+      // Activity eases symptoms: step up from pure protect when pain is moderate
+      phase = "motor-control";
     }
   }
 
@@ -381,13 +541,51 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
     ...desc.biases,
     ...cond.biases,
   ]) as ProgramBias[];
+  const protocolNotes: string[] = [];
 
+  // Injury pattern seeds (region/irritability frameworks)
   for (const pat of patterns) {
     const pref = PATTERN_PREFS[pat];
     preferTags.push(...pref.preferTags);
     avoidTags.push(...pref.avoidTags);
     preferredStretchIds.push(...pref.stretches);
     preferredExerciseIds.push(...pref.exercises);
+  }
+
+  // Condition-specific outpatient protocols (higher fidelity than region alone)
+  for (const cid of condIds) {
+    const proto = CONDITION_PROTOCOL[cid];
+    if (!proto) continue;
+    preferredStretchIds = [...proto.stretches, ...preferredStretchIds];
+    preferredExerciseIds = [...proto.exercises, ...preferredExerciseIds];
+    preferTags.push(...proto.preferTags);
+    avoidTags.push(...proto.avoidTags);
+    protocolNotes.push(proto.note);
+  }
+
+  // Functional task priority: put task-related exercises first in preferred list
+  if (story?.functionalLimits.length || story?.aggravators.length) {
+    const fn = `${story.functionalLimits.join(" ")} ${story.aggravators.join(" ")}`.toLowerCase();
+    const frontload: string[] = [];
+    if (/stair/.test(fn)) {
+      frontload.push("ex-sit-to-stand", "ex-step-up", "ex-terminal-knee-extension", "ex-quad-set");
+    }
+    if (/sit|desk/.test(fn)) {
+      frontload.push("ex-scapular-rows-band", "ex-thoracic-extension-foam", "ex-cervical-isometrics");
+    }
+    if (/walk|gait/.test(fn)) {
+      frontload.push("ex-heel-raises", "ex-glute-bridge", "ex-tandem-balance");
+    }
+    if (/reach|overhead|shoulder/.test(fn)) {
+      frontload.push("ex-serratus-punch", "ex-scapular-rows-band", "ex-shoulder-er-band");
+    }
+    if (/lift|bend|hinge/.test(fn)) {
+      frontload.push("ex-hip-hinge-dowel", "ex-bird-dog", "ex-dead-bug", "ex-glute-bridge");
+    }
+    if (/balance|fall|unsteady/.test(fn)) {
+      frontload.push("ex-tandem-balance", "ex-sit-to-stand", "ex-heel-raises");
+    }
+    preferredExerciseIds = unique([...frontload, ...preferredExerciseIds]);
   }
 
   preferTags = unique(preferTags);
@@ -437,6 +635,22 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
       preferKinds = ["exercise", "stretch"];
       preferTags.push("functional", "strength", "balance");
       break;
+  }
+
+  // Injury timeline minutes bias (0–6 weeks often shorter volume)
+  if (injuryTl?.source === "stated") {
+    minutesScale *= injuryTl.minutesScale;
+    if ((injuryTl.approxWeeksSince ?? 99) < 2) {
+      maxDifficulty = "beginner";
+    }
+    protocolNotes.push(
+      `Time since onset: ${injuryTl.label} → volume ×${injuryTl.minutesScale.toFixed(2)}; progress check ${injuryTl.progressOutlook[0]?.windowLabel || "weekly"}.`
+    );
+    if (injuryTl.progressOutlook[0]) {
+      protocolNotes.push(
+        `Progress outlook: ${injuryTl.progressOutlook[0].windowLabel} — ${injuryTl.progressOutlook[0].lookFor}`
+      );
+    }
   }
 
   // Story minutes / kind bias
@@ -511,6 +725,7 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
   const evidenceNotes = [
     `Phase: ${phaseLabel(phase)} — irritability-guided dosing (pain traffic light; mild productive discomfort ≤3/10 often acceptable if settles ≤24h).`,
     `Patterns: ${patterns.map(patternLabel).join("; ")}.`,
+    ...protocolNotes.slice(0, 3).map((n) => `Protocol: ${n}`),
     story
       ? `Free-text story: ${
           story.irritability !== "unknown"
@@ -526,12 +741,17 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
             : "; aggravators not specified (not assumed)"
         }${story.painNow != null ? `; pain ${story.painNow}/10 stated` : "; no 0–10 pain stated"}.`
       : null,
-    `Session built as graded outpatient-style HEP: ${PHASE_BLUEPRINT[phase].join(" → ")}.`,
+    `Session built as graded outpatient-style HEP: warm-up → target mobility → motor control → functional/capacity → cool-down (${PHASE_BLUEPRINT[phase].join(" → ")}).`,
     avgPain >= 5 || story?.irritability === "high"
-      ? "Higher irritability: prioritize control and protected ROM over aggressive stretch or load."
+      ? "Higher irritability: prioritize control and protected ROM over aggressive stretch or load; short volume most days."
       : story?.irritability === "low"
         ? "Lower irritability (stated evidence): progress motor control and capacity while maintaining mobility gains."
         : "Irritability not assumed from silence — use traffic-light dosing and reassess from what the user states.",
+    story?.activityResponse === "delayed-worse"
+      ? "24h delayed flare stated: cut volume ~30–50% and emphasize isometrics/motor control until response improves."
+      : story?.activityResponse === "better"
+        ? "Activity response better: allow graded capacity if pain rules stay green."
+        : null,
     ...(story?.planHints.evidenceLines.slice(0, 3) || []),
     cond.clinicalOutcomes[0]
       ? `Outcome focus example: ${cond.clinicalOutcomes[0].label} (${cond.clinicalOutcomes[0].timeframe}).`

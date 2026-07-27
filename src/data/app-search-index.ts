@@ -270,7 +270,7 @@ export const APP_SEARCH_INDEX: AppSearchItem[] = [
     ],
     href: "/sleep",
     description:
-      "Full PSQI questionnaire, sleep metrics, trends, and improvement suggestions",
+      "Full PSQI questionnaire correlated into Journal, Jeffery, Plan volume, modalities, and Insights",
   },
 
   // —— Libraries ——

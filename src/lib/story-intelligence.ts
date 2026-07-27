@@ -28,6 +28,12 @@ import {
   conversationalRegion,
   refineStoryFollowUps,
 } from "@/lib/interview-followups";
+import {
+  injuryTimelineLiveLines,
+  mergePhaseBias,
+  parseInjuryTimeline,
+  type InjuryTimeline,
+} from "@/lib/injury-timeline";
 
 function displayPreferredName(preferredName?: string | null): string {
   const p = (preferredName || "").trim();
@@ -112,6 +118,11 @@ export type StoryIntelligence = {
   sensory: string[];
   onset: OnsetType;
   timelineHints: string[];
+  /**
+   * Structured time since injury/onset (weeks 0–6+, months, years)
+   * + evidence-informed progress outlook. Parsed from free text only.
+   */
+  injuryTimeline: InjuryTimeline;
   /** Explicit 0–10 only (never filled from adjectives). */
   painNow?: number;
   painWorst?: number;
@@ -683,6 +694,9 @@ export function analyzeStoryIntelligence(
     },
   ]);
 
+  // Structured weeks / months / years since onset + progress outlook
+  const injuryTimeline = parseInjuryTimeline(raw);
+
   const { now: painNow, worst: painWorst } = extractPainNumbers(raw);
   const painSeverityQual = qualitativePainSeverity(raw);
 
@@ -1061,6 +1075,7 @@ export function analyzeStoryIntelligence(
     redFlagHints,
     onset,
     assumptions,
+    injuryTimeline,
   });
 
   const baseLiveRead = buildLiveReadLines({
@@ -1070,6 +1085,7 @@ export function analyzeStoryIntelligence(
     laterality,
     sensory,
     onset,
+    injuryTimeline,
     painNow,
     painWorst,
     painEstimate,
@@ -1096,6 +1112,7 @@ export function analyzeStoryIntelligence(
     laterality,
     sensory,
     onset,
+    injuryTimeline,
     painNow,
     painWorst,
     aggravators,
@@ -1129,6 +1146,7 @@ export function analyzeStoryIntelligence(
     sensory,
     onset,
     timelineHints,
+    injuryTimeline,
     painNow,
     painWorst,
     painEstimate,
@@ -1267,6 +1285,7 @@ export function analyzeStoryIntelligence(
     sensory,
     onset,
     timelineHints,
+    injuryTimeline,
     painNow,
     painWorst,
     painEstimate,
@@ -1555,6 +1574,7 @@ function buildPlanHints(s: {
   redFlagHints: string[];
   onset: OnsetType;
   assumptions?: StoryAssumption[];
+  injuryTimeline?: InjuryTimeline;
 }): StoryPlanHints {
   const preferTags: string[] = [];
   const avoidTags: string[] = [];
@@ -1751,6 +1771,37 @@ function buildPlanHints(s: {
     if (s.irritability !== "low") phaseBias = "protect-calm";
   }
 
+  // —— Time since injury (weeks / months / years) ——
+  const tl = s.injuryTimeline;
+  if (tl && tl.source === "stated") {
+    phaseBias =
+      mergePhaseBias(tl.phaseBias, phaseBias) || phaseBias;
+    minutesScale = Math.min(minutesScale, tl.minutesScale);
+    if ((tl.approxWeeksSince ?? 99) < 2) {
+      maxDifficulty = "beginner";
+      preferTags.push("gentle", "protected", "isometric");
+      avoidTags.push("plyo", "heavy-load", "impact");
+    }
+    evidenceLines.push(
+      `Time since onset stated: ${tl.label} (${tl.tissuePhase}) → phase bias ${phaseBias}, volume ×${minutesScale.toFixed(2)}.`
+    );
+    if (tl.progressOutlook[0]) {
+      evidenceLines.push(
+        `Progress outlook: ${tl.progressOutlook[0].windowLabel} — ${tl.progressOutlook[0].lookFor}`
+      );
+    }
+    if (tl.progressOutlook[1]) {
+      evidenceLines.push(
+        `Next milestone: ${tl.progressOutlook[1].windowLabel} — ${tl.progressOutlook[1].measures.slice(0, 2).join("; ")}.`
+      );
+    }
+    scoringBoost += 3;
+  } else if (tl && tl.source === "unknown") {
+    evidenceLines.push(
+      "Time since onset not stated — ask weeks (0–6+), months, or years to set realistic progress milestones."
+    );
+  }
+
   // Stated goals first; assumed goals (from limits) allowed for plan anchors when labeled.
   const functionalGoals = s.goals.length ? s.goals.slice(0, 6) : [];
 
@@ -1773,7 +1824,7 @@ function buildPlanHints(s: {
     movementKeywords: unique(movementKeywords).slice(0, 16),
     irritability: s.irritability,
     functionalGoals,
-    evidenceLines: unique(evidenceLines).slice(0, 8),
+    evidenceLines: unique(evidenceLines).slice(0, 10),
     scoringBoost,
   };
 }
@@ -1785,6 +1836,7 @@ function buildLiveReadLines(s: {
   laterality: Laterality;
   sensory: string[];
   onset: OnsetType;
+  injuryTimeline?: InjuryTimeline;
   painNow?: number;
   painWorst?: number;
   painEstimate?: StoryIntelligence["painEstimate"];
@@ -1839,6 +1891,10 @@ function buildLiveReadLines(s: {
       s.activityResponse !== "unknown" ? ` · after activity: ${s.activityResponse}` : ""
     }${s.onset !== "unknown" ? ` · onset ${s.onset}` : ""}.`
   );
+
+  if (s.injuryTimeline) {
+    lines.push(...injuryTimelineLiveLines(s.injuryTimeline).slice(0, 2));
+  }
 
   if (s.aggravators.length) {
     lines.push(`Aggravators you stated: ${s.aggravators.slice(0, 5).join(", ")}.`);
@@ -1982,6 +2038,7 @@ function buildAdaptiveQuestions(s: {
   laterality: Laterality;
   sensory: string[];
   onset: OnsetType;
+  injuryTimeline?: InjuryTimeline;
   painNow?: number;
   painWorst?: number;
   aggravators: string[];
@@ -2243,16 +2300,32 @@ function buildAdaptiveQuestions(s: {
     });
   }
 
-  // —— Onset ——
-  if (s.missingThemes.includes("onset-timeline") && s.raw.length >= 20) {
+  // —— Onset / time since injury ——
+  if (
+    (s.missingThemes.includes("onset-timeline") ||
+      s.injuryTimeline?.source === "unknown") &&
+    s.raw.length >= 20
+  ) {
     push({
       id: "adapt-onset",
-      label: "How did it start?",
-      question: `How did this start—suddenly after a lift, fall, or workout, or gradually over weeks—and has it been getting better, worse, or staying about the same?`,
+      label: "How long has this been going on?",
+      question: `${s.name}, about how long has this been going on—0 weeks (just started), 1, 2, 3, 4, 5, or 6+ weeks, or months/years since it started?`,
       category: "bother",
       theme: "onset-timeline",
-      reason: "Onset/timeline not clear yet",
-      priority: 77,
+      reason: "Need weeks/months/years since onset for phase & progress milestones",
+      priority: 91,
+    });
+  }
+  if (s.injuryTimeline?.source === "stated" && s.injuryTimeline.progressOutlook[0]) {
+    const m0 = s.injuryTimeline.progressOutlook[0];
+    push({
+      id: "adapt-progress-outlook",
+      label: "What would count as progress?",
+      question: `You are about ${s.injuryTimeline.label} into this. For the next check-in (${m0.windowLabel}), what would feel like real progress on a 0–10 scale for your hardest daily task—and what’s your pain most of the day now?`,
+      category: "goals",
+      theme: "goals",
+      reason: `Timeline ${s.injuryTimeline.label} → evidence-informed progress window`,
+      priority: 84,
     });
   }
 

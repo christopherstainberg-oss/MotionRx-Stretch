@@ -48,6 +48,7 @@ import {
   useConversationSpeed,
 } from "@/lib/use-conversation-speed";
 import { ClinicalCorrelationCard } from "@/components/ClinicalCorrelationCard";
+import { buildSleepCorrelation } from "@/lib/psqi";
 import {
   BookOpen,
   Bot,
@@ -82,6 +83,7 @@ export default function JournalPage() {
   const [pain, setPain] = useState(3);
   const [energy, setEnergy] = useState<1 | 2 | 3 | 4 | 5>(3);
   const [sleepQuality, setSleepQuality] = useState<1 | 2 | 3 | 4 | 5>(3);
+  const [sleepSeededFromPsqi, setSleepSeededFromPsqi] = useState(false);
   const [parts, setParts] = useState<BodyPart[]>([]);
   const [flexibilityNote, setFlexibilityNote] = useState("");
   const [didWell, setDidWell] = useState("");
@@ -161,6 +163,17 @@ export default function JournalPage() {
     if (typeof profile?.overallPain === "number") setPain(profile.overallPain);
     if (profile?.clinicalSymptomIds?.length) setClinicalSymptomIds(profile.clinicalSymptomIds);
     if (profile?.adlEntries?.length) setAdlEntries(profile.adlEntries);
+
+    // Seed sleep rating from latest PSQI so Journal stays correlated with Sleep section
+    try {
+      const sleep = buildSleepCorrelation();
+      if (sleep.hasData) {
+        setSleepQuality(sleep.journalSleepQuality);
+        setSleepSeededFromPsqi(true);
+      }
+    } catch {
+      /* ignore */
+    }
 
     fetch("/api/journal")
       .then((r) => r.json())
@@ -914,18 +927,32 @@ export default function JournalPage() {
               <div key={label}>
                 <label className="label">
                   {label} ({val}/5)
+                  {label === "Sleep" && sleepSeededFromPsqi ? (
+                    <span className="ml-1 font-normal text-sky-700 dark:text-sky-300">
+                      · from PSQI
+                    </span>
+                  ) : null}
                 </label>
                 <input
                   type="range"
                   min={1}
                   max={5}
                   value={val}
-                  onChange={(e) => setVal(Number(e.target.value) as 1 | 2 | 3 | 4 | 5)}
+                  onChange={(e) => {
+                    setVal(Number(e.target.value) as 1 | 2 | 3 | 4 | 5);
+                    if (label === "Sleep") setSleepSeededFromPsqi(false);
+                  }}
                   className="w-full accent-brand-600"
                 />
               </div>
             ))}
           </div>
+          {sleepSeededFromPsqi ? (
+            <p className="text-xs text-brand-600 dark:text-brand-400">
+              Sleep rating pre-filled from your latest Sleep PSQI score. Adjust if last night
+              differed from your usual month pattern.
+            </p>
+          ) : null}
 
           <label className="flex items-center gap-2.5 text-sm text-brand-800">
             <input

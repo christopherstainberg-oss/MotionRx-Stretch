@@ -34,6 +34,8 @@ import {
   analyzeStoryIntelligence,
   type StoryIntelligence,
 } from "@/lib/story-intelligence";
+import { buildSleepCorrelation } from "@/lib/psqi";
+import { parseInjuryTimeline } from "@/lib/injury-timeline";
 
 export type { ConversationPrompt, StoryPriorPrompt, StoryIntelligence, StoryFlowAction };
 export {
@@ -319,6 +321,48 @@ export function buildWrittenPlanApproach(
     paragraphs.push(
       `Session outline starts with: ${sampleMoves.join(" → ")}. Open any item to see step-by-step cues and institutional video guidance.`
     );
+  }
+
+  // Injury timeline + evidence-informed progress outlook (from free-text story)
+  const injuryTl = parseInjuryTimeline(ctx.paragraph || "");
+  if (injuryTl.source === "stated") {
+    const m0 = injuryTl.progressOutlook[0];
+    const m1 = injuryTl.progressOutlook[1];
+    paragraphs.push(
+      `Time since onset: ${injuryTl.label} (${injuryTl.tissuePhase} framing). Educational progress outline (not a guarantee): ${
+        m0
+          ? `${m0.windowLabel} — ${m0.lookFor} Track with ${m0.measures.slice(0, 2).join(" and ")}.`
+          : "reassess weekly with pain 0–10 and one functional task 0–10."
+      }${
+        m1
+          ? ` Then ${m1.windowLabel}: ${m1.lookFor}`
+          : ""
+      } Individual recovery varies; a licensed PT or physician should personalize milestones.`
+    );
+  } else {
+    paragraphs.push(
+      `Time since onset is not yet clear in your story. Adding weeks (0–6+), months, or years since this started lets us set evidence-informed check-ins (NPRS pain 0–10, PSFS-style function, 24-hour session response).`
+    );
+  }
+
+  // Sleep PSQI correlation note (client-only when available)
+  if (typeof window !== "undefined") {
+    const sleep = buildSleepCorrelation();
+    if (sleep.hasData) {
+      paragraphs.push(
+        `Sleep correlation: latest PSQI ${sleep.global}/21 (${sleep.bandLabel})${
+          sleep.painAtNight ? " with pain-related night disturbance" : ""
+        }. ${
+          (sleep.global ?? 0) >= 8
+            ? "Session volume may stay slightly shorter until recovery improves."
+            : "Protect wind-down and consistent wake times so plan progress sticks."
+        } Update Sleep anytime patterns change.`
+      );
+    } else {
+      paragraphs.push(
+        `Sleep correlation: no PSQI logged yet. Completing Sleep helps Jeffery and plan volume respect recovery—not only pain scores.`
+      );
+    }
   }
 
   const safety = routine.generatedFrom?.safetySummary?.slice(0, 3) || [];

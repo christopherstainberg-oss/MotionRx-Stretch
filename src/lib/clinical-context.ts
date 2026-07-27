@@ -19,6 +19,14 @@ import {
   analyzeStoryIntelligence,
   storyIntelCorrelationSummary,
 } from "@/lib/story-intelligence";
+import {
+  buildSleepCorrelation,
+  type SleepCorrelationSnapshot,
+} from "@/lib/psqi";
+import {
+  parseInjuryTimeline,
+  type InjuryTimeline,
+} from "@/lib/injury-timeline";
 
 export const CLINICAL_CONTEXT_KEY = "motionrx-clinical-context";
 export const ASSESSMENT_QA_KEY = "motionrx-assessment-qa";
@@ -63,6 +71,10 @@ export type CrossSectionCorrelation = {
   }>;
   storySnippet: string;
   preferredName: string;
+  /** Latest PSQI sleep correlation (always loaded when available) */
+  sleep: SleepCorrelationSnapshot;
+  /** Injury/onset timeline from Assessment free text when stated */
+  injuryTimeline: InjuryTimeline;
 };
 
 function safeParse<T>(raw: string | null): T | null {
@@ -272,6 +284,8 @@ export function correlateAcrossApp(opts?: {
   journalCount?: number;
 }): CrossSectionCorrelation {
   const context = loadClinicalContext();
+  const sleep = buildSleepCorrelation();
+  const injuryTimeline = parseInjuryTimeline(context?.freeText || "");
   const preferredName =
     context?.preferredName?.trim() ||
     (typeof window !== "undefined"
@@ -279,21 +293,47 @@ export function correlateAcrossApp(opts?: {
       : "friend");
 
   if (!context || (!context.freeText.trim() && !context.qa.length)) {
+    const insights: CrossSectionCorrelation["insights"] = [
+      {
+        id: "start-assess",
+        title: "Start with Assessment",
+        body: "Your free-text story drives Plan dosing, Jeffery coaching, Journal prompts, and modality suggestions.",
+        href: "/assessment",
+        severity: "action",
+      },
+    ];
+    if (!sleep.hasData) {
+      insights.push({
+        id: "start-sleep",
+        title: "Add Sleep (PSQI)",
+        body: "A PSQI score correlates into Journal sleep ratings, Jeffery recovery coaching, plan volume, and modality education.",
+        href: "/sleep",
+        severity: "info",
+      });
+    } else {
+      insights.push({
+        id: "sleep-core",
+        title: `Sleep PSQI ${sleep.global}/21`,
+        body: `${sleep.bandLabel}. ${sleep.summaryLines.slice(1, 3).join(" ")} Opens recovery dosing across the app.`,
+        href: "/sleep",
+        severity:
+          sleep.band === "poor" || sleep.band === "needs-attention"
+            ? "caution"
+            : "info",
+      });
+    }
     return {
       context: null,
       hasStory: false,
       preferredName,
       storySnippet: "",
-      summaryLines: ["No Assessment story yet — complete Story step for full correlation."],
-      insights: [
-        {
-          id: "start-assess",
-          title: "Start with Assessment",
-          body: "Your free-text story drives Plan dosing, Jeffery coaching, Journal prompts, and modality suggestions.",
-          href: "/assessment",
-          severity: "action",
-        },
+      summaryLines: [
+        "No Assessment story yet — complete Story step for full correlation.",
+        ...sleep.summaryLines.slice(0, 2),
       ],
+      insights,
+      sleep,
+      injuryTimeline,
     };
   }
 
@@ -330,6 +370,16 @@ export function correlateAcrossApp(opts?: {
   }
   if (context.qa.length) {
     summaryLines.push(`${context.qa.length} Assessment Q&A exchange(s).`);
+  }
+  if (sleep.hasData) {
+    summaryLines.push(...sleep.summaryLines.slice(0, 3));
+  } else {
+    summaryLines.push("Sleep PSQI not logged yet.");
+  }
+  if (injuryTimeline.source === "stated") {
+    summaryLines.push(...injuryTimeline.summaryLines.slice(0, 2));
+  } else if (story.length >= 20) {
+    summaryLines.push("Injury timeline (weeks/months/years) not stated yet.");
   }
   const histLine = clinicalHistorySummary({
     sex: context.sex,
@@ -402,18 +452,51 @@ export function correlateAcrossApp(opts?: {
   insights.push({
     id: "jeffery-bridge",
     title: "Jeffery uses this story",
-    body: "Jeffery loads Assessment free text, sex, PMH/CMH, and Q&A themes so coaching stays consistent.",
+    body: "Jeffery loads Assessment free text, sex, PMH/CMH, Q&A, and Sleep PSQI so coaching stays consistent.",
     href: "/jeffery",
     severity: "info",
   });
 
   insights.push({
     id: "journal-bridge",
-    title: "Journal reflects Assessment",
-    body: "Journal analysis can reference your story descriptors, conditions, and history for dosing signals.",
+    title: "Journal reflects Assessment + Sleep",
+    body: sleep.hasData
+      ? `Journal can seed sleep quality from your latest PSQI (${sleep.global}/21 → rating ${sleep.journalSleepQuality}/5) alongside story descriptors.`
+      : "Journal analysis can reference your story descriptors, conditions, and history; add Sleep PSQI to auto-align nightly ratings.",
     href: "/journal",
     severity: "info",
   });
+
+  if (sleep.hasData) {
+    insights.push({
+      id: "sleep-core",
+      title: `Sleep PSQI ${sleep.global}/21 · ${sleep.bandLabel}`,
+      body: [
+        sleep.summaryLines.slice(1, 3).join(" "),
+        sleep.topSuggestion
+          ? `Tip: ${sleep.topSuggestion.title}.`
+          : null,
+        poorSleepHint(sleep),
+      ]
+        .filter(Boolean)
+        .join(" "),
+      href: "/sleep",
+      severity:
+        sleep.band === "poor" || sleep.band === "needs-attention"
+          ? "caution"
+          : sleep.band === "fair"
+            ? "info"
+            : "info",
+    });
+  } else {
+    insights.push({
+      id: "start-sleep",
+      title: "Correlate Sleep (PSQI)",
+      body: "Log PSQI so recovery quality shapes plan volume, Jeffery coaching, modalities, and journal sleep ratings.",
+      href: "/sleep",
+      severity: "action",
+    });
+  }
 
   if (context.pastMedicalHistory || context.currentMedicalHistory) {
     insights.push({
@@ -425,6 +508,49 @@ export function correlateAcrossApp(opts?: {
     });
   }
 
+  if (sleep.hasData && (sleep.painAtNight || (sleep.global ?? 0) >= 5)) {
+    insights.push({
+      id: "sleep-modalities",
+      title: "Sleep-linked modalities",
+      body: "PSQI flags favor sleep hygiene, positioning, and calm wind-down education alongside your HEP—not aggressive late-evening load.",
+      href: "/modalities",
+      severity: "info",
+    });
+  }
+
+  if (injuryTimeline.source === "stated") {
+    const m0 = injuryTimeline.progressOutlook[0];
+    insights.push({
+      id: "injury-timeline",
+      title: `Time since onset: ${injuryTimeline.label}`,
+      body: [
+        `${injuryTimeline.tissuePhase} framing · phase bias ${injuryTimeline.phaseBias || "n/a"}.`,
+        m0
+          ? `Progress check (${m0.windowLabel}): ${m0.lookFor} Measures: ${m0.measures.slice(0, 2).join("; ")}.`
+          : "",
+        injuryTimeline.progressOutlook[1]
+          ? `Next: ${injuryTimeline.progressOutlook[1].windowLabel} — ${injuryTimeline.progressOutlook[1].lookFor}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      href: "/assessment",
+      severity:
+        injuryTimeline.tissuePhase === "hyperacute" ||
+        injuryTimeline.tissuePhase === "acute"
+          ? "caution"
+          : "info",
+    });
+  } else if (story.length >= 40) {
+    insights.push({
+      id: "injury-timeline-missing",
+      title: "Add time since injury/onset",
+      body: "State 0–6+ weeks, months, or years since this started so Plan, Journal, and Jeffery can set evidence-informed progress milestones (NPRS, PSFS-style function, 24h response).",
+      href: "/assessment",
+      severity: "action",
+    });
+  }
+
   return {
     context,
     hasStory: Boolean(story || context.qa.length),
@@ -432,7 +558,19 @@ export function correlateAcrossApp(opts?: {
     storySnippet,
     summaryLines,
     insights,
+    sleep,
+    injuryTimeline,
   };
+}
+
+function poorSleepHint(sleep: SleepCorrelationSnapshot): string {
+  if ((sleep.global ?? 0) >= 8) {
+    return "Plan volume may scale gently until sleep recovers.";
+  }
+  if (sleep.painAtNight) {
+    return "Night pain on PSQI pairs with gentle evening mobility and position education.";
+  }
+  return "Sleep quality is part of recovery dosing across Plan and Jeffery.";
 }
 
 /** Compact string blob for Jeffery / API context injection */
@@ -462,5 +600,22 @@ export function clinicalContextPromptBlob(ctx?: AssessmentStoryContext | null): 
     }
   }
   if (c.writtenApproach) lines.push(`Plan approach: ${c.writtenApproach.slice(0, 300)}`);
+  const sleep = buildSleepCorrelation();
+  if (sleep.hasData && sleep.promptBlob) {
+    lines.push(sleep.promptBlob);
+  } else if (!sleep.hasData) {
+    lines.push("Sleep PSQI: not logged yet.");
+  }
+  const injuryTl = parseInjuryTimeline(c.freeText || "");
+  if (injuryTl.source === "stated" && injuryTl.promptBlob) {
+    lines.push(injuryTl.promptBlob);
+  } else {
+    lines.push("Injury timeline: not stated (ask weeks/months/years since onset).");
+  }
   return lines.join("\n");
+}
+
+/** Convenience: sleep snapshot for any section (client-side). */
+export function loadSleepCorrelation(): SleepCorrelationSnapshot {
+  return buildSleepCorrelation();
 }

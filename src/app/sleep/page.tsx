@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { ClinicalCorrelationCard } from "@/components/ClinicalCorrelationCard";
 import {
   COMPONENT_LABELS,
   PSQI_DISTURBANCE_ITEMS,
@@ -30,6 +31,7 @@ import {
   Minus,
   Trash2,
 } from "lucide-react";
+import Link from "next/link";
 import { v4 as uuid } from "uuid";
 
 function formatShortDate(iso: string): string {
@@ -276,6 +278,36 @@ export default function SleepPage() {
         description="Score your sleep quality with a full month PSQI-style interview, track trends, and get practical ways to improve."
         eyebrow="Recovery & rest"
       />
+
+      <ClinicalCorrelationCard section="sleep" variant="compact" />
+
+      <div className="rounded-xl border border-sky-200/80 bg-sky-50/60 px-3 py-2.5 text-xs leading-relaxed text-sky-950 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100">
+        <p className="font-semibold text-sky-900 dark:text-sky-50">
+          Correlated across MotionRx
+        </p>
+        <p className="mt-1">
+          Logged PSQI scores shape Journal sleep ratings, Jeffery recovery coaching, plan
+          session volume, modality education (sleep hygiene / positioning), and Insights.
+          Keep scores current when sleep patterns change.
+        </p>
+        <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+          <Link href="/journal" className="font-semibold underline">
+            Journal
+          </Link>
+          <Link href="/jeffery" className="font-semibold underline">
+            Jeffery
+          </Link>
+          <Link href="/routines" className="font-semibold underline">
+            Plan / Routines
+          </Link>
+          <Link href="/modalities" className="font-semibold underline">
+            Modalities
+          </Link>
+          <Link href="/insights" className="font-semibold underline">
+            Insights
+          </Link>
+        </p>
+      </div>
 
       <p className="text-xs leading-relaxed text-brand-500 dark:text-brand-400">
         Educational self-tracking based on the Pittsburgh Sleep Quality Index (PSQI)

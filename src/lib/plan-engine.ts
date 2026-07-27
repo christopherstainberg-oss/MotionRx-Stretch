@@ -31,6 +31,12 @@ import {
   storyRegionMismatchPenalty,
   type StoryMovementPrefs,
 } from "@/lib/routine-specificity";
+import { buildSleepCorrelation } from "@/lib/psqi";
+import {
+  composePtSession,
+  reorderItemsLikePtSession,
+  type MovementCatalogRef,
+} from "@/lib/routine-session-composer";
 import type {
   BodyPart,
   Difficulty,
@@ -482,6 +488,9 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       })
     : null;
   const storyPrefs = storyPreferredMovements(storyIntel, { areas: input.areas });
+  // Sleep PSQI recovery correlation (client plan generation)
+  const sleepCorr =
+    typeof window !== "undefined" ? buildSleepCorrelation() : null;
 
   const adj = analyzeAssessmentAdjectives(input.concernParagraph || "");
   const safety = buildClinicalSafetyPlan({
@@ -521,15 +530,16 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   );
   const descHints = summarizeDescriptors(painDescriptorIds);
 
+  // Free-text condition matches are noisy — keep user-selected IDs fully, cap auto-matches
   const textConditions = input.concernParagraph
-    ? matchConditionsFromText(input.concernParagraph, 10)
+    ? matchConditionsFromText(input.concernParagraph, 4)
     : [];
   const conditionIds = Array.from(
     new Set([
       ...(input.conditionIds || []),
-      ...(parsed?.conditionIds || []),
-      ...textConditions,
-      ...(storyIntel?.conditionIds || []),
+      ...(parsed?.conditionIds || []).slice(0, 3),
+      ...textConditions.slice(0, 3),
+      ...(storyIntel?.conditionIds || []).slice(0, 3),
     ])
   );
   const condHints = summarizeConditions(conditionIds);
@@ -619,6 +629,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ...safety.preferTags,
       ...rehabWithStory.preferTags,
       ...(storyIntel?.planHints.preferTags || []),
+      ...(sleepCorr?.preferTags || []),
       ...(homeBased ? ["home", "minimal-equipment", "chair", "wall"] : []),
     ])
   );
@@ -639,7 +650,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       descHints.effectivePainBoost +
       condHints.effectivePainBoost +
       adj.irritabilityBoost +
-      (sxSummary?.irritabilityBoost ?? 0),
+      (sxSummary?.irritabilityBoost ?? 0) +
+      (sleepCorr?.irritabilityBoost ?? 0),
     biases: mergedBiases,
     avoidTags: mergedAvoid,
     preferTags: mergedPrefer,
@@ -669,7 +681,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       adlSummary?.maxDifficulty,
       sxSummary?.maxDifficulty,
       rehabWithStory.maxDifficulty,
-      storyIntel?.planHints.maxDifficulty
+      storyIntel?.planHints.maxDifficulty,
+      sleepCorr?.maxDifficulty
     ),
     preferKinds: descHints.preferKinds,
   };
@@ -898,9 +911,6 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     }))
     .sort((a, b) => b.score - a.score);
 
-  const items: RoutineItem[] = [];
-  const stretchIds: string[] = [];
-  const exerciseIds: string[] = [];
   let minutes = 0;
   let target = Math.max(8, Math.min(45, input.availableMinutes));
   target = Math.round(
@@ -910,7 +920,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       rehabWithStory.minutesScale *
       (storyIntel?.planHints.minutesScale ?? 1) *
       (adlSummary?.minutesScale ?? 1) *
-      (sxSummary?.minutesScale ?? 1)
+      (sxSummary?.minutesScale ?? 1) *
+      (sleepCorr?.minutesScale ?? 1)
   );
   if (
     combinedHints.biases.includes("short-volume") ||
@@ -926,118 +937,179 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   ) {
     target = Math.min(target, 10);
   }
-  target = Math.max(6, Math.min(45, target));
-
-  // Always start with mobility warm-up when possible
-  const warm = BASE_STRETCHES.find((s) => s.id === "cat-cow");
-  if (warm) {
-    items.push(toItem(warm.id, "stretch", homeVarFor("stretch", warm.id, homeBased)));
-    stretchIds.push(warm.id);
-    minutes += warm.durationSeconds / 60;
+  // Delayed flare / poor sleep → cap realistic home volume
+  if (storyIntel?.activityResponse === "delayed-worse") {
+    target = Math.min(target, Math.max(8, Math.round(target * 0.7)));
   }
-
-  // Extra gentle mobility when warm-up-heavy descriptors present
-  if (combinedHints.biases.includes("warm-up-heavy") || rehabWithStory.phase === "protect-calm") {
-    const extraWarm = BASE_STRETCHES.find((s) => s.id === "pelvic-tilt");
-    if (extraWarm && !stretchIds.includes(extraWarm.id)) {
-      items.push(
-        toItem(extraWarm.id, "stretch", homeVarFor("stretch", extraWarm.id, homeBased))
-      );
-      stretchIds.push(extraWarm.id);
-      minutes += extraWarm.durationSeconds / 60;
-    }
-  }
+  target = Math.max(6, Math.min(40, target));
 
   const wantStretch = prefer.includes("stretch");
-  const wantExercise =
-    prefer.includes("exercise") &&
-    !combinedHints.biases.includes("defer-to-provider") &&
-    !condHints.clearanceRequired &&
-    !safety.programBiases.includes("lvad");
+  // Only suppress exercises for true post-op / defer-to-provider clearance — not soft free-text matches
+  const hardClearance =
+    combinedHints.biases.includes("defer-to-provider") ||
+    safety.programBiases.includes("lvad") ||
+    (condHints.clearanceRequired &&
+      (rehabWithStory.patterns.includes("post-op-conservative") ||
+        /surgery|post-?op|replacement|fusion|s\/p/i.test(input.concernParagraph || "")));
+  const wantExercise = prefer.includes("exercise") && !hardClearance;
 
-  // Injury-phase quotas (evidence-informed HEP size) then bias adjustments
-  let maxStretches = wantStretch ? rehabWithStory.stretchQuota : 1;
-  let maxExercises = wantExercise ? rehabWithStory.exerciseQuota : 0;
-  if (combinedHints.stretchBias > 0.4) maxStretches += 1;
-  if (combinedHints.exerciseBias > 0.4) maxExercises += 1;
-  if (combinedHints.biases.includes("short-volume")) {
-    maxStretches = Math.min(maxStretches, 4);
-    maxExercises = Math.min(maxExercises, 3);
-  }
-  if (safety.programBiases.includes("sternal-precautions")) {
-    maxExercises = Math.min(maxExercises, 2);
-  }
-
-  // Seed story-preferred + pattern-preferred movements first (Describe Your Issue specificity)
-  for (const id of rehabWithStory.preferredStretchIds) {
-    if (stretchIds.length >= maxStretches || minutes >= target) break;
-    if (stretchIds.includes(id)) continue;
-    const s = BASE_STRETCHES.find((x) => x.id === id);
-    if (!s || !rankOk(s.difficulty, difficulty, avgPain)) continue;
+  // —— PT-style session composition (warm-up → mobility → control → function → cool-down) ——
+  // Ensure preferred library IDs are always eligible even if global score rank is low
+  const stretchById = new Map(BASE_STRETCHES.map((s) => [s.id, s]));
+  const exerciseById = new Map(BASE_EXERCISES.map((e) => [e.id, e]));
+  const stretchRefs: MovementCatalogRef[] = [];
+  const seenStretch = new Set<string>();
+  const pushStretchRef = (s: (typeof BASE_STRETCHES)[0] | undefined) => {
+    if (!s || seenStretch.has(s.id)) return;
+    if (!rankOk(s.difficulty, difficulty, avgPain)) return;
     const blob = `${s.name} ${s.tags.join(" ")}`.toLowerCase();
-    if (mergedAvoid.some((t) => t !== "all" && (blob.includes(t) || s.tags.includes(t)))) continue;
-    items.push(toItem(s.id, "stretch", homeVarFor("stretch", s.id, homeBased)));
-    stretchIds.push(s.id);
-    minutes += s.durationSeconds / 60;
-  }
-  if (wantExercise) {
-    for (const id of rehabWithStory.preferredExerciseIds) {
-      if (exerciseIds.length >= maxExercises || minutes >= target) break;
-      if (exerciseIds.includes(id)) continue;
-      const e = BASE_EXERCISES.find((x) => x.id === id);
-      if (!e || !rankOk(e.difficulty, difficulty, avgPain)) continue;
-      const blob = `${e.name} ${e.tags.join(" ")}`.toLowerCase();
-      if (mergedAvoid.some((t) => t !== "all" && (blob.includes(t) || e.tags.includes(t)))) continue;
-      items.push(toItem(e.id, "exercise", homeVarFor("exercise", e.id, homeBased)));
-      exerciseIds.push(e.id);
-      minutes += e.durationSeconds / 60;
-    }
-  }
+    if (mergedAvoid.some((t) => t !== "all" && (blob.includes(t) || s.tags.includes(t)))) return;
+    seenStretch.add(s.id);
+    stretchRefs.push({
+      id: s.id,
+      kind: "stretch",
+      name: s.name,
+      tags: s.tags,
+      bodyParts: s.bodyParts,
+      durationSeconds: s.durationSeconds,
+    });
+  };
+  for (const id of rehabWithStory.preferredStretchIds) pushStretchRef(stretchById.get(id));
+  for (const { s } of stretchCandidates) pushStretchRef(s);
 
-  let si = 0;
-  let ei = 0;
-  while (
-    minutes < target &&
-    (si < stretchCandidates.length || ei < exerciseCandidates.length) &&
-    items.length < 12
-  ) {
-    const canStretch =
-      wantStretch && si < stretchCandidates.length && stretchIds.length < maxStretches;
-    const canEx =
-      wantExercise && ei < exerciseCandidates.length && exerciseIds.length < maxExercises;
+  const exerciseRefs: MovementCatalogRef[] = [];
+  const seenEx = new Set<string>();
+  const pushExRef = (e: (typeof BASE_EXERCISES)[0] | undefined) => {
+    if (!wantExercise || !e || seenEx.has(e.id)) return;
+    if (!rankOk(e.difficulty, difficulty, avgPain)) return;
+    const blob = `${e.name} ${e.tags.join(" ")}`.toLowerCase();
+    if (mergedAvoid.some((t) => t !== "all" && (blob.includes(t) || e.tags.includes(t)))) return;
+    seenEx.add(e.id);
+    exerciseRefs.push({
+      id: e.id,
+      kind: "exercise",
+      name: e.name,
+      tags: e.tags,
+      bodyParts: e.bodyParts,
+      durationSeconds: e.durationSeconds,
+    });
+  };
+  for (const id of rehabWithStory.preferredExerciseIds) pushExRef(exerciseById.get(id));
+  for (const { e } of exerciseCandidates) pushExRef(e);
 
-    const nextStretch = prefer[0] === "exercise" ? false : canStretch;
-    const pickExercise =
-      canEx &&
-      (!nextStretch || prefer[0] === "exercise" || stretchIds.length > exerciseIds.length);
+  const composed = composePtSession({
+    phase: rehabWithStory.phase,
+    patterns: rehabWithStory.patterns,
+    priorityAreas: rehabWithStory.priorityAreas,
+    stretchCandidates: wantStretch ? stretchRefs : stretchRefs.slice(0, 3),
+    exerciseCandidates: exerciseRefs,
+    preferredStretchIds: wantStretch ? rehabWithStory.preferredStretchIds : [],
+    preferredExerciseIds: wantExercise ? rehabWithStory.preferredExerciseIds : [],
+    minutesTarget: target,
+    avoidTags: mergedAvoid,
+    functionalLimits: storyIntel?.functionalLimits,
+  });
 
-    if (pickExercise && canEx) {
-      const { e } = exerciseCandidates[ei++]!;
-      if (exerciseIds.includes(e.id)) continue;
-      items.push(toItem(e.id, "exercise", homeVarFor("exercise", e.id, homeBased)));
-      exerciseIds.push(e.id);
-      minutes += e.durationSeconds / 60;
-    } else if (canStretch) {
-      const { s } = stretchCandidates[si++]!;
-      if (stretchIds.includes(s.id)) continue;
+  const items: RoutineItem[] = [];
+  const stretchIds: string[] = [];
+  const exerciseIds: string[] = [];
+
+  for (const slot of composed.orderedIds) {
+    // Prefer completing a balanced HEP (at least 1 exercise when available) over hard minute cut
+    if (minutes >= target && items.length >= 6 && exerciseIds.length > 0) break;
+    if (slot.kind === "stretch") {
+      const s = BASE_STRETCHES.find((x) => x.id === slot.id);
+      if (!s || stretchIds.includes(s.id)) continue;
+      if (!rankOk(s.difficulty, difficulty, avgPain)) continue;
       items.push(toItem(s.id, "stretch", homeVarFor("stretch", s.id, homeBased)));
       stretchIds.push(s.id);
       minutes += s.durationSeconds / 60;
-    } else if (canEx) {
-      const { e } = exerciseCandidates[ei++]!;
-      if (exerciseIds.includes(e.id)) continue;
+    } else {
+      const e = BASE_EXERCISES.find((x) => x.id === slot.id);
+      if (!e || exerciseIds.includes(e.id)) continue;
+      if (!rankOk(e.difficulty, difficulty, avgPain)) continue;
       items.push(toItem(e.id, "exercise", homeVarFor("exercise", e.id, homeBased)));
       exerciseIds.push(e.id);
       minutes += e.durationSeconds / 60;
-    } else break;
+    }
   }
 
-  const cool = BASE_STRETCHES.find((s) => s.id === "childs-pose");
-  // Spinal BLT may still allow child's pose gentle — keep if not avoided
-  if (cool && !stretchIds.includes(cool.id) && !mergedAvoid.includes("flexion-load")) {
-    items.push(toItem(cool.id, "stretch", homeVarFor("stretch", cool.id, homeBased)));
-    stretchIds.push(cool.id);
-    minutes += cool.durationSeconds / 60;
+  // Safety net: ensure ≥1 exercise when scoring allows (PT HEPs are not stretch-only unless forced)
+  if (wantExercise && exerciseIds.length === 0) {
+    // Prefer any eligible preferred exercise, then top-scored — ignore soft score gaps
+    for (const id of rehabWithStory.preferredExerciseIds) {
+      const e = exerciseById.get(id);
+      if (!e) continue;
+      // Soften rank gate for safety-net so beginner HEPs always get activation/function
+      const painGate = Math.min(avgPain, 5.5);
+      if (!rankOk(e.difficulty, difficulty, painGate) && e.difficulty !== "beginner") continue;
+      const blob = `${e.name} ${e.tags.join(" ")}`.toLowerCase();
+      if (mergedAvoid.some((t) => t !== "all" && t.length > 2 && (blob.includes(t) || e.tags.includes(t))))
+        continue;
+      items.push(toItem(e.id, "exercise", homeVarFor("exercise", e.id, homeBased)));
+      exerciseIds.push(e.id);
+      minutes += e.durationSeconds / 60;
+      if (exerciseIds.length >= 2) break;
+    }
+    if (exerciseIds.length === 0) {
+      for (const { e } of exerciseCandidates) {
+        if (exerciseIds.includes(e.id)) continue;
+        items.push(toItem(e.id, "exercise", homeVarFor("exercise", e.id, homeBased)));
+        exerciseIds.push(e.id);
+        minutes += e.durationSeconds / 60;
+        if (exerciseIds.length >= 2) break;
+      }
+    }
+  }
+
+  // Safety net: if session still thin, fill mobility from top-scored stretches
+  if (items.length < 4) {
+    for (const { s } of stretchCandidates) {
+      if (stretchIds.includes(s.id) || items.length >= 8) break;
+      items.push(toItem(s.id, "stretch", homeVarFor("stretch", s.id, homeBased)));
+      stretchIds.push(s.id);
+      minutes += s.durationSeconds / 60;
+    }
+  }
+
+  // Final clinical order (handles safety-net fill)
+  const catalogForOrder: MovementCatalogRef[] = [
+    ...BASE_STRETCHES.map((s) => ({
+      id: s.id,
+      kind: "stretch" as const,
+      name: s.name,
+      tags: s.tags,
+      bodyParts: s.bodyParts,
+      durationSeconds: s.durationSeconds,
+    })),
+    ...BASE_EXERCISES.map((e) => ({
+      id: e.id,
+      kind: "exercise" as const,
+      name: e.name,
+      tags: e.tags,
+      bodyParts: e.bodyParts,
+      durationSeconds: e.durationSeconds,
+    })),
+  ];
+  const orderedItems = reorderItemsLikePtSession(
+    items,
+    catalogForOrder,
+    rehabWithStory.phase
+  );
+  items.length = 0;
+  items.push(...orderedItems);
+  // Rebuild id lists in final order
+  stretchIds.length = 0;
+  exerciseIds.length = 0;
+  minutes = 0;
+  for (const it of items) {
+    if (it.kind === "stretch") stretchIds.push(it.movementId);
+    else exerciseIds.push(it.movementId);
+    const m =
+      it.kind === "stretch"
+        ? BASE_STRETCHES.find((x) => x.id === it.movementId)
+        : BASE_EXERCISES.find((x) => x.id === it.movementId);
+    minutes += (m?.durationSeconds || 90) / 60;
   }
 
   const descDetail =
@@ -1068,11 +1140,14 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
           .slice(0, 5)
           .join("; ")}.`
       : "";
-  const rehabDetail = ` Rehab phase: ${rehabWithStory.summaryLines.join(" · ")}. Blueprint: ${rehabWithStory.sessionBlueprint.join(" → ")}.`;
+  const rehabDetail = ` Rehab phase: ${rehabWithStory.summaryLines.join(" · ")}. PT session order: ${composed.blueprintNarrative.join(" → ")}.`;
   const evidenceIntel =
     rehabWithStory.evidenceNotes.length > 0
-      ? ` Evidence-informed dosing: ${rehabWithStory.evidenceNotes.slice(0, 3).join(" ")}`
-      : "";
+      ? ` Evidence-informed dosing: ${[
+          ...rehabWithStory.evidenceNotes.slice(0, 3),
+          ...composed.dosingNotes.slice(0, 2),
+        ].join(" ")}`
+      : ` Dosing: ${composed.dosingNotes.slice(0, 2).join(" ")}`;
   const biasDetail = combinedHints.biases.length
     ? ` Program biases: ${combinedHints.biases.slice(0, 8).join(", ")}.`
     : "";
@@ -1094,28 +1169,36 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ? ` Evidence framing: ${condHints.clinicalOutcomes[0].evidenceNote}`
       : evidenceIntel;
 
+  const sleepDetail = sleepCorr?.hasData
+    ? ` Sleep PSQI ${sleepCorr.global}/21 (${sleepCorr.bandLabel}) → minutes scale ×${sleepCorr.minutesScale.toFixed(2)}.`
+    : "";
+  const storyDetail = storyPrefs.reasonLines.length
+    ? ` Story→movement: ${storyPrefs.reasonLines.slice(0, 2).join(" ")}`
+    : "";
+
   const adjustment: RoutineAdjustment = {
     at: new Date().toISOString(),
-    reason: `Injury-specific ${rehabWithStory.phase} plan from Assessment free-text story + clinical data (patterns: ${rehabWithStory.patterns.join(", ")}${storyPrefs.stretchIds.length || storyPrefs.exerciseIds.length ? "; story-seeded movements" : ""})`,
+    reason: `PT-style ${rehabWithStory.phase} HEP from free-text story, injury patterns (${rehabWithStory.patterns.join(", ")}), conditions, and irritability-based dosing${storyPrefs.stretchIds.length || storyPrefs.exerciseIds.length ? "; story-seeded functional movements" : ""}`,
     painFactor: avgPain,
     action:
       combinedHints.biases.includes("defer-to-provider") ||
       condHints.clearanceRequired ||
       avgPain >= 6 ||
       safety.programBiases.includes("nwb") ||
-      rehabWithStory.phase === "protect-calm"
+      rehabWithStory.phase === "protect-calm" ||
+      storyIntel?.activityResponse === "delayed-worse"
         ? "regress"
         : avgPain >= 4
           ? "modify"
-          : avgPain <= 2
+          : avgPain <= 2 && storyIntel?.irritability === "low"
             ? "progress"
             : "hold",
     details:
-      (avgPain >= 6
-        ? "Elevated pain: beginner-biased selection, prioritize control and gentle mobility, reduce aggressive end-range."
+      (avgPain >= 6 || storyIntel?.irritability === "high"
+        ? "High irritability: protected ROM + low-load motor control; short volume most days; no aggressive end-range."
         : avgPain >= 4
-          ? "Moderate pain: balanced mobility + activation with mid volume per outpatient load management."
-          : "Pain tolerable: include mobility and progressive exercise dosing with warm-up/cool-down.") +
+          ? "Moderate irritability: targeted mobility + activation with mid volume; progress only if 24h response stays green."
+          : "Lower irritability: maintain mobility, progress motor control and functional capacity with warm-up/cool-down structure.") +
       rehabDetail +
       hrDetail +
       descDetail +
@@ -1128,6 +1211,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       rfDetail +
       clearanceDetail +
       homeDetail +
+      sleepDetail +
+      storyDetail +
       evidenceDetail +
       evidenceIntel,
     source: "safety",
@@ -1152,31 +1237,42 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     userId,
     name:
       primaryRegion === "full-body"
-        ? `Evidence-based ${kindsLabel} plan (${rehabWithStory.phase.replace(/-/g, " ")})`
+        ? `PT-style ${kindsLabel} plan (${rehabWithStory.phase.replace(/-/g, " ")})`
         : `${primaryRegion.replace(/-/g, " ")}: ${patternLabel || kindsLabel}`,
     description: [
-      `Injury-specific outpatient-style HEP in the “${rehabWithStory.phase.replace(/-/g, " ")}” phase.`,
+      `Realistic outpatient HEP in the “${rehabWithStory.phase.replace(/-/g, " ")}” phase — structured like a licensed PT home program (not a random stretch list).`,
       storyIntel
-        ? `Story intelligence: ${storyIntel.irritability} irritability${
+        ? `From your story: ${
+            storyIntel.irritability !== "unknown"
+              ? `${storyIntel.irritability} irritability`
+              : "irritability not assumed"
+          }${
             storyIntel.activityResponse !== "unknown"
-              ? `, activity response ${storyIntel.activityResponse}`
+              ? `, activity ${storyIntel.activityResponse}`
               : ""
           }${
             storyIntel.functionalLimits.length
               ? `; function: ${storyIntel.functionalLimits.slice(0, 3).join(", ")}`
               : ""
-          }.`
+          }${storyIntel.painNow != null ? `; pain ${storyIntel.painNow}/10` : ""}.`
         : null,
       storyPrefs.reasonLines[0] || null,
-      `Priority regions: ${rehabWithStory.priorityAreas.slice(0, 4).map((a) => a.replace(/-/g, " ")).join(", ")}.`,
-      `Structure: ${rehabWithStory.sessionBlueprint.join(" → ")}.`,
+      `Priority regions: ${rehabWithStory.priorityAreas
+        .slice(0, 4)
+        .map((a) => a.replace(/-/g, " "))
+        .join(", ")}.`,
+      `Session order: warm-up → target mobility → motor control → functional/capacity → cool-down (${items.length} movements, ~${Math.max(1, Math.round(minutes))} min).`,
+      composed.dosingNotes[0] || null,
       medSummary
         ? `Includes ${userMeds.length} medication(s)${
             medSummary.bleedingRisk ? "; bleeding-risk → fall prevention bias" : ""
           }${medSummary.hrBlunting ? "; beta-blocker → prefer Borg/RPE over HR" : ""}.`
         : null,
       homeBased ? "Home-friendly variations preferred." : null,
-      "Selections ranked by free-text story intelligence, clinical descriptors, conditions, medical history, and irritability-based dosing for functional outcomes.",
+      sleepCorr?.hasData
+        ? `Sleep PSQI ${sleepCorr.global}/21 correlated into volume/recovery dosing.`
+        : null,
+      "Ranked by story intelligence, injury/condition protocols, medical history, safety precautions, and irritability-based load management for functional mobility and pain control.",
     ]
       .filter(Boolean)
       .join(" "),
@@ -1219,9 +1315,12 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ].slice(0, 18),
       safetyEducation: [
         {
-          title: "Evidence-informed session blueprint",
-          body: rehabWithStory.sessionBlueprint.join(" → "),
-          bullets: rehabWithStory.evidenceNotes.slice(0, 6),
+          title: "Evidence-informed PT session blueprint",
+          body: composed.blueprintNarrative.join(" → "),
+          bullets: [
+            ...composed.dosingNotes.slice(0, 3),
+            ...rehabWithStory.evidenceNotes.slice(0, 5),
+          ].slice(0, 8),
         },
         ...(storyIntel
           ? [

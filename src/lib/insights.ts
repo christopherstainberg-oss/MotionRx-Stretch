@@ -16,6 +16,7 @@ import {
 } from "@/data/clinical-conditions";
 import { getModalityById } from "@/data/modalities";
 import { buildVisitModalityPlan } from "@/lib/modality-engine";
+import { buildSleepCorrelation } from "@/lib/psqi";
 import { v4 as uuid } from "uuid";
 
 export function correlateInsights(input: {
@@ -32,6 +33,7 @@ export function correlateInsights(input: {
   const insights: CorrelatedInsight[] = [];
   const now = new Date().toISOString();
   const completed = input.sessions.filter((s) => s.completed);
+  const sleep = buildSleepCorrelation();
 
   // —— Pain descriptors correlation ——
   const fromRoutines = input.routines.flatMap(
@@ -49,6 +51,74 @@ export function correlateInsights(input: {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
     .map(([id]) => id);
+
+  // —— Sleep PSQI correlation (recovery dosing) ——
+  if (sleep.hasData) {
+    insights.push({
+      id: uuid(),
+      title: `Sleep PSQI ${sleep.global}/21 · ${sleep.bandLabel}`,
+      summary: sleep.summaryLines.join(" "),
+      severity:
+        sleep.band === "needs-attention" || sleep.band === "poor"
+          ? "caution"
+          : sleep.trend === "improving"
+            ? "positive"
+            : "info",
+      sources: ["sleep", "journal", "routines", "modalities"],
+      recommendation: sleep.topSuggestion
+        ? `${sleep.topSuggestion.title}: ${sleep.topSuggestion.detail}`
+        : "Keep logging PSQI monthly so recovery quality stays correlated with plan volume and Jeffery coaching.",
+      relatedModalityIds: sleep.modalityIds,
+      at: now,
+    });
+    if (sleep.painAtNight) {
+      insights.push({
+        id: uuid(),
+        title: "Night pain on PSQI",
+        summary:
+          "Your sleep questionnaire reports pain as a night disturbance. This often elevates next-day irritability and favors gentle evening mobility plus sleep-position education.",
+        severity: "caution",
+        sources: ["sleep", "pain", "modalities"],
+        recommendation:
+          "Pair Assessment night-pain language with Sleep positioning modalities and avoid hard late-evening sessions.",
+        relatedModalityIds: ["mod-sleep-position", "mod-sleep-hygiene"],
+        at: now,
+      });
+    }
+    // Journal sleep ratings vs PSQI
+    const journalSleep = input.journal
+      .map((j) => j.sleepQuality)
+      .filter((n): n is number => typeof n === "number");
+    if (journalSleep.length >= 2) {
+      const avgJ =
+        journalSleep.slice(0, 5).reduce((a, b) => a + b, 0) /
+        Math.min(5, journalSleep.length);
+      const psqiAsJournal = sleep.journalSleepQuality;
+      if (Math.abs(avgJ - psqiAsJournal) >= 1.5) {
+        insights.push({
+          id: uuid(),
+          title: "Journal sleep vs PSQI",
+          summary: `Recent journal sleep averages ~${avgJ.toFixed(1)}/5 while PSQI maps to ~${psqiAsJournal}/5. Different windows (nightly mood vs month PSQI) can diverge—use both for recovery decisions.`,
+          severity: "info",
+          sources: ["sleep", "journal"],
+          recommendation:
+            "Update PSQI when patterns change; keep nightly journal ratings for short-cycle trends.",
+          at: now,
+        });
+      }
+    }
+  } else {
+    insights.push({
+      id: uuid(),
+      title: "Sleep not correlated yet",
+      summary:
+        "No PSQI score is logged. Sleep quality strongly influences pain facilitation, plan volume, and daytime readiness.",
+      severity: "action",
+      sources: ["sleep"],
+      recommendation: "Complete the Sleep (PSQI) questionnaire so recovery is woven into Plan, Journal, Jeffery, and modalities.",
+      at: now,
+    });
+  }
 
   // Assessment story free-text correlation
   if (input.painProfile?.freeText?.trim()) {

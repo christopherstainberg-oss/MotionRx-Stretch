@@ -577,6 +577,7 @@ export interface CorrelatedInsight {
     | "routines"
     | "descriptors"
     | "modalities"
+    | "sleep"
   >;
   recommendation?: string;
   at: string;

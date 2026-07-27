@@ -1,16 +1,60 @@
 /**
  * Vetted institutional / clinical educational YouTube catalog.
  *
- * Inclusion rules:
- * - Publisher must be a recognized healthcare institution, government health agency,
- *   academic medical center, or system-run PT/patient-education channel
- *   (NIA/NIH, Mayo Clinic, Cleveland Clinic, Johns Hopkins Medicine, VHA, Dartmouth Health, etc.)
- * - Fitness-creator / influencer content is excluded
+ * HARD RULE: MotionRx serves ONLY healthcare / institutional education videos.
+ *
+ * Inclusion rules (all required):
+ * - Publisher must match ALLOWED_INSTITUTION_MARKERS (recognized hospital system,
+ *   government health agency, academic medical center, or official PT association
+ *   patient-education channel)
+ * - Fitness-creator / influencer / commercial gym content is excluded forever
+ * - Non-catalog YouTube IDs are never embedded (resolver + library enforce this)
  * - Every ID is verified active via YouTube oEmbed before catalog entry
  * - Prefer technique-specific demos (form/safety) over generic region videos
  *
- * Last verified: 2026-07-25 (oEmbed batch check)
+ * Allowed publisher families:
+ *   NIH / NIA · Mayo Clinic · Cleveland Clinic · Johns Hopkins Medicine ·
+ *   U.S. Department of Veterans Affairs (VHA) · Dartmouth Health ·
+ *   Dana-Farber Cancer Institute · American Physical Therapy Association (ChoosePT)
+ *
+ * Last verified: 2026-07-27 (allowlist + oEmbed)
  */
+
+/**
+ * Substrings that must appear in `institution` for a video to be serveable.
+ * Case-insensitive. Any catalog entry that fails this check is dropped at runtime.
+ */
+export const ALLOWED_INSTITUTION_MARKERS = [
+  "nih",
+  "national institute on aging",
+  "mayo clinic",
+  "cleveland clinic",
+  "johns hopkins",
+  "veterans affairs",
+  "department of veterans",
+  "vha",
+  "dartmouth health",
+  "dartmouth",
+  "dana-farber",
+  "dana farber",
+  "american physical therapy association",
+  "choosept",
+  "apta",
+] as const;
+
+/** Blocklist markers — if present, never serve even if somehow catalogued */
+export const BLOCKED_PUBLISHER_MARKERS = [
+  "howcast",
+  "athlete",
+  "crossfit",
+  "bodybuilding",
+  "gymshark",
+  "fitness blender",
+  "blogilates",
+  "yoga with adriene",
+  "personal trainer",
+  "influencer",
+] as const;
 
 export type InstitutionalVideo = {
   youtubeId: string;
@@ -32,6 +76,30 @@ export type InstitutionalVideo = {
    */
   accuracyTier?: "technique" | "regional" | "general";
 };
+
+/** True when institution string is an allowlisted healthcare / institutional publisher */
+export function isAllowedHealthcareInstitution(institution: string): boolean {
+  const s = (institution || "").toLowerCase();
+  if (!s.trim()) return false;
+  if (BLOCKED_PUBLISHER_MARKERS.some((b) => s.includes(b))) return false;
+  return ALLOWED_INSTITUTION_MARKERS.some((m) => s.includes(m));
+}
+
+/** True when a video object is in-catalog and institutional-allowlisted */
+export function isVettedInstitutionalVideo(
+  video: Pick<InstitutionalVideo, "youtubeId" | "institution"> | null | undefined
+): boolean {
+  if (!video?.youtubeId?.trim()) return false;
+  if (!isAllowedHealthcareInstitution(video.institution || "")) return false;
+  // Must be a known catalog ID (no freestyle YouTube URLs)
+  return Boolean(getCatalogVideoByIdLoose(video.youtubeId));
+}
+
+/** Internal lookup used before full export of getCatalogVideoById (hoisted helper) */
+function getCatalogVideoByIdLoose(youtubeId: string): InstitutionalVideo | undefined {
+  const id = youtubeId.trim();
+  return Object.values(INSTITUTIONAL_VIDEOS).find((v) => v.youtubeId === id);
+}
 
 /** All vetted, active institutional education videos */
 export const INSTITUTIONAL_VIDEOS: Record<string, InstitutionalVideo> = {
@@ -1259,14 +1327,18 @@ export function bestCatalogVideoForMovement(opts: {
   // —— Technique lock path ——
   if (inferredTech && inferredTech in VIDEO_BY_TECHNIQUE) {
     const mapKey = VIDEO_BY_TECHNIQUE[inferredTech as TechniqueKey];
-    const primary = enrichCatalogVideo(INSTITUTIONAL_VIDEOS[mapKey]);
+    const primaryRaw = INSTITUTIONAL_VIDEOS[mapKey];
+    const primary = isAllowedHealthcareInstitution(primaryRaw.institution)
+      ? enrichCatalogVideo(primaryRaw)
+      : enrichCatalogVideo(VIDEO_BY_REGION.general);
     let best = primary;
     // Modest map bias — not so large that a title-true peer can't win
     let bestScore =
       scoreCatalogVideoMatch(primary, { ...scoreOpts, requireTechnique: false }) + 40;
 
-    // Peers that own the same technique can dethrone the map primary
+    // Peers that own the same technique can dethrone the map primary (allowlisted only)
     for (const raw of Object.values(INSTITUTIONAL_VIDEOS)) {
+      if (!isAllowedHealthcareInstitution(raw.institution)) continue;
       const v = enrichCatalogVideo(raw);
       if (v.youtubeId === primary.youtubeId) continue;
       if (!videoOwnsTechnique(v, inferredTech)) continue;
@@ -1280,6 +1352,7 @@ export function bestCatalogVideoForMovement(opts: {
     // Safety: if primary is general-tier and a technique-tier owner exists, prefer owner
     if ((primary.accuracyTier === "general" || primary.accuracyTier === "regional") && inferredTech) {
       for (const raw of Object.values(INSTITUTIONAL_VIDEOS)) {
+        if (!isAllowedHealthcareInstitution(raw.institution)) continue;
         const v = enrichCatalogVideo(raw);
         if (!videoOwnsTechnique(v, inferredTech)) continue;
         if (v.accuracyTier !== "technique") continue;
@@ -1298,6 +1371,7 @@ export function bestCatalogVideoForMovement(opts: {
   let best: InstitutionalVideo | undefined;
   let bestScore = -Infinity;
   for (const raw of Object.values(INSTITUTIONAL_VIDEOS)) {
+    if (!isAllowedHealthcareInstitution(raw.institution)) continue;
     const v = enrichCatalogVideo(raw);
     const s = scoreCatalogVideoMatch(v, { ...scoreOpts, requireTechnique: false });
     if (s > bestScore) {
@@ -1403,12 +1477,45 @@ export function videoForMovement(opts: {
 
 /** Flat list of every catalog youtubeId (for audits / oEmbed re-checks) */
 export function allCatalogYoutubeIds(): string[] {
-  return Object.values(INSTITUTIONAL_VIDEOS).map((v) => v.youtubeId);
+  return allCatalogVideos().map((v) => v.youtubeId);
 }
 
-/** Lookup catalog entry by YouTube ID */
+/**
+ * Every catalog video that passes the institutional allowlist.
+ * Runtime safety net: drops any entry that fails publisher rules.
+ */
+export function allCatalogVideos(): InstitutionalVideo[] {
+  return Object.values(INSTITUTIONAL_VIDEOS)
+    .filter((v) => isAllowedHealthcareInstitution(v.institution))
+    .map((v) => enrichCatalogVideo(v));
+}
+
+/** Lookup catalog entry by YouTube ID (allowlisted institutions only) */
 export function getCatalogVideoById(youtubeId: string): InstitutionalVideo | undefined {
-  return Object.values(INSTITUTIONAL_VIDEOS).find((v) => v.youtubeId === youtubeId);
+  const id = (youtubeId || "").trim();
+  if (!id) return undefined;
+  const v = Object.values(INSTITUTIONAL_VIDEOS).find((x) => x.youtubeId === id);
+  if (!v) return undefined;
+  if (!isAllowedHealthcareInstitution(v.institution)) return undefined;
+  return enrichCatalogVideo(v);
+}
+
+/**
+ * Audit helper: returns catalog keys that fail institutional allowlist
+ * (should always be empty in production).
+ */
+export function auditNonInstitutionalCatalogEntries(): Array<{
+  key: string;
+  institution: string;
+  youtubeId: string;
+}> {
+  return Object.entries(INSTITUTIONAL_VIDEOS)
+    .filter(([, v]) => !isAllowedHealthcareInstitution(v.institution))
+    .map(([key, v]) => ({
+      key,
+      institution: v.institution,
+      youtubeId: v.youtubeId,
+    }));
 }
 
 /**
@@ -1428,7 +1535,7 @@ export function candidatesForRegion(region: VideoRegion | string): Institutional
   const key = region in VIDEO_BY_REGION ? (region as VideoRegion) : "general";
   push(VIDEO_BY_REGION[key]);
 
-  for (const v of Object.values(INSTITUTIONAL_VIDEOS)) {
+  for (const v of allCatalogVideos()) {
     if (v.regions.includes(key) || v.regions.includes(region)) push(v);
   }
 
@@ -1486,7 +1593,4 @@ export function inferRegionFromBodyParts(bodyParts: string[] | undefined): Video
   return "general";
 }
 
-/** Ultimate always-try list if region chain fails (every catalog ID) */
-export function allCatalogVideos(): InstitutionalVideo[] {
-  return Object.values(INSTITUTIONAL_VIDEOS);
-}
+

@@ -28,6 +28,8 @@ import {
   enrichJefferyLocalContent,
 } from "@/lib/jeffery-intelligence";
 import { sampleTherapeuticQuestions } from "@/data/therapeutic-question-catalog";
+import { buildSleepCorrelation } from "@/lib/psqi";
+import { parseInjuryTimeline } from "@/lib/injury-timeline";
 
 const OPEN_ENDED = [
   "On a scale of 0–10, what is your pain right now, and what makes it better or worse?",
@@ -195,6 +197,14 @@ export function jefferyLocalReply(
         ) || undefined
       : undefined);
 
+  const sleepCorr =
+    typeof globalThis !== "undefined" && "localStorage" in globalThis
+      ? buildSleepCorrelation()
+      : null;
+  const injuryTl = parseInjuryTimeline(
+    [story, userText, ctx.journal[0]?.body].filter(Boolean).join("\n")
+  );
+
   const known = [
     ...adjustments.slice(-8),
     ...ctx.journal.slice(0, 5).map((j) => {
@@ -225,6 +235,18 @@ export function jefferyLocalReply(
     ...(pmh ? [`Past medical history: ${pmh.slice(0, 160)}`] : []),
     ...(cmh ? [`Current medical history: ${cmh.slice(0, 160)}`] : []),
     ...(story ? [`Assessment story: ${story.slice(0, 160)}`] : []),
+    ...(sleepCorr?.hasData
+      ? [
+          `Sleep PSQI: ${sleepCorr.global}/21 (${sleepCorr.bandLabel}), efficiency ${sleepCorr.sleepEfficiency}%, trend ${sleepCorr.trend}${
+            sleepCorr.painAtNight ? ", pain at night" : ""
+          }`,
+        ]
+      : ["Sleep PSQI: not logged yet (encourage Sleep section)"]),
+    ...(injuryTl.source === "stated"
+      ? [
+          `Injury timeline: ${injuryTl.label} (≈${injuryTl.approxWeeksSince} wk · ${injuryTl.tissuePhase}); next progress check: ${injuryTl.progressOutlook[0]?.windowLabel || "n/a"}`,
+        ]
+      : ["Injury timeline: not stated — ask weeks/months/years since onset"]),
     ...ctx.routines
       .slice(0, 2)
       .flatMap((r) => {
@@ -383,7 +405,7 @@ export function jefferyLocalReply(
   let content = [
     greeting,
     ``,
-    `I read what you shared and correlated it with your Assessment story, sex/medical history (when provided), routines, sessions, journal, pain descriptors, and modality suggestions.`,
+    `I read what you shared and correlated it with your Assessment story, injury timeline (weeks/months/years since onset when stated), Sleep PSQI (when logged), sex/medical history (when provided), routines, sessions, journal, pain descriptors, and modality suggestions.`,
     known.length
       ? `**What I already know about your program:**\n${known
           .slice(0, 12)

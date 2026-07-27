@@ -15,6 +15,7 @@ const FIXED_KEYS = [
   "motionrx-assessment-qa",
   "clinical-history-profile",
   "motionrx-conversation-speed-ms",
+  "motionrx-psqi-logs",
 ] as const;
 
 const PREFIXES = ["routine:", "session:"] as const;

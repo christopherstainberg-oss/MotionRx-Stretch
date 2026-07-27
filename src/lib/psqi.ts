@@ -466,3 +466,182 @@ export const COMPONENT_LABELS: Record<keyof PsqiComponents, string> = {
   c6: "Medication",
   c7: "Daytime",
 };
+
+// ─── Cross-app correlation (Assessment, Plan, Journal, Jeffery, Insights) ───
+
+/** Compact snapshot other sections read without re-scoring full logs. */
+export type SleepCorrelationSnapshot = {
+  hasData: boolean;
+  logCount: number;
+  latestAt?: string;
+  global?: number;
+  band?: PsqiQualityBand;
+  bandLabel?: string;
+  qualityPercent?: number;
+  sleepEfficiency?: number;
+  hoursSleep?: number;
+  trend: "improving" | "worsening" | "stable" | "na";
+  /** Highest PSQI component codes (e.g. c5, c2) */
+  worstComponents: Array<{ code: keyof PsqiComponents; label: string; score: number }>;
+  /** Pain-at-night / disturbance signal from Q5i */
+  painAtNight: boolean;
+  /** Sleep meds used ≥ once/week (PSQI Q6 ≥ 1) */
+  usesSleepMeds: boolean;
+  /** Daytime dysfunction elevated */
+  daytimeDysfunction: boolean;
+  /** 1–5 journal-style sleep quality (derived from global; 5 = best) */
+  journalSleepQuality: 1 | 2 | 3 | 4 | 5;
+  /** Plan dosing: scale session minutes when recovery is limited */
+  minutesScale: number;
+  /** Soft irritability boost (0–1.5) for plan / modality engines */
+  irritabilityBoost: number;
+  maxDifficulty?: "beginner" | "intermediate";
+  preferTags: string[];
+  modalityIds: string[];
+  summaryLines: string[];
+  /** Jeffery / coach injection */
+  promptBlob: string;
+  topSuggestion?: SleepSuggestion;
+};
+
+export function getLatestPsqiLog(logs?: PsqiLogEntry[]): PsqiLogEntry | null {
+  const list = logs ?? loadPsqiLogs();
+  return list[0] || null;
+}
+
+/** Map PSQI global (0–21, lower better) → journal 1–5 sleep quality (higher better). */
+export function psqiGlobalToJournalSleep(global: number): 1 | 2 | 3 | 4 | 5 {
+  const g = Math.max(0, Math.min(21, Math.round(global)));
+  if (g <= 3) return 5;
+  if (g <= 5) return 4;
+  if (g <= 8) return 3;
+  if (g <= 12) return 2;
+  return 1;
+}
+
+/**
+ * Build sleep correlation payload from PSQI logs for the whole app.
+ * Safe on server (returns empty when no window / no logs).
+ */
+export function buildSleepCorrelation(logs?: PsqiLogEntry[]): SleepCorrelationSnapshot {
+  const list = logs ?? (typeof window !== "undefined" ? loadPsqiLogs() : []);
+  const empty: SleepCorrelationSnapshot = {
+    hasData: false,
+    logCount: 0,
+    trend: "na",
+    worstComponents: [],
+    painAtNight: false,
+    usesSleepMeds: false,
+    daytimeDysfunction: false,
+    journalSleepQuality: 3,
+    minutesScale: 1,
+    irritabilityBoost: 0,
+    preferTags: [],
+    modalityIds: [],
+    summaryLines: ["No PSQI sleep score logged yet — open Sleep to complete the questionnaire."],
+    promptBlob: "",
+  };
+  if (!list.length) return empty;
+
+  const latest = list[0]!;
+  const r = latest.result;
+  const a = latest.answers;
+  const trend = trendFromLogs(list);
+  const comps = r.components;
+  const worst = (Object.keys(comps) as (keyof PsqiComponents)[])
+    .map((code) => ({
+      code,
+      label: COMPONENT_LABELS[code],
+      score: comps[code],
+    }))
+    .filter((x) => x.score >= 1)
+    .sort((x, y) => y.score - x.score)
+    .slice(0, 4);
+
+  const painAtNight = clampScore(a.disturbances.i) >= 1;
+  const usesSleepMeds = clampScore(a.sleepMeds) >= 1;
+  const daytimeDysfunction = comps.c7 >= 2;
+  const poor = r.global >= 5;
+  const severe = r.global >= 10 || r.band === "needs-attention";
+
+  // Recovery-limited dosing: poor sleep → slightly shorter sessions, gentler tags
+  let minutesScale = 1;
+  if (severe) minutesScale = 0.78;
+  else if (r.global >= 8) minutesScale = 0.85;
+  else if (poor) minutesScale = 0.92;
+
+  let irritabilityBoost = 0;
+  if (severe) irritabilityBoost = 1.2;
+  else if (r.global >= 8) irritabilityBoost = 0.8;
+  else if (poor) irritabilityBoost = 0.4;
+  if (painAtNight) irritabilityBoost = Math.min(1.5, irritabilityBoost + 0.3);
+
+  const preferTags: string[] = ["recovery", "sleep"];
+  if (poor) preferTags.push("gentle", "protected", "warmup");
+  if (comps.c5 >= 2 || painAtNight) preferTags.push("gentle", "mobility", "evening-calm");
+  if (daytimeDysfunction) preferTags.push("short-volume", "energy-aware");
+  if (comps.c2 >= 2) preferTags.push("wind-down", "evening");
+
+  const modalityIds: string[] = [];
+  if (poor || painAtNight || comps.c5 >= 1) {
+    modalityIds.push("mod-sleep-hygiene", "mod-sleep-position");
+  }
+  if (comps.c2 >= 2 || comps.c1 >= 2) {
+    modalityIds.push("mod-breathing-downreg");
+  }
+
+  const suggestions = sleepSuggestionsFromScore(r);
+  const summaryLines: string[] = [
+    `PSQI ${r.global}/21 · ${r.bandLabel} · efficiency ${r.sleepEfficiency}% · ${r.hoursSleep}h sleep`,
+  ];
+  if (trend !== "na") summaryLines.push(`Sleep trend: ${trend}.`);
+  if (worst[0]) {
+    summaryLines.push(
+      `Priority sleep components: ${worst
+        .slice(0, 3)
+        .map((w) => `${w.label} ${w.score}/3`)
+        .join(", ")}.`
+    );
+  }
+  if (painAtNight) summaryLines.push("Pain-related night disturbance reported on PSQI.");
+  if (usesSleepMeds) summaryLines.push("Sleep medication use reported (review with clinician as needed).");
+  if (daytimeDysfunction) summaryLines.push("Daytime sleepiness / enthusiasm impact elevated.");
+
+  const promptLines = [
+    `Sleep (PSQI): global ${r.global}/21 (${r.bandLabel}), efficiency ${r.sleepEfficiency}%, usual sleep ${r.hoursSleep}h, trend ${trend}.`,
+    worst.length
+      ? `Worst components: ${worst.map((w) => `${w.label}=${w.score}`).join(", ")}.`
+      : "",
+    painAtNight ? "Pain contributes to night disturbance." : "",
+    usesSleepMeds ? "Uses sleep medication at least occasionally." : "",
+    daytimeDysfunction ? "Daytime dysfunction from sleep is elevated." : "",
+    suggestions[0] ? `Top sleep tip: ${suggestions[0].title} — ${suggestions[0].detail.slice(0, 140)}` : "",
+    "Correlate sleep with pain irritability, session volume, evening modality education, and journal sleep ratings.",
+  ].filter(Boolean);
+
+  return {
+    hasData: true,
+    logCount: list.length,
+    latestAt: latest.createdAt,
+    global: r.global,
+    band: r.band,
+    bandLabel: r.bandLabel,
+    qualityPercent: r.qualityPercent,
+    sleepEfficiency: r.sleepEfficiency,
+    hoursSleep: r.hoursSleep,
+    trend,
+    worstComponents: worst,
+    painAtNight,
+    usesSleepMeds,
+    daytimeDysfunction,
+    journalSleepQuality: psqiGlobalToJournalSleep(r.global),
+    minutesScale,
+    irritabilityBoost,
+    maxDifficulty: severe ? "beginner" : poor ? "beginner" : undefined,
+    preferTags: Array.from(new Set(preferTags)),
+    modalityIds: Array.from(new Set(modalityIds)),
+    summaryLines,
+    promptBlob: promptLines.join("\n"),
+    topSuggestion: suggestions[0],
+  };
+}

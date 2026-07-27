@@ -30,6 +30,7 @@ import {
   conversationalRegion,
   refineContinuousInterviewQuestions,
 } from "@/lib/interview-followups";
+import { parseInjuryTimeline } from "@/lib/injury-timeline";
 
 export { STORY_Q_MARKER, JOURNAL_SAFETY_NOTE };
 
@@ -525,6 +526,33 @@ function buildJournalAdaptiveQuestions(s: {
       reason: "Start journal interview",
       priority: 99,
       source: "counselor-common",
+    });
+  }
+
+  // Injury timeline → progress outlook (shared with Story / Jeffery)
+  const injuryTl = parseInjuryTimeline(s.raw);
+  if (injuryTl.source === "unknown" && s.raw.length >= 40 && s.painMentioned) {
+    push({
+      id: "j-injury-timeline",
+      label: "How long since it started?",
+      question: `${s.name}, about how long has this problem been going on—0 weeks (just started), 1–6 weeks, months, or years? That helps set realistic progress check-ins.`,
+      category: "intake",
+      theme: "primary",
+      reason: "Timeline needed for evidence-informed progress milestones",
+      priority: 90,
+      source: "outpatient-pt",
+    });
+  } else if (injuryTl.source === "stated" && injuryTl.progressOutlook[0]) {
+    const m0 = injuryTl.progressOutlook[0];
+    push({
+      id: "j-progress-milestone",
+      label: "Today’s progress marker",
+      question: `You’re about ${injuryTl.label} into this. For ${m0.windowLabel}, did you notice any change worth scoring—pain 0–10 most of the day, or confidence with one hard task 0–10?`,
+      category: "function",
+      theme: "function",
+      reason: `Timeline ${injuryTl.label} · ${m0.windowLabel}`,
+      priority: 82,
+      source: "outpatient-pt",
     });
   }
 

@@ -14,6 +14,8 @@ import {
   getCatalogVideoById,
   inferRegionFromBodyParts,
   inferTechniqueFromMovement,
+  isAllowedHealthcareInstitution,
+  isVettedInstitutionalVideo,
   movementVideoMatchScore,
   scoreCatalogVideoMatch,
   videoForRegion,
@@ -55,6 +57,20 @@ function toResolved(
     author?: string;
   }
 ): ResolvedVideo {
+  // Never emit a non-institutional publisher
+  if (!isAllowedHealthcareInstitution(video.institution || "")) {
+    const safe = videoForRegion(opts.region);
+    return {
+      youtubeId: safe.youtubeId,
+      title: safe.title,
+      source: safe.source,
+      institution: safe.institution,
+      swapped: true,
+      preferredId: opts.preferredId,
+      region: opts.region,
+      checkedAt: new Date().toISOString(),
+    };
+  }
   return {
     youtubeId: video.youtubeId,
     title: opts.titleOverride ?? video.title,
@@ -66,6 +82,18 @@ function toResolved(
     author: opts.author,
     checkedAt: new Date().toISOString(),
   };
+}
+
+/** Only catalog + allowlisted healthcare publishers may enter the resolve chain */
+function pushInstitutionalOnly(
+  ordered: InstitutionalVideo[],
+  seen: Set<string>,
+  v: InstitutionalVideo | undefined
+) {
+  if (!v || seen.has(v.youtubeId)) return;
+  if (!isVettedInstitutionalVideo(v)) return;
+  seen.add(v.youtubeId);
+  ordered.push(enrichCatalogVideo(v));
 }
 
 /**
@@ -120,18 +148,24 @@ export async function resolveLiveVideo(opts: {
         })
       : undefined;
 
-  // Preferred library ID only wins when it still correlates with the written movement.
-  // Stale / weak preferred IDs (generic workday minute for glute bridge, etc.) yield to contentBest.
+  // Preferred ID is used ONLY if it is already in the institutional catalog.
+  // Fitness-creator / random YouTube IDs are discarded — never embedded.
+  const requestedPreferred = opts.preferredId?.trim() || "";
+  const preferredInCatalog = requestedPreferred
+    ? getCatalogVideoById(requestedPreferred)
+    : undefined;
+
   let preferredId =
-    opts.preferredId?.trim() ||
+    preferredInCatalog?.youtubeId ||
     contentBest?.youtubeId ||
     VIDEO_BY_REGION[region]?.youtubeId ||
     VIDEO_BY_REGION.general.youtubeId;
 
-  const preferredMetaRaw = getCatalogVideoById(preferredId);
-  let preferredMeta = preferredMetaRaw
-    ? enrichCatalogVideo(preferredMetaRaw)
-    : undefined;
+  let preferredMeta = preferredInCatalog
+    ? enrichCatalogVideo(preferredInCatalog)
+    : getCatalogVideoById(preferredId)
+      ? enrichCatalogVideo(getCatalogVideoById(preferredId)!)
+      : undefined;
 
   if (preferredMeta && contentBest && (movementHint || technique)) {
     const prefScore = movementVideoMatchScore({
@@ -176,11 +210,8 @@ export async function resolveLiveVideo(opts: {
 
   const ordered: InstitutionalVideo[] = [];
   const seen = new Set<string>();
-  const push = (v: InstitutionalVideo | undefined) => {
-    if (!v || seen.has(v.youtubeId)) return;
-    seen.add(v.youtubeId);
-    ordered.push(enrichCatalogVideo(v));
-  };
+  const push = (v: InstitutionalVideo | undefined) =>
+    pushInstitutionalOnly(ordered, seen, v);
 
   // Content-best first when it won the specificity contest; else preferred then content
   if (contentBest && preferredId === contentBest.youtubeId) {
@@ -194,6 +225,7 @@ export async function resolveLiveVideo(opts: {
   }
 
   // Fallback chain: same technique family only, then same region, then ranked catalog
+  // (allCatalogVideos already filters to allowlisted institutions)
   const techKey = technique || preferredMeta?.techniques?.[0];
   if (techKey) {
     for (const raw of allCatalogVideos()) {
