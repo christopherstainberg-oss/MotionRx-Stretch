@@ -1132,7 +1132,12 @@ function questionNearDuplicate(a: string, b: string): boolean {
   const B = stems(nb);
   if (!A.size || !B.size) return false;
   let inter = 0;
-  for (const w of A) if (B.has(w)) inter++;
-  const union = new Set([...A, ...B]).size;
+  // Array.from avoids for..of / spread on Set under production TS without downlevelIteration
+  const aArr = Array.from(A);
+  const bArr = Array.from(B);
+  for (let i = 0; i < aArr.length; i++) {
+    if (B.has(aArr[i]!)) inter++;
+  }
+  const union = new Set(aArr.concat(bArr)).size;
   return inter >= 3 && inter / union >= 0.55;
 }
