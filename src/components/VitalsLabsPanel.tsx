@@ -366,35 +366,57 @@ export function VitalsLabsPanel({
               />
             </button>
             {allLabsExpanded && (
-              <div className="max-h-72 space-y-3 overflow-y-auto border-t border-brand-100 p-3 dark:border-brand-800">
+              <div className="max-h-80 space-y-4 overflow-y-auto border-t border-brand-100 p-3 dark:border-brand-800">
                 {labsByCategory.map(([category, tests]) => (
                   <div key={category}>
-                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-500">
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-brand-500">
                       {category}
                     </p>
-                    <ul className="space-y-1">
+                    <ul className="grid gap-2 sm:grid-cols-2">
                       {tests.map((t) => {
                         const range = resolveRange(t, sex);
+                        const hasLow = range.low != null;
+                        const hasHigh = range.high != null;
                         const rangeLabel =
-                          range.low != null && range.high != null
-                            ? `${range.low}–${range.high}`
-                            : range.high != null
-                              ? `< ${range.high}`
-                              : range.low != null
-                                ? `> ${range.low}`
-                                : "—";
+                          hasLow && hasHigh
+                            ? `${range.low} – ${range.high}`
+                            : hasHigh
+                              ? `Under ${range.high}`
+                              : hasLow
+                                ? `Over ${range.low}`
+                                : "Not Specified";
                         return (
                           <li
                             key={t.key}
-                            className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 rounded-lg px-2 py-1.5 text-xs hover:bg-brand-50/60 dark:hover:bg-brand-900/30"
+                            className="rounded-xl border border-brand-100 bg-white p-2.5 shadow-sm dark:border-brand-800 dark:bg-brand-950/60"
                           >
-                            <span className="font-medium text-brand-900 dark:text-brand-100">
-                              {t.label}
-                            </span>
-                            <span className="text-brand-500">
-                              {t.unit || "—"}
-                              {rangeLabel !== "—" ? ` · Ref ${rangeLabel}` : ""}
-                            </span>
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-xs font-semibold leading-snug text-brand-950 dark:text-brand-50">
+                                {t.label}
+                              </p>
+                              {t.unit ? (
+                                <span className="shrink-0 rounded-md bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-600 ring-1 ring-brand-100 dark:bg-brand-900 dark:text-brand-300 dark:ring-brand-700">
+                                  {t.unit}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="mt-2 rounded-lg bg-sky-50/80 px-2 py-1.5 dark:bg-sky-950/40">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">
+                                Target Range
+                              </p>
+                              <p className="mt-0.5 text-sm font-semibold tabular-nums text-sky-950 dark:text-sky-50">
+                                {rangeLabel}
+                              </p>
+                              {hasLow && hasHigh ? (
+                                <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-sky-700/80 dark:text-sky-300/80">
+                                  <span className="tabular-nums">{range.low}</span>
+                                  <span className="relative h-1.5 min-w-[3rem] flex-1 overflow-hidden rounded-full bg-sky-200/80 dark:bg-sky-900">
+                                    <span className="absolute inset-y-0 left-[15%] right-[15%] rounded-full bg-sky-500/70" />
+                                  </span>
+                                  <span className="tabular-nums">{range.high}</span>
+                                </div>
+                              ) : null}
+                            </div>
                           </li>
                         );
                       })}
