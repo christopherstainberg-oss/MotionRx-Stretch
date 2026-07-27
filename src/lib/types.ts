@@ -352,6 +352,8 @@ export interface PainProfile {
   adjectiveSummary?: string[];
   /** Current medications with doses (Assessment) */
   medications?: import("@/data/medications-types").UserMedicationEntry[];
+  /** Occupation catalog selections (Assessment) — from 100k backend catalog */
+  occupations?: import("@/data/occupations-types").UserOccupationEntry[];
   /** Clinical symptom IDs (Assessment / Journal) */
   clinicalSymptomIds?: string[];
   /** ADL difficulty entries */
@@ -526,6 +528,8 @@ export interface SymptomInput {
   homeBasedProgram?: boolean;
   /** Current medications with doses from Assessment */
   medications?: import("@/data/medications-types").UserMedicationEntry[];
+  /** Occupation catalog selections from Assessment (100k backend) */
+  occupations?: import("@/data/occupations-types").UserOccupationEntry[];
   /** Clinically significant symptom IDs */
   clinicalSymptomIds?: string[];
   /** Activities of daily living with assistance levels */

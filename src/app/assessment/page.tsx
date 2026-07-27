@@ -55,6 +55,8 @@ import type {
 import { PainScale } from "@/components/PainScale";
 import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
 import { MedicationPicker } from "@/components/MedicationPicker";
+import { OccupationPicker } from "@/components/OccupationPicker";
+import type { UserOccupationEntry } from "@/data/occupations";
 import { ClinicalSymptomPicker } from "@/components/ClinicalSymptomPicker";
 import { AdlPicker } from "@/components/AdlPicker";
 import { ModalityPlanPanels } from "@/components/ModalitySuggestions";
@@ -381,6 +383,7 @@ export default function AssessmentPage() {
   const [protocolNotes, setProtocolNotes] = useState("");
   const [homeBasedProgram, setHomeBasedProgram] = useState(true);
   const [medications, setMedications] = useState<UserMedicationEntry[]>([]);
+  const [occupations, setOccupations] = useState<UserOccupationEntry[]>([]);
   const [clinicalSymptomIds, setClinicalSymptomIds] = useState<string[]>([]);
   const [adlEntries, setAdlEntries] = useState<UserAdlEntry[]>([]);
   const [step, setStep] = useState(1);
@@ -459,6 +462,7 @@ export default function AssessmentPage() {
     if (local?.protocolNotes) setProtocolNotes(local.protocolNotes);
     if (local?.homeBasedProgram != null) setHomeBasedProgram(local.homeBasedProgram);
     if (local?.medications?.length) setMedications(local.medications);
+    if (local?.occupations?.length) setOccupations(local.occupations);
     if (local?.clinicalSymptomIds?.length) setClinicalSymptomIds(local.clinicalSymptomIds);
     if (local?.adlEntries?.length) setAdlEntries(local.adlEntries);
     if (local?.sex) setSex(local.sex);
@@ -489,6 +493,7 @@ export default function AssessmentPage() {
         if (d.profile?.protocolNotes) setProtocolNotes(d.profile.protocolNotes);
         if (d.profile?.homeBasedProgram != null) setHomeBasedProgram(d.profile.homeBasedProgram);
         if (d.profile?.medications?.length) setMedications(d.profile.medications);
+        if (d.profile?.occupations?.length) setOccupations(d.profile.occupations);
         if (d.profile?.clinicalSymptomIds?.length)
           setClinicalSymptomIds(d.profile.clinicalSymptomIds);
         if (d.profile?.sex && !local?.sex) setSex(d.profile.sex);
@@ -657,6 +662,7 @@ export default function AssessmentPage() {
       descriptorIds,
       qa: coachLog,
       writtenApproach: writtenApproach || undefined,
+      occupations,
     });
   }, [
     debouncedParagraph,
@@ -669,6 +675,7 @@ export default function AssessmentPage() {
     descriptorIds,
     coachLog,
     writtenApproach,
+    occupations,
   ]);
 
   useEffect(() => {
@@ -726,6 +733,7 @@ export default function AssessmentPage() {
       protocolNotes: protocolNotes.trim() || undefined,
       homeBasedProgram,
       medications,
+      occupations,
       clinicalSymptomIds,
       adlEntries,
       sex: sex || undefined,
@@ -753,6 +761,7 @@ export default function AssessmentPage() {
     protocolNotes,
     homeBasedProgram,
     medications,
+    occupations,
     clinicalSymptomIds,
     adlEntries,
     sex,
@@ -1285,6 +1294,7 @@ export default function AssessmentPage() {
       homeBasedProgram,
       adjectiveSummary: routine.generatedFrom?.adjectiveSummary,
       medications,
+      occupations,
       clinicalSymptomIds,
       adlEntries,
       sex: sex || undefined,
@@ -1892,6 +1902,31 @@ export default function AssessmentPage() {
           </SubSection>
 
           <SubSection
+            title="Occupation / daily role"
+            hint="Search the 100,000-entry occupation catalog or add custom. Shapes realistic HEP dosing for desk, labor, healthcare, driving, and more."
+            action={
+              occupations.length > 0 ? (
+                <span className="text-xs font-semibold text-brand-600">
+                  {occupations.length} listed
+                </span>
+              ) : null
+            }
+          >
+            <OccupationPicker
+              value={occupations}
+              onChange={setOccupations}
+              concernParagraph={debouncedParagraph}
+              compact
+              onInsertParagraph={(snippet) => {
+                setParagraph((p) => {
+                  if (p.includes(snippet.trim())) return p;
+                  return p.trim() ? `${p.trim()}\n\n${snippet}` : snippet;
+                });
+              }}
+            />
+          </SubSection>
+
+          <SubSection
             title="Current medications & doses"
             hint="Search the clinical library or add custom. Use “Add meds to my story” to place doses in your paragraph."
             action={
@@ -2488,6 +2523,30 @@ export default function AssessmentPage() {
                 ))}
               </div>
             )}
+          </SubSection>
+
+          <SubSection
+            title="Occupation / daily role"
+            hint="Same catalog as Step 1. Search 100,000 editions or custom titles for work-realistic HEP."
+            action={
+              occupations.length > 0 ? (
+                <span className="text-xs font-semibold text-brand-600">
+                  {occupations.length} listed
+                </span>
+              ) : null
+            }
+          >
+            <OccupationPicker
+              value={occupations}
+              onChange={setOccupations}
+              concernParagraph={debouncedParagraph}
+              onInsertParagraph={(snippet) => {
+                setParagraph((p) => {
+                  if (p.includes(snippet.trim())) return p;
+                  return p.trim() ? `${p.trim()}\n\n${snippet}` : snippet;
+                });
+              }}
+            />
           </SubSection>
 
           <SubSection

@@ -37,9 +37,9 @@ import {
 import {
   applyOccupationToPlanTags,
   occupationLiveLines,
-  parseOccupation,
   type OccupationProfile,
 } from "@/lib/occupation";
+import { resolveOccupationProfile } from "@/data/occupations";
 
 function displayPreferredName(preferredName?: string | null): string {
   const p = (preferredName || "").trim();
@@ -594,6 +594,8 @@ export function analyzeStoryIntelligence(
     pastMedicalHistory?: string;
     currentMedicalHistory?: string;
     goals?: string[];
+    /** Selected catalog occupations from Assessment picker */
+    selectedOccupations?: import("@/data/occupations-types").UserOccupationEntry[];
   }
 ): StoryIntelligence {
   const raw = (paragraph || "").trim();
@@ -709,8 +711,11 @@ export function analyzeStoryIntelligence(
 
   // Structured weeks / months / years since onset + progress outlook
   const injuryTimeline = parseInjuryTimeline(raw);
-  // Work / school / daily role for occupational load realism
-  const occupation = parseOccupation(raw);
+  // Work / school / daily role — free-text + 100k occupation catalog match
+  const occupation = resolveOccupationProfile({
+    freeText: raw,
+    selected: opts?.selectedOccupations,
+  });
 
   const { now: painNow, worst: painWorst } = extractPainNumbers(raw);
   const painSeverityQual = qualitativePainSeverity(raw);

@@ -485,6 +485,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         pastMedicalHistory: input.pastMedicalHistory,
         currentMedicalHistory: input.currentMedicalHistory,
         goals: input.goals,
+        selectedOccupations: input.occupations,
       })
     : null;
   const storyPrefs = storyPreferredMovements(storyIntel, { areas: input.areas });

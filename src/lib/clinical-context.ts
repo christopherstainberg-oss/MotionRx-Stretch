@@ -59,6 +59,8 @@ export type AssessmentStoryContext = {
   /** Occupation category label when stated (desk, labor, etc.) */
   occupationLabel?: string;
   occupationCategory?: string;
+  /** Selected catalog occupations from Assessment picker */
+  occupations?: import("@/data/occupations-types").UserOccupationEntry[];
   /** Latest written plan approach */
   writtenApproach?: string;
   routineId?: string;
@@ -129,6 +131,8 @@ export function saveClinicalContext(
   const freeText = partial.freeText ?? prev.freeText ?? "";
   const hist = freeText.trim().length >= 8 ? parseMedicalHistoryFromText(freeText) : null;
   const parsedSex = freeText.trim().length >= 8 ? parseSexFromText(freeText) : undefined;
+  const selectedOccupations =
+    partial.occupations ?? prev.occupations;
   const storyIntel =
     freeText.trim().length >= 8
       ? analyzeStoryIntelligence(freeText, {
@@ -142,6 +146,7 @@ export function saveClinicalContext(
             hist?.currentMedicalHistory ??
             prev.currentMedicalHistory,
           goals: partial.goals ?? prev.goals,
+          selectedOccupations,
         })
       : null;
 
@@ -197,14 +202,18 @@ export function saveClinicalContext(
       : prev.storyIntelLines,
     storyIrritability: storyIntel?.irritability ?? prev.storyIrritability,
     storyPhaseBias: storyIntel?.planHints.phaseBias ?? prev.storyPhaseBias,
+    occupations: selectedOccupations,
     occupationLabel:
-      storyIntel?.occupation?.source === "stated"
+      selectedOccupations?.[0]?.displayTitle ||
+      selectedOccupations?.[0]?.title ||
+      (storyIntel?.occupation?.source === "stated"
         ? storyIntel.occupation.label
-        : partial.occupationLabel ?? prev.occupationLabel,
+        : partial.occupationLabel ?? prev.occupationLabel),
     occupationCategory:
-      storyIntel?.occupation?.source === "stated"
+      selectedOccupations?.[0]?.category ||
+      (storyIntel?.occupation?.source === "stated"
         ? storyIntel.occupation.category
-        : partial.occupationCategory ?? prev.occupationCategory,
+        : partial.occupationCategory ?? prev.occupationCategory),
     writtenApproach: partial.writtenApproach ?? prev.writtenApproach,
     routineId: partial.routineId ?? prev.routineId,
     updatedAt: new Date().toISOString(),

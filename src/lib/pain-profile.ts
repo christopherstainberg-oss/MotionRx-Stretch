@@ -37,6 +37,7 @@ export function saveLocalPainProfile(
     homeBasedProgram: partial.homeBasedProgram,
     adjectiveSummary: partial.adjectiveSummary,
     medications: partial.medications,
+    occupations: partial.occupations,
     clinicalSymptomIds: partial.clinicalSymptomIds,
     adlEntries: partial.adlEntries,
     sex: partial.sex,

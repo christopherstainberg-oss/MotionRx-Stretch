@@ -10,6 +10,8 @@
     "lint": "next lint",
     "test:story-intel": "tsx scripts/test-story-intelligence.mjs",
     "test:gravatar": "tsx scripts/test-gravatar.mjs",
+    "test:occupations": "tsx scripts/test-occupation-catalog.mjs",
+    "gen:occupations": "node scripts/gen-occupations.mjs",
     "db:seed": "tsx scripts/seed.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "postinstall": "echo Ready"
