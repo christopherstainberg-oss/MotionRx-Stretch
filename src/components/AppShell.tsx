@@ -8,14 +8,20 @@ import { OfflineBanner } from "@/components/OfflineBanner";
 import { VideoCatalogRefresh } from "@/components/VideoCatalogRefresh";
 import { DEFAULT_APP_NAME } from "@/data/names";
 import { apiFetch } from "@/lib/api-client";
+import { isLoginBypassEnabled } from "@/lib/preview-auth";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const bypassLogin = isLoginBypassEnabled();
   const isAuthScreen = pathname === "/login" || pathname === "/";
-  const [authReady, setAuthReady] = useState(isAuthScreen);
+  const [authReady, setAuthReady] = useState(isAuthScreen || bypassLogin);
 
   useEffect(() => {
+    if (bypassLogin) {
+      setAuthReady(true);
+      return;
+    }
     if (isAuthScreen) {
       setAuthReady(true);
       return;
@@ -38,7 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isAuthScreen, pathname, router]);
+  }, [bypassLogin, isAuthScreen, pathname, router]);
 
   if (isAuthScreen) {
     return (

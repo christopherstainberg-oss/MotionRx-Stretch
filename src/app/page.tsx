@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
+import { isLoginBypassEnabled } from "@/lib/preview-auth";
 
-/** App entry point: always start on the login / welcome screen */
+/** App entry: login normally; Home when preview bypass is enabled */
 export default function IndexPage() {
+  if (isLoginBypassEnabled()) {
+    redirect("/home");
+  }
   redirect("/login");
 }
