@@ -11,7 +11,6 @@ import {
 import {
   LAB_TESTS,
   LAB_TEST_BY_KEY,
-  interpretLabValue,
   resolveRange,
   type LabReport,
   type LabValueEntry,
@@ -68,8 +67,6 @@ export function VitalsLabsPanel({
   const [paste, setPaste] = useState("");
   const [parseNote, setParseNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [manualKey, setManualKey] = useState("hemoglobin");
-  const [manualVal, setManualVal] = useState("");
 
   const refresh = useCallback(() => {
     setVitals(loadVitals());
@@ -202,33 +199,6 @@ export function VitalsLabsPanel({
         : `No values found. ${report.parseWarnings?.join(" ") || ""}`
     );
     setPaste("");
-    refresh();
-  }
-
-  function addManualLab() {
-    const n = Number(manualVal);
-    if (!Number.isFinite(n)) return;
-    const def = LAB_TEST_BY_KEY[manualKey];
-    if (!def) return;
-    const interp = interpretLabValue(def, n, sex);
-    const report: LabReport = {
-      id: `lab-manual-${Date.now()}`,
-      collectedAt: new Date().toISOString().slice(0, 10),
-      uploadedAt: new Date().toISOString(),
-      fileName: "manual-entry",
-      fileType: "manual",
-      values: [
-        {
-          key: def.key,
-          value: n,
-          unit: def.unit,
-          status: interp.status,
-          source: "manual",
-        },
-      ],
-    };
-    addLabReport(report);
-    setManualVal("");
     refresh();
   }
 
@@ -483,35 +453,6 @@ export function VitalsLabsPanel({
               onClick={parsePaste}
             >
               Parse Paste
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-brand-100 p-3 dark:border-brand-800">
-            <label className="min-w-[10rem] flex-1 text-xs">
-              Manual Test
-              <select
-                className="input mt-0.5 w-full text-sm"
-                value={manualKey}
-                onChange={(e) => setManualKey(e.target.value)}
-              >
-                {LAB_TESTS.map((t) => (
-                  <option key={t.key} value={t.key}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="w-28 text-xs">
-              Value
-              <input
-                className="input mt-0.5 w-full text-sm"
-                value={manualVal}
-                onChange={(e) => setManualVal(e.target.value)}
-                inputMode="decimal"
-              />
-            </label>
-            <button type="button" className="btn-primary text-xs" onClick={addManualLab}>
-              Add
             </button>
           </div>
 
