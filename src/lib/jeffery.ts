@@ -30,6 +30,7 @@ import {
 import { sampleTherapeuticQuestions } from "@/data/therapeutic-question-catalog";
 import { buildSleepCorrelation } from "@/lib/psqi";
 import { parseInjuryTimeline } from "@/lib/injury-timeline";
+import { parseOccupation } from "@/lib/occupation";
 
 const OPEN_ENDED = [
   "On a scale of 0–10, what is your pain right now, and what makes it better or worse?",
@@ -204,6 +205,9 @@ export function jefferyLocalReply(
   const injuryTl = parseInjuryTimeline(
     [story, userText, ctx.journal[0]?.body].filter(Boolean).join("\n")
   );
+  const occupation = parseOccupation(
+    [story, userText, ctx.journal[0]?.body].filter(Boolean).join("\n")
+  );
 
   const known = [
     ...adjustments.slice(-8),
@@ -247,6 +251,11 @@ export function jefferyLocalReply(
           `Injury timeline: ${injuryTl.label} (≈${injuryTl.approxWeeksSince} wk · ${injuryTl.tissuePhase}); next progress check: ${injuryTl.progressOutlook[0]?.windowLabel || "n/a"}`,
         ]
       : ["Injury timeline: not stated — ask weeks/months/years since onset"]),
+    ...(occupation.source === "stated"
+      ? [
+          `Occupation: ${occupation.label} (demands: ${occupation.demands.slice(0, 3).join(", ") || "n/a"}); HEP bias: ${occupation.preferTags.slice(0, 5).join(", ")}`,
+        ]
+      : ["Occupation: not stated — ask desk / standing / lifting / driving / healthcare / school / sport / retired"]),
     ...ctx.routines
       .slice(0, 2)
       .flatMap((r) => {

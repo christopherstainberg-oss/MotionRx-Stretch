@@ -27,6 +27,7 @@ import {
 } from "@/lib/interview-followups";
 import { buildSleepCorrelation } from "@/lib/psqi";
 import { parseInjuryTimeline, injuryTimelineLiveLines } from "@/lib/injury-timeline";
+import { parseOccupation, occupationLiveLines } from "@/lib/occupation";
 
 export type JefferyTheme =
   | "primary"
@@ -375,6 +376,9 @@ function buildJefferyLiveRead(s: {
   if (s.story.injuryTimeline) {
     lines.push(...injuryTimelineLiveLines(s.story.injuryTimeline).slice(0, 2));
   }
+  if (s.story.occupation) {
+    lines.push(...occupationLiveLines(s.story.occupation).slice(0, 2));
+  }
   if (s.journal.moodWords.length) {
     lines.push(`Mood language: ${s.journal.moodWords.slice(0, 3).join(", ")}.`);
   }
@@ -471,6 +475,33 @@ function buildJefferyAdaptive(s: {
       theme: "goals",
       reason: `Timeline ${injuryTl.label} → ${m0.windowLabel}`,
       priority: 87,
+    });
+  }
+
+  const occBlob = [s.story.raw, s.lastUser, s.journal.raw].filter(Boolean).join("\n");
+  const occ =
+    s.story.occupation?.source === "stated"
+      ? s.story.occupation
+      : parseOccupation(occBlob);
+  if (occ.source === "unknown" && s.coveredThemes.includes("primary")) {
+    push({
+      id: "jf-occupation",
+      label: "Work or school demands?",
+      question: `${s.name}, what does a typical work or school day demand—mostly sitting, standing, lifting, driving, patient care, training/sport, caregiving, or retired? That keeps the plan realistic.`,
+      category: "function",
+      theme: "function",
+      reason: "Occupation needed for work-specific HEP & coaching",
+      priority: 91,
+    });
+  } else if (occ.source === "stated") {
+    push({
+      id: "jf-occupation-load",
+      label: "Today’s work/school load",
+      question: `You described ${occ.label}. How is that role loading ${regionPhrase} lately—and what one workday change (breaks, lift mechanics, shoes, seat) would help most?`,
+      category: "function",
+      theme: "function",
+      reason: `Occupation: ${occ.label}`,
+      priority: 84,
     });
   }
 

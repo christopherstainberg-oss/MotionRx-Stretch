@@ -31,6 +31,7 @@ import {
   refineContinuousInterviewQuestions,
 } from "@/lib/interview-followups";
 import { parseInjuryTimeline } from "@/lib/injury-timeline";
+import { parseOccupation } from "@/lib/occupation";
 
 export { STORY_Q_MARKER, JOURNAL_SAFETY_NOTE };
 
@@ -497,6 +498,9 @@ function buildJournalAdaptiveQuestions(s: {
   regions: BodyPart[];
 }): JournalAdaptiveQuestion[] {
   const q: JournalAdaptiveQuestion[] = [];
+  const regionPhrase = conversationalRegion(
+    s.regions[0] ? BODY_PART_LABELS[s.regions[0]] || s.regions[0] : "this area"
+  );
   const push = (item: JournalAdaptiveQuestion) => {
     if (q.some((x) => x.id === item.id)) return;
     if (s.raw.includes(item.question.slice(0, Math.min(36, item.question.length)))) return;
@@ -552,6 +556,32 @@ function buildJournalAdaptiveQuestions(s: {
       theme: "function",
       reason: `Timeline ${injuryTl.label} · ${m0.windowLabel}`,
       priority: 82,
+      source: "outpatient-pt",
+    });
+  }
+
+  // Occupation / workday load (shared with Story / Jeffery / Plan)
+  const occ = parseOccupation(s.raw);
+  if (occ.source === "unknown" && s.raw.length >= 40) {
+    push({
+      id: "j-occupation",
+      label: "Work or school day?",
+      question: `${s.name}, what does a typical work or school day demand—mostly sitting, standing, lifting, driving, patient care, training, caregiving, or retired? That helps match today’s entry to real load.`,
+      category: "function",
+      theme: "function",
+      reason: "Occupation shapes realistic journal → plan correlation",
+      priority: 88,
+      source: "outpatient-pt",
+    });
+  } else if (occ.source === "stated") {
+    push({
+      id: "j-occupation-day",
+      label: "How did work/school load feel?",
+      question: `You described ${occ.label}. How did that role load ${regionPhrase} today—lighter, same, or heavier than usual—and did symptoms build during the day or after?`,
+      category: "function",
+      theme: "function",
+      reason: `Occupation: ${occ.label}`,
+      priority: 80,
       source: "outpatient-pt",
     });
   }

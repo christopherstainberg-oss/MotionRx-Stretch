@@ -6,7 +6,15 @@ import {
   correlateAcrossApp,
   type CrossSectionCorrelation,
 } from "@/lib/clinical-context";
-import { BookOpen, Bot, ListChecks, Moon, Sparkles, Stethoscope } from "lucide-react";
+import {
+  BookOpen,
+  Bot,
+  Briefcase,
+  ListChecks,
+  Moon,
+  Sparkles,
+  Stethoscope,
+} from "lucide-react";
 
 type Props = {
   /** Compact single-line vs full multi-insight card */
@@ -123,6 +131,8 @@ export function ClinicalCorrelationCard({
     "sleep-modalities": Moon,
     "injury-timeline": Sparkles,
     "injury-timeline-missing": Sparkles,
+    occupation: Briefcase,
+    "occupation-missing": Briefcase,
   };
 
   return (
@@ -136,7 +146,8 @@ export function ClinicalCorrelationCard({
             {data.preferredName}&apos;s clinical thread
           </h2>
           <p className="mt-0.5 text-xs text-brand-600">
-            Story, Q&amp;A, Sleep PSQI, history, and plan signals shared across sections
+            Story, occupation, Q&amp;A, Sleep PSQI, history, and plan signals shared across
+            sections
             {section ? ` · viewing ${section}` : ""}.
           </p>
         </div>

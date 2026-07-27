@@ -245,6 +245,8 @@ export function composePtSession(opts: {
   minutesTarget: number;
   avoidTags?: string[];
   functionalLimits?: string[];
+  /** Optional occupation session notes for reason lines */
+  occupationNotes?: string[];
 }): ComposedSession {
   const budget = phaseItemBudget(opts.phase, opts.minutesTarget);
   const avoidTags = Array.from(
@@ -398,13 +400,19 @@ export function composePtSession(opts: {
     return b.scoreRank - a.scoreRank;
   });
 
-  const dosingNotes = dosingNotesForPhase(opts.phase, opts.functionalLimits);
+  const dosingNotes = [
+    ...dosingNotesForPhase(opts.phase, opts.functionalLimits),
+    ...(opts.occupationNotes || []).slice(0, 2),
+  ];
   const blueprintNarrative = [
     "Warm-up: easy protected motion for priority region",
     "Mobility: 1–3 targeted stretches for stated limits (not random full-body)",
     "Motor control: low-load activation / timing before heavier load",
     "Functional / capacity: graded task-related strength or balance if irritability allows",
     "Cool-down: short calm mobility; stop for red-flag pain",
+    ...(opts.occupationNotes?.length
+      ? ["Occupation: session order respects work/school load (micro-dose when desk/drive; shorter post-shift for labor/care)"]
+      : []),
   ];
 
   return {

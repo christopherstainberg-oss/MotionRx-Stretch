@@ -22,6 +22,7 @@ import { sampleTherapeuticQuestions } from "@/data/therapeutic-question-catalog"
 import { analyzeJournalIntelligence } from "@/lib/journal-intelligence";
 import { buildSleepCorrelation } from "@/lib/psqi";
 import { parseInjuryTimeline } from "@/lib/injury-timeline";
+import { parseOccupation } from "@/lib/occupation";
 
 export type JournalPrompt = {
   id: string;
@@ -294,6 +295,11 @@ export function analyzeJournalEntry(input: {
     injuryTl.source === "stated"
       ? `Injury timeline: ${injuryTl.label} (${injuryTl.tissuePhase}). Progress window: ${injuryTl.progressOutlook[0]?.windowLabel || "n/a"} — ${injuryTl.progressOutlook[0]?.lookFor || ""}.`
       : "";
+  const occ = parseOccupation(input.body || "");
+  const occupationLine =
+    occ.source === "stated"
+      ? `Occupation: ${occ.label} · demands ${occ.demands.slice(0, 3).join(", ") || "general"} · HEP bias ${occ.preferTags.slice(0, 4).join(", ")}.`
+      : "";
 
   const jefferySummary = [
     `I hear you. From today's journal, the plan signal is **${signal}**.`,
@@ -303,6 +309,7 @@ export function analyzeJournalEntry(input: {
     }).`,
     psqiLine,
     timelineLine,
+    occupationLine,
     jIntel.moodWords.length
       ? `Mood language: ${jIntel.moodWords.slice(0, 3).join(", ")}.`
       : "",

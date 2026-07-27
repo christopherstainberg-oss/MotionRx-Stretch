@@ -292,6 +292,18 @@ export function storyPreferredMovements(
     reasons.push("Story: fear-avoidance → high-success graded functional control drills.");
   }
 
+  // —— Occupation / work-role specific HEP seeds ——
+  if (intel.occupation?.source === "stated") {
+    const o = intel.occupation;
+    stretches.push(...o.preferredStretchIds);
+    exercises.push(...o.preferredExerciseIds);
+    boostTags.push(...o.preferTags);
+    avoidTags.push(...o.avoidTags);
+    reasons.push(
+      `Occupation: ${o.label} → ${o.sessionNotes[0] || o.preferTags.slice(0, 4).join(", ")}`
+    );
+  }
+
   if (hasSens("weakness", "giving-way")) {
     exercises.push(
       "ex-quad-set",

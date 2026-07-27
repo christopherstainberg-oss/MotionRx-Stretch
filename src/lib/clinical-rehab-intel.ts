@@ -13,6 +13,7 @@ import { summarizeDescriptors } from "@/data/pain-descriptors";
 import { clinicalHistorySummary, type SexSelection } from "@/lib/clinical-history";
 import { analyzeStoryIntelligence } from "@/lib/story-intelligence";
 import { parseInjuryTimeline } from "@/lib/injury-timeline";
+import { parseOccupation } from "@/lib/occupation";
 
 /** Clinical program phase for HEP structure */
 export type RehabPhase =
@@ -469,6 +470,9 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
   const injuryTl =
     story?.injuryTimeline ||
     (paragraph.trim() ? parseInjuryTimeline(paragraph) : undefined);
+  const occupation =
+    story?.occupation ||
+    (paragraph.trim() ? parseOccupation(paragraph) : undefined);
 
   // Story-driven phase can override generic phase when free text is rich
   let phase = phaseFor({
@@ -541,6 +545,18 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
     ...cond.biases,
   ]) as ProgramBias[];
   const protocolNotes: string[] = [];
+
+  // Occupation-informed movement seeds + tags (real-world load)
+  if (occupation && occupation.source === "stated") {
+    preferTags.push(...occupation.preferTags);
+    avoidTags.push(...occupation.avoidTags);
+    preferredStretchIds.push(...occupation.preferredStretchIds);
+    preferredExerciseIds.push(...occupation.preferredExerciseIds);
+    protocolNotes.push(...occupation.sessionNotes.slice(0, 2));
+    protocolNotes.push(
+      `Occupation: ${occupation.label} → volume ×${occupation.minutesScale.toFixed(2)}; demands ${occupation.demands.slice(0, 3).join(", ") || "general"}.`
+    );
+  }
 
   // Injury pattern seeds (region/irritability frameworks)
   for (const pat of patterns) {
@@ -650,6 +666,11 @@ export function buildClinicalRehabPlan(input: SymptomInput & {
         `Progress outlook: ${injuryTl.progressOutlook[0].windowLabel} — ${injuryTl.progressOutlook[0].lookFor}`
       );
     }
+  }
+
+  // Occupation volume bias (labor/healthcare shorter post-shift; desk micro-dose friendly)
+  if (occupation?.source === "stated") {
+    minutesScale *= occupation.minutesScale;
   }
 
   // Story minutes / kind bias

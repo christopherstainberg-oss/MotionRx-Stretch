@@ -17,6 +17,7 @@ import {
 import { getModalityById } from "@/data/modalities";
 import { buildVisitModalityPlan } from "@/lib/modality-engine";
 import { buildSleepCorrelation } from "@/lib/psqi";
+import { parseOccupation } from "@/lib/occupation";
 import { v4 as uuid } from "uuid";
 
 export function correlateInsights(input: {
@@ -133,6 +134,31 @@ export function correlateInsights(input: {
         "Update Assessment Story (including Q&A) when symptoms or medical history change so every section stays aligned.",
       at: now,
     });
+    const occ = parseOccupation(story);
+    if (occ.source === "stated") {
+      insights.push({
+        id: uuid(),
+        title: `Occupation: ${occ.label}`,
+        summary: `${occ.sessionNotes[0] || "Work role shapes HEP."} Demands: ${occ.demands.slice(0, 4).join(", ") || "general"}. Plan bias tags: ${occ.preferTags.slice(0, 6).join(", ")}.`,
+        severity: "info",
+        sources: ["pain", "routines", "journal"],
+        recommendation:
+          "Keep occupation current so routines favor desk/standing/lift/drive-specific movements and realistic session length after work.",
+        at: now,
+      });
+    } else {
+      insights.push({
+        id: uuid(),
+        title: "Occupation not linked yet",
+        summary:
+          "No clear work/school role in Assessment free text. Desk, standing, labor, driving, healthcare, student, athlete, or retired language improves routine realism.",
+        severity: "action",
+        sources: ["pain", "routines"],
+        recommendation:
+          "Add occupation in Story, Journal, or Jeffery (e.g. “desk job”, “I work as a nurse”, “retired”).",
+        at: now,
+      });
+    }
     if (input.painProfile.pastMedicalHistory || input.painProfile.currentMedicalHistory) {
       insights.push({
         id: uuid(),

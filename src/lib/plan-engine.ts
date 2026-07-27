@@ -1008,6 +1008,10 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     minutesTarget: target,
     avoidTags: mergedAvoid,
     functionalLimits: storyIntel?.functionalLimits,
+    occupationNotes:
+      storyIntel?.occupation?.source === "stated"
+        ? storyIntel.occupation.sessionNotes
+        : undefined,
   });
 
   const items: RoutineItem[] = [];

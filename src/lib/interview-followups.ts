@@ -37,6 +37,8 @@ export type PartialAnswerMap = {
   reachPlane: boolean;
   /** Night pain already described */
   nightPain: boolean;
+  /** Work / school / occupation role already stated */
+  occupationKnown: boolean;
 };
 
 export type AdaptiveQuestionLike = {
@@ -177,6 +179,14 @@ export function detectPartialAnswers(raw: string): PartialAnswerMap {
       /\b(overhead|above (my |the )?head|behind (my |the )?back|across (my |the )?body|bra|belt)\b/.test(
         t
       ),
+    occupationKnown:
+      /\b(desk job|office job|i work as|i'?m a |i am a |work from home|retired|student|truck driver|nurse|construction|warehouse|on my feet all day|manual labor|caregiver)\b/i.test(
+        t
+      ) ||
+      (/\b(work|job|occupation|school|retired)\b/.test(t) &&
+        /\b(desk|sit(?:ting)?|stand(?:ing)?|lift|driving|nurse|student|office|warehouse|construction|athlete|teacher|retail)\b/.test(
+          t
+        )),
     nightPain:
       /\b(night|nighttime|at night|when i (roll|sleep|lie))\b/.test(t) &&
       /\b(pain|hurt|ache)\b/.test(sleepNear || t),
@@ -205,8 +215,21 @@ export function questionFingerprint(question: string): string {
 /** Theme-level cluster so elite + base don't both ask the same clinical slot */
 function themeCluster(theme: string | undefined, label: string, question: string): string {
   const blob = `${theme || ""} ${label} ${question}`.toLowerCase();
+  // Occupation first — its wording mentions desk/stand and must not collapse into sit-dose
+  if (
+    theme === "occupation" ||
+    /occupation|workday demand|what does (your |a )?typical (work|school|day)|work or school day demand|i work as|retired|student role|hardest work demand/.test(
+      blob
+    )
+  )
+    return "occupation";
   if (/safety|red.?flag|crisis|saddle|bowel|bladder/.test(blob)) return "safety";
-  if (/sit|desk|chair/.test(blob) && /minute|dose|toler|build|stand/.test(blob)) return "sit-dose";
+  if (
+    /sit|desk|chair/.test(blob) &&
+    /minute|dose|toler|build/.test(blob) &&
+    !/work or school|occupation|workday/.test(blob)
+  )
+    return "sit-dose";
   if (/stair/.test(blob)) return "stairs";
   if (/walk|distance|blocks/.test(blob)) return "walk-dose";
   if (/0\s*[-–/]\s*10|pain scale|nrs|most of the day/.test(blob) && /worst|pain/.test(blob))
@@ -345,6 +368,22 @@ export function refineStoryFollowUps<T extends AdaptiveQuestionLike>(
         question: `You already gave a timeline. Since then, has ${region} been getting better, worse, or staying about the same week to week?`,
         reason: "Onset/duration known — ask trajectory only",
         priority: Math.max(50, q.priority - 5),
+      };
+    } else if (
+      themeCluster(q.theme, q.label, q.question) === "occupation" &&
+      partial.occupationKnown &&
+      /what does a typical|work or school day demand|occupation not|desk, standing, lifting/i.test(
+        blob
+      )
+    ) {
+      // Already stated role — deepen occupational load instead of re-asking category
+      next = {
+        ...next,
+        id: `${q.id}-deepen`,
+        label: "Hardest work demand?",
+        question: `${name}, given your work or school role, what single demand is hardest on ${region} right now—long sits, long stands, lifts/transfers, driving time, or training—and how soon do symptoms build?`,
+        reason: "Occupation known — deepen real-world load (not re-ask job type)",
+        priority: q.priority + 1,
       };
     } else if (themeCluster(q.theme, q.label, q.question) === "easers" && partial.easers) {
       next = {

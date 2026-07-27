@@ -34,6 +34,12 @@ import {
   parseInjuryTimeline,
   type InjuryTimeline,
 } from "@/lib/injury-timeline";
+import {
+  applyOccupationToPlanTags,
+  occupationLiveLines,
+  parseOccupation,
+  type OccupationProfile,
+} from "@/lib/occupation";
 
 function displayPreferredName(preferredName?: string | null): string {
   const p = (preferredName || "").trim();
@@ -57,7 +63,8 @@ export type StoryTheme =
   | "history"
   | "goals"
   | "red-flags"
-  | "laterality";
+  | "laterality"
+  | "occupation";
 
 /** “unknown” = insufficient evidence — never treat silence as moderate/low/high. */
 export type StoryIrritability = "low" | "moderate" | "high" | "unknown";
@@ -123,6 +130,11 @@ export type StoryIntelligence = {
    * + evidence-informed progress outlook. Parsed from free text only.
    */
   injuryTimeline: InjuryTimeline;
+  /**
+   * Work / school / daily role (desk, labor, healthcare, driving, athlete,
+   * student, retired, etc.) parsed from free text for HEP realism.
+   */
+  occupation: OccupationProfile;
   /** Explicit 0–10 only (never filled from adjectives). */
   painNow?: number;
   painWorst?: number;
@@ -198,6 +210,7 @@ const ALL_THEMES: StoryTheme[] = [
   "goals",
   "red-flags",
   "laterality",
+  "occupation",
 ];
 
 /** One stated region → one part. Never expand (e.g. hip must not invent groin+glutes). */
@@ -696,6 +709,8 @@ export function analyzeStoryIntelligence(
 
   // Structured weeks / months / years since onset + progress outlook
   const injuryTimeline = parseInjuryTimeline(raw);
+  // Work / school / daily role for occupational load realism
+  const occupation = parseOccupation(raw);
 
   const { now: painNow, worst: painWorst } = extractPainNumbers(raw);
   const painSeverityQual = qualitativePainSeverity(raw);
@@ -951,6 +966,7 @@ export function analyzeStoryIntelligence(
     coveredThemes.push("red-flags");
   }
   if (laterality !== "unknown") coveredThemes.push("laterality");
+  if (occupation.source === "stated") coveredThemes.push("occupation");
 
   const missingThemes = ALL_THEMES.filter((th) => !coveredThemes.includes(th));
 
@@ -1076,6 +1092,7 @@ export function analyzeStoryIntelligence(
     onset,
     assumptions,
     injuryTimeline,
+    occupation,
   });
 
   const baseLiveRead = buildLiveReadLines({
@@ -1086,6 +1103,7 @@ export function analyzeStoryIntelligence(
     sensory,
     onset,
     injuryTimeline,
+    occupation,
     painNow,
     painWorst,
     painEstimate,
@@ -1113,6 +1131,7 @@ export function analyzeStoryIntelligence(
     sensory,
     onset,
     injuryTimeline,
+    occupation,
     painNow,
     painWorst,
     aggravators,
@@ -1147,6 +1166,7 @@ export function analyzeStoryIntelligence(
     onset,
     timelineHints,
     injuryTimeline,
+    occupation,
     painNow,
     painWorst,
     painEstimate,
@@ -1286,6 +1306,7 @@ export function analyzeStoryIntelligence(
     onset,
     timelineHints,
     injuryTimeline,
+    occupation,
     painNow,
     painWorst,
     painEstimate,
@@ -1575,6 +1596,7 @@ function buildPlanHints(s: {
   onset: OnsetType;
   assumptions?: StoryAssumption[];
   injuryTimeline?: InjuryTimeline;
+  occupation?: OccupationProfile;
 }): StoryPlanHints {
   const preferTags: string[] = [];
   const avoidTags: string[] = [];
@@ -1802,6 +1824,75 @@ function buildPlanHints(s: {
     );
   }
 
+  // —— Occupation / daily work role ——
+  const occ = s.occupation;
+  if (occ && occ.source === "stated") {
+    const applied = applyOccupationToPlanTags({
+      occupation: occ,
+      preferTags,
+      avoidTags,
+      movementKeywords,
+      minutesScale,
+    });
+    preferTags.length = 0;
+    preferTags.push(...applied.preferTags);
+    avoidTags.length = 0;
+    avoidTags.push(...applied.avoidTags);
+    movementKeywords.length = 0;
+    movementKeywords.push(...applied.movementKeywords);
+    minutesScale = applied.minutesScale;
+    if (applied.evidenceLine) evidenceLines.push(applied.evidenceLine);
+    evidenceLines.push(...occ.sessionNotes.slice(0, 2));
+    // Soft phase nudge when not already in protect-calm
+    if (
+      phaseBias !== "protect-calm" &&
+      occ.phaseHint &&
+      s.irritability !== "high" &&
+      s.activityResponse !== "delayed-worse"
+    ) {
+      const order = [
+        "protect-calm",
+        "mobility-restore",
+        "motor-control",
+        "capacity-load",
+        "function-return",
+      ] as const;
+      // Only step toward occupation hint when irritability allows capacity
+      if (
+        s.irritability === "low" &&
+        order.indexOf(occ.phaseHint) > order.indexOf(phaseBias)
+      ) {
+        phaseBias = occ.phaseHint;
+      } else if (
+        order.indexOf(occ.phaseHint) < order.indexOf(phaseBias) &&
+        (occ.category === "desk" ||
+          occ.category === "driving" ||
+          occ.category === "student")
+      ) {
+        // Desk/driving often need mobility restore first
+        phaseBias = occ.phaseHint;
+      }
+    }
+    if (occ.category === "athlete" && s.irritability === "low") {
+      exerciseBias += 0.15;
+    }
+    if (
+      occ.category === "desk" ||
+      occ.category === "student" ||
+      occ.category === "driving"
+    ) {
+      stretchBias += 0.1;
+    }
+    if (occ.category === "labor" || occ.category === "healthcare") {
+      exerciseBias += 0.12;
+    }
+    scoringBoost += 3;
+  } else if (occ && occ.source === "unknown") {
+    evidenceLines.push(
+      "Occupation not stated — ask desk / standing / lifting / driving / healthcare / school / sport / retired to tailor HEP to real-life load."
+    );
+  }
+
   // Stated goals first; assumed goals (from limits) allowed for plan anchors when labeled.
   const functionalGoals = s.goals.length ? s.goals.slice(0, 6) : [];
 
@@ -1824,7 +1915,7 @@ function buildPlanHints(s: {
     movementKeywords: unique(movementKeywords).slice(0, 16),
     irritability: s.irritability,
     functionalGoals,
-    evidenceLines: unique(evidenceLines).slice(0, 10),
+    evidenceLines: unique(evidenceLines).slice(0, 12),
     scoringBoost,
   };
 }
@@ -1837,6 +1928,7 @@ function buildLiveReadLines(s: {
   sensory: string[];
   onset: OnsetType;
   injuryTimeline?: InjuryTimeline;
+  occupation?: OccupationProfile;
   painNow?: number;
   painWorst?: number;
   painEstimate?: StoryIntelligence["painEstimate"];
@@ -1894,6 +1986,10 @@ function buildLiveReadLines(s: {
 
   if (s.injuryTimeline) {
     lines.push(...injuryTimelineLiveLines(s.injuryTimeline).slice(0, 2));
+  }
+
+  if (s.occupation) {
+    lines.push(...occupationLiveLines(s.occupation).slice(0, 2));
   }
 
   if (s.aggravators.length) {
@@ -2039,6 +2135,7 @@ function buildAdaptiveQuestions(s: {
   sensory: string[];
   onset: OnsetType;
   injuryTimeline?: InjuryTimeline;
+  occupation?: OccupationProfile;
   painNow?: number;
   painWorst?: number;
   aggravators: string[];
@@ -2327,6 +2424,75 @@ function buildAdaptiveQuestions(s: {
       reason: `Timeline ${s.injuryTimeline.label} → evidence-informed progress window`,
       priority: 84,
     });
+  }
+
+  // —— Occupation / work-school role ——
+  if (
+    (s.missingThemes.includes("occupation") || s.occupation?.source === "unknown") &&
+    s.raw.length >= 24
+  ) {
+    push({
+      id: "adapt-occupation",
+      label: "What does your workday demand?",
+      question: `${s.name}, what does a typical work or school day demand—mostly sitting at a desk, standing on your feet, lifting/carrying, driving, patient care, training/sport, caregiving, or are you retired?`,
+      category: "function",
+      theme: "occupation",
+      reason: "Occupation shapes realistic HEP dosing and movement selection",
+      priority: 93,
+    });
+  } else if (s.occupation?.source === "stated") {
+    const cat = s.occupation.category;
+    if (cat === "desk" || cat === "student") {
+      push({
+        id: "adapt-occ-desk-dose",
+        label: "Desk / screen tolerance?",
+        question: `You described ${s.occupation.label}. About how many minutes at the desk or screen before ${regionPhrase} builds—and do micro-breaks (stand, walk, reset posture) help?`,
+        category: "irritability",
+        theme: "occupation",
+        reason: `Occupation: ${s.occupation.label}`,
+        priority: 86,
+      });
+    } else if (cat === "labor" || cat === "healthcare" || cat === "caregiver") {
+      push({
+        id: "adapt-occ-lift",
+        label: "Work lifts / transfers?",
+        question: `With ${s.occupation.label}, what loads or transfers are hardest (patients, boxes, laundry, kids)—and do you notice next-day cost after heavier shifts?`,
+        category: "function",
+        theme: "occupation",
+        reason: `Occupation: ${s.occupation.label}`,
+        priority: 86,
+      });
+    } else if (cat === "driving") {
+      push({
+        id: "adapt-occ-drive",
+        label: "Drive-time symptoms?",
+        question: `How long are you typically behind the wheel before ${regionPhrase} changes, and what helps at stops—walk, hip stretch, seat adjust?`,
+        category: "function",
+        theme: "occupation",
+        reason: `Occupation: ${s.occupation.label}`,
+        priority: 85,
+      });
+    } else if (cat === "standing") {
+      push({
+        id: "adapt-occ-stand",
+        label: "On-feet endurance?",
+        question: `On your feet for work, when do feet/legs/back usually start complaining—and do softer shoes, a mat, or weight-shifting help?`,
+        category: "function",
+        theme: "occupation",
+        reason: `Occupation: ${s.occupation.label}`,
+        priority: 85,
+      });
+    } else if (cat === "athlete") {
+      push({
+        id: "adapt-occ-sport",
+        label: "Training load this week?",
+        question: `For training/sport, what does a typical week look like (sessions, intensity)—and is ${regionPhrase} worse in practice, competition, or the day after?`,
+        category: "function",
+        theme: "occupation",
+        reason: `Occupation: ${s.occupation.label}`,
+        priority: 85,
+      });
+    }
   }
 
   // —— Laterality ——

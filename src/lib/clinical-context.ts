@@ -27,6 +27,10 @@ import {
   parseInjuryTimeline,
   type InjuryTimeline,
 } from "@/lib/injury-timeline";
+import {
+  parseOccupation,
+  type OccupationProfile,
+} from "@/lib/occupation";
 
 export const CLINICAL_CONTEXT_KEY = "motionrx-clinical-context";
 export const ASSESSMENT_QA_KEY = "motionrx-assessment-qa";
@@ -52,6 +56,9 @@ export type AssessmentStoryContext = {
   /** Story irritability / phase hints for Plan correlation */
   storyIrritability?: string;
   storyPhaseBias?: string;
+  /** Occupation category label when stated (desk, labor, etc.) */
+  occupationLabel?: string;
+  occupationCategory?: string;
   /** Latest written plan approach */
   writtenApproach?: string;
   routineId?: string;
@@ -75,6 +82,8 @@ export type CrossSectionCorrelation = {
   sleep: SleepCorrelationSnapshot;
   /** Injury/onset timeline from Assessment free text when stated */
   injuryTimeline: InjuryTimeline;
+  /** Occupation / daily role from Assessment free text when stated */
+  occupation: OccupationProfile;
 };
 
 function safeParse<T>(raw: string | null): T | null {
@@ -188,6 +197,14 @@ export function saveClinicalContext(
       : prev.storyIntelLines,
     storyIrritability: storyIntel?.irritability ?? prev.storyIrritability,
     storyPhaseBias: storyIntel?.planHints.phaseBias ?? prev.storyPhaseBias,
+    occupationLabel:
+      storyIntel?.occupation?.source === "stated"
+        ? storyIntel.occupation.label
+        : partial.occupationLabel ?? prev.occupationLabel,
+    occupationCategory:
+      storyIntel?.occupation?.source === "stated"
+        ? storyIntel.occupation.category
+        : partial.occupationCategory ?? prev.occupationCategory,
     writtenApproach: partial.writtenApproach ?? prev.writtenApproach,
     routineId: partial.routineId ?? prev.routineId,
     updatedAt: new Date().toISOString(),
@@ -286,6 +303,7 @@ export function correlateAcrossApp(opts?: {
   const context = loadClinicalContext();
   const sleep = buildSleepCorrelation();
   const injuryTimeline = parseInjuryTimeline(context?.freeText || "");
+  const occupation = parseOccupation(context?.freeText || "");
   const preferredName =
     context?.preferredName?.trim() ||
     (typeof window !== "undefined"
@@ -334,6 +352,7 @@ export function correlateAcrossApp(opts?: {
       insights,
       sleep,
       injuryTimeline,
+      occupation,
     };
   }
 
@@ -380,6 +399,13 @@ export function correlateAcrossApp(opts?: {
     summaryLines.push(...injuryTimeline.summaryLines.slice(0, 2));
   } else if (story.length >= 20) {
     summaryLines.push("Injury timeline (weeks/months/years) not stated yet.");
+  }
+  if (occupation.source === "stated") {
+    summaryLines.push(...occupation.summaryLines.slice(0, 2));
+  } else if (context.occupationLabel) {
+    summaryLines.push(`Occupation: ${context.occupationLabel}.`);
+  } else if (story.length >= 20) {
+    summaryLines.push("Occupation / daily role not stated yet.");
   }
   const histLine = clinicalHistorySummary({
     sex: context.sex,
@@ -452,7 +478,7 @@ export function correlateAcrossApp(opts?: {
   insights.push({
     id: "jeffery-bridge",
     title: "Jeffery uses this story",
-    body: "Jeffery loads Assessment free text, sex, PMH/CMH, Q&A, and Sleep PSQI so coaching stays consistent.",
+    body: "Jeffery loads Assessment free text, occupation, sex, PMH/CMH, Q&A, injury timeline, and Sleep PSQI so coaching stays consistent.",
     href: "/jeffery",
     severity: "info",
   });
@@ -461,8 +487,8 @@ export function correlateAcrossApp(opts?: {
     id: "journal-bridge",
     title: "Journal reflects Assessment + Sleep",
     body: sleep.hasData
-      ? `Journal can seed sleep quality from your latest PSQI (${sleep.global}/21 → rating ${sleep.journalSleepQuality}/5) alongside story descriptors.`
-      : "Journal analysis can reference your story descriptors, conditions, and history; add Sleep PSQI to auto-align nightly ratings.",
+      ? `Journal can seed sleep quality from your latest PSQI (${sleep.global}/21 → rating ${sleep.journalSleepQuality}/5) alongside story descriptors and occupation load.`
+      : "Journal analysis can reference your story, occupation, descriptors, and history; add Sleep PSQI to auto-align nightly ratings.",
     href: "/journal",
     severity: "info",
   });
@@ -551,6 +577,34 @@ export function correlateAcrossApp(opts?: {
     });
   }
 
+  if (occupation.source === "stated") {
+    insights.push({
+      id: "occupation",
+      title: `Occupation: ${occupation.label}`,
+      body: [
+        occupation.demands.length
+          ? `Demands: ${occupation.demands.slice(0, 4).join(", ")}.`
+          : "",
+        occupation.sessionNotes[0] || "",
+        occupation.preferTags.length
+          ? `Plan/HEP bias: ${occupation.preferTags.slice(0, 6).join(", ")}.`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      href: "/routines",
+      severity: "info",
+    });
+  } else if (story.length >= 40) {
+    insights.push({
+      id: "occupation-missing",
+      title: "Add occupation / daily role",
+      body: "Say if your day is mostly desk, standing, lifting, driving, healthcare, school, sport, caregiving, or retired so routines match real occupational load.",
+      href: "/assessment",
+      severity: "action",
+    });
+  }
+
   return {
     context,
     hasStory: Boolean(story || context.qa.length),
@@ -560,6 +614,7 @@ export function correlateAcrossApp(opts?: {
     insights,
     sleep,
     injuryTimeline,
+    occupation,
   };
 }
 
@@ -588,6 +643,12 @@ export function clinicalContextPromptBlob(ctx?: AssessmentStoryContext | null): 
     );
   if (c.storyIntelLines?.length)
     lines.push(`Story intel: ${c.storyIntelLines.slice(0, 5).join(" | ")}`);
+  if (c.occupationLabel)
+    lines.push(
+      `Occupation: ${c.occupationLabel}${
+        c.occupationCategory ? ` (${c.occupationCategory})` : ""
+      }`
+    );
   if (c.sex) lines.push(`Sex: ${c.sex}`);
   if (c.pastMedicalHistory) lines.push(`PMH: ${c.pastMedicalHistory.slice(0, 240)}`);
   if (c.currentMedicalHistory) lines.push(`Current Hx: ${c.currentMedicalHistory.slice(0, 240)}`);
