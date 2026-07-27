@@ -32,6 +32,7 @@ import {
 } from "@/lib/interview-followups";
 import { parseInjuryTimeline } from "@/lib/injury-timeline";
 import { parseOccupation } from "@/lib/occupation";
+import { parseSexFromText, sexLabel } from "@/lib/clinical-history";
 
 export { STORY_Q_MARKER, JOURNAL_SAFETY_NOTE };
 
@@ -304,6 +305,7 @@ export function analyzeJournalIntelligence(
 
   const liveReadLines = buildJournalLiveRead({
     name,
+    raw,
     richness,
     completeness,
     intelligenceGrade,
@@ -374,6 +376,7 @@ export function analyzeJournalIntelligence(
 
 function buildJournalLiveRead(s: {
   name: string;
+  raw?: string;
   richness: JournalIntelligence["richness"];
   completeness: number;
   intelligenceGrade: JournalIntelligence["intelligenceGrade"];
@@ -430,6 +433,15 @@ function buildJournalLiveRead(s: {
   if (s.stressMentioned) lines.push("Stress language present — dosing & recovery matter.");
   if (s.winMentioned) lines.push("Win/strength language present — protect that.");
   if (s.fearMentioned) lines.push("Fear/avoidance language present — graded exposure may help.");
+  // Backend-only sex / occupation from free text
+  const sex = parseSexFromText(s.raw || "");
+  if (sex && sex !== "prefer-not-to-say") {
+    lines.push(`Sex context (from text): ${sexLabel(sex)}.`);
+  }
+  const occ = parseOccupation(s.raw || "");
+  if (occ.source === "stated") {
+    lines.push(`Occupation (from text): ${occ.label}.`);
+  }
   if (s.safetyHints.length) {
     lines.push(
       `Safety language detected (${s.safetyHints[0]}). ${JOURNAL_SAFETY_NOTE}`
@@ -441,7 +453,7 @@ function buildJournalLiveRead(s: {
   lines.push(
     `Still open: ${s.missingThemes.slice(0, 5).join(", ") || "none major"}.`
   );
-  return lines.slice(0, 9);
+  return lines.slice(0, 10);
 }
 
 function buildJournalPriorPrompt(s: {

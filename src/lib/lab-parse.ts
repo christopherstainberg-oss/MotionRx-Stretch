@@ -10,6 +10,7 @@ import {
   type LabReport,
   type LabValueEntry,
 } from "@/data/labs";
+// Alias list built from full vast catalog
 
 export type ParseLabsResult = {
   values: LabValueEntry[];

@@ -381,9 +381,7 @@ export function correlateAcrossApp(opts?: {
   if (context.storyIntelLines?.length) {
     summaryLines.push(...context.storyIntelLines.slice(0, 4));
   }
-  if (context.sex && context.sex !== "prefer-not-to-say") {
-    summaryLines.push(`Sex context: ${context.sex}.`);
-  }
+  // Sex/occupation stay backend-only (parsed for engines); not emphasized in UI summaries
   if (context.pastMedicalHistory) {
     summaryLines.push(`PMH: ${context.pastMedicalHistory.slice(0, 100)}.`);
   }

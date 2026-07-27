@@ -31,6 +31,7 @@ import { sampleTherapeuticQuestions } from "@/data/therapeutic-question-catalog"
 import { buildSleepCorrelation } from "@/lib/psqi";
 import { parseInjuryTimeline } from "@/lib/injury-timeline";
 import { parseOccupation } from "@/lib/occupation";
+import { parseSexFromText, sexLabel } from "@/lib/clinical-history";
 
 const OPEN_ENDED = [
   "On a scale of 0–10, what is your pain right now, and what makes it better or worse?",
@@ -205,9 +206,9 @@ export function jefferyLocalReply(
   const injuryTl = parseInjuryTimeline(
     [story, userText, ctx.journal[0]?.body].filter(Boolean).join("\n")
   );
-  const occupation = parseOccupation(
-    [story, userText, ctx.journal[0]?.body].filter(Boolean).join("\n")
-  );
+  const blobForParse = [story, userText, ctx.journal[0]?.body].filter(Boolean).join("\n");
+  const occupation = parseOccupation(blobForParse);
+  const sexFromText = parseSexFromText(blobForParse);
 
   const known = [
     ...adjustments.slice(-8),
@@ -235,7 +236,11 @@ export function jefferyLocalReply(
       ? [`Open journal question: ${journalBridge.question}`]
       : []),
     ...(preferred ? [`Preferred name: ${preferred}`] : []),
-    ...(sex ? [`Sex context: ${sex}`] : []),
+    ...(sex
+      ? [`Sex context: ${sex}`]
+      : sexFromText
+        ? [`Sex context (from text): ${sexLabel(sexFromText)}`]
+        : []),
     ...(pmh ? [`Past medical history: ${pmh.slice(0, 160)}`] : []),
     ...(cmh ? [`Current medical history: ${cmh.slice(0, 160)}`] : []),
     ...(story ? [`Assessment story: ${story.slice(0, 160)}`] : []),
@@ -255,7 +260,7 @@ export function jefferyLocalReply(
       ? [
           `Occupation: ${occupation.label} (demands: ${occupation.demands.slice(0, 3).join(", ") || "n/a"}); HEP bias: ${occupation.preferTags.slice(0, 5).join(", ")}`,
         ]
-      : ["Occupation: not stated — ask desk / standing / lifting / driving / healthcare / school / sport / retired"]),
+      : []),
     ...ctx.routines
       .slice(0, 2)
       .flatMap((r) => {

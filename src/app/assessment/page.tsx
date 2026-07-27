@@ -55,8 +55,12 @@ import type {
 import { PainScale } from "@/components/PainScale";
 import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
 import { MedicationPicker } from "@/components/MedicationPicker";
-import { OccupationPicker } from "@/components/OccupationPicker";
-import type { UserOccupationEntry } from "@/data/occupations";
+import {
+  getOccupationById,
+  matchOccupationsFromText,
+  userOccupationFromCatalog,
+  type UserOccupationEntry,
+} from "@/data/occupations";
 import {
   SportSurgeryPickers,
   type SportSurgeryValue,
@@ -90,7 +94,6 @@ import {
   type ConversationPrompt,
 } from "@/lib/assessment-coach";
 import {
-  SEX_OPTIONS,
   mergeHistoryText,
   parseMedicalHistoryFromText,
   parseSexFromText,
@@ -667,12 +670,24 @@ export default function AssessmentPage() {
     });
   }, [debouncedParagraph, autoApplyDesc]);
 
-  // Parse sex + past/current medical history from the story paragraph
+  // Backend-only: sex, occupation, PMH/CMH from story free text (no UI pickers)
   useEffect(() => {
     if (!autoApplyHistory || debouncedParagraph.trim().length < 8) return;
     const parsedSex = parseSexFromText(debouncedParagraph);
     if (parsedSex) {
       setSex((prev) => prev || parsedSex);
+    }
+    const occIds = matchOccupationsFromText(debouncedParagraph, 3);
+    if (occIds.length) {
+      setOccupations((prev) => {
+        if (prev.length) return prev;
+        const next: UserOccupationEntry[] = [];
+        for (const id of occIds) {
+          const occ = getOccupationById(id);
+          if (occ) next.push(userOccupationFromCatalog(occ));
+        }
+        return next.slice(0, 2);
+      });
     }
     const hist = parseMedicalHistoryFromText(debouncedParagraph);
     if (hist.pastMedicalHistory) {
@@ -1777,22 +1792,18 @@ export default function AssessmentPage() {
                   checked={autoApplyHistory}
                   onChange={(e) => setAutoApplyHistory(e.target.checked)}
                 />
-                Auto-detect sex and past/current medical history from this paragraph
+                Auto-detect past/current medical history from this paragraph
               </label>
               <p className="text-xs text-brand-500">
                 One story box is enough — guided questions and free narrative live together. The app
-                parses PMH/CMH, meds, and sex cues for Plan, coach Q&amp;A, and Jeffery.
+                parses PMH/CMH, meds, occupation, and sex cues in the background for Plan, Journal,
+                and Jeffery (no separate sex/occupation fields).
               </p>
-              {(pastMedicalHistory || currentMedicalHistory || sex) && (
+              {(pastMedicalHistory || currentMedicalHistory) && (
                 <div className="rounded-xl border border-brand-100 bg-brand-50/50 px-3 py-2.5 text-xs text-brand-800 dark:border-brand-800 dark:bg-brand-950/40 dark:text-brand-100">
                   <p className="font-semibold text-brand-900 dark:text-brand-50">
                     Detected from your story
                   </p>
-                  {sex ? (
-                    <p className="mt-1">
-                      Sex: {SEX_OPTIONS.find((o) => o.id === sex)?.label || sex}
-                    </p>
-                  ) : null}
                   {pastMedicalHistory ? (
                     <p className="mt-1">Past medical history: {pastMedicalHistory}</p>
                   ) : null}
@@ -1925,56 +1936,7 @@ export default function AssessmentPage() {
             </div>
           </SubSection>
 
-          <SubSection
-            title="Sex (optional)"
-            hint="Adjust if the parser missed it — changes clarifying Q&A. You can also write it in your story."
-          >
-            <select
-              id="sex"
-              className="input"
-              value={sex}
-              onChange={(e) => {
-                setAutoApplyHistory(false);
-                setSex((e.target.value || "") as SexSelection | "");
-              }}
-            >
-              <option value="">Not set — parse from story or choose</option>
-              {SEX_OPTIONS.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-brand-500">
-              {SEX_OPTIONS.find((o) => o.id === sex)?.hint ||
-                "Example in story: “I am a woman…” or “sex: male”."}
-            </p>
-          </SubSection>
-
-          <SubSection
-            title="Occupation / daily role"
-            hint="Search the 100,000-entry occupation catalog or add custom. Shapes realistic HEP dosing for desk, labor, healthcare, driving, and more."
-            action={
-              occupations.length > 0 ? (
-                <span className="text-xs font-semibold text-brand-600">
-                  {occupations.length} listed
-                </span>
-              ) : null
-            }
-          >
-            <OccupationPicker
-              value={occupations}
-              onChange={setOccupations}
-              concernParagraph={debouncedParagraph}
-              compact
-              onInsertParagraph={(snippet) => {
-                setParagraph((p) => {
-                  if (p.includes(snippet.trim())) return p;
-                  return p.trim() ? `${p.trim()}\n\n${snippet}` : snippet;
-                });
-              }}
-            />
-          </SubSection>
+          {/* Sex & Occupation: backend-only — parsed from Story free text for Plan / Journal / Jeffery */}
 
           <SubSection
             title="Activity, sport & surgery"
@@ -2608,29 +2570,7 @@ export default function AssessmentPage() {
             )}
           </SubSection>
 
-          <SubSection
-            title="Occupation / daily role"
-            hint="Same catalog as Step 1. Search 100,000 editions or custom titles for work-realistic HEP."
-            action={
-              occupations.length > 0 ? (
-                <span className="text-xs font-semibold text-brand-600">
-                  {occupations.length} listed
-                </span>
-              ) : null
-            }
-          >
-            <OccupationPicker
-              value={occupations}
-              onChange={setOccupations}
-              concernParagraph={debouncedParagraph}
-              onInsertParagraph={(snippet) => {
-                setParagraph((p) => {
-                  if (p.includes(snippet.trim())) return p;
-                  return p.trim() ? `${p.trim()}\n\n${snippet}` : snippet;
-                });
-              }}
-            />
-          </SubSection>
+          {/* Occupation: backend-only from Story free text */}
 
           <SubSection
             title="Current medications & doses"

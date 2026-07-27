@@ -28,6 +28,7 @@ import {
 import { buildSleepCorrelation } from "@/lib/psqi";
 import { parseInjuryTimeline, injuryTimelineLiveLines } from "@/lib/injury-timeline";
 import { parseOccupation, occupationLiveLines } from "@/lib/occupation";
+import { parseSexFromText, sexLabel } from "@/lib/clinical-history";
 
 export type JefferyTheme =
   | "primary"
@@ -256,6 +257,7 @@ export function analyzeJefferyIntelligence(
     coveredThemes,
     missingThemes,
     userTurnCount: userTurns.length,
+    lastUser,
   });
 
   const nextOpenQuestion =
@@ -336,6 +338,8 @@ function buildJefferyLiveRead(s: {
   coveredThemes: JefferyTheme[];
   missingThemes: JefferyTheme[];
   userTurnCount: number;
+  /** Latest user turn — used for free-text sex/occupation parse */
+  lastUser: string;
 }): string[] {
   if (s.richness === "empty") {
     return [
@@ -378,6 +382,12 @@ function buildJefferyLiveRead(s: {
   }
   if (s.story.occupation) {
     lines.push(...occupationLiveLines(s.story.occupation).slice(0, 2));
+  }
+  const sexCue = parseSexFromText(
+    [s.story.raw, s.lastUser, s.journal.raw].filter(Boolean).join("\n")
+  );
+  if (sexCue && sexCue !== "prefer-not-to-say") {
+    lines.push(`Sex context (from text): ${sexLabel(sexCue)}.`);
   }
   if (s.journal.moodWords.length) {
     lines.push(`Mood language: ${s.journal.moodWords.slice(0, 3).join(", ")}.`);
