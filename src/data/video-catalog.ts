@@ -359,6 +359,67 @@ export const INSTITUTIONAL_VIDEOS: Record<string, InstitutionalVideo> = {
     accuracyTier: "technique",
     aliases: ["balance", "stability", "tandem", "single leg", "stand on one foot"],
   },
+
+  // —— Technique-true institutional demos (oEmbed verified 2026-07-26) ——
+  /** True glute-bridge form demo — not a multi-exercise lower-body block */
+  mayo_glute_bridge: {
+    youtubeId: "YRqoIM0u0PY",
+    title: "Wellness Wednesday: The glutes exercise you need to know",
+    institution: "Mayo Clinic",
+    source: "Mayo Clinic Healthy Living Program — PT-led glute bridge education",
+    regions: ["hip", "lowerBack", "leg", "core"],
+    techniques: ["glute-bridge"],
+    kind: "exercise",
+    accuracyTier: "technique",
+    aliases: [
+      "glute bridge",
+      "bridge pose",
+      "hip bridge",
+      "glutes exercise",
+      "bridge",
+      "glute activation",
+    ],
+  },
+  /** True quadruped bird-dog form demo (APTA public education) */
+  choosept_bird_dog: {
+    youtubeId: "ww-6lRXvI9Y",
+    title: "Physical Therapy - Bird Dog Exercise",
+    institution: "American Physical Therapy Association (ChoosePT)",
+    source: "ChoosePT patient education — bird-dog form demonstration",
+    regions: ["lowerBack", "core", "back"],
+    techniques: ["bird-dog"],
+    kind: "exercise",
+    accuracyTier: "technique",
+    aliases: [
+      "bird dog",
+      "bird-dog",
+      "bird dog exercise",
+      "quadruped opposite arm leg",
+      "opposite arm and leg",
+    ],
+  },
+  /**
+   * Supine opposite-limb control (bird-dog on back) — closest institutional
+   * form demo for dead-bug / supine core patterns.
+   */
+  dana_supine_bird_dog: {
+    youtubeId: "e3mqAN8meh8",
+    title: "How to do the Bird Dog Exercise on your Back (8 min)",
+    institution: "Dana-Farber Cancer Institute",
+    source: "Dana-Farber Zakim Center remote programming — supine limb control",
+    regions: ["core", "lowerBack", "back"],
+    techniques: ["dead-bug", "core-control"],
+    kind: "exercise",
+    accuracyTier: "technique",
+    aliases: [
+      "bird dog on your back",
+      "supine bird dog",
+      "dead bug",
+      "dead-bug",
+      "core on back",
+      "opposite arm leg supine",
+    ],
+  },
 } as const;
 
 /**
@@ -419,8 +480,9 @@ const VIDEO_ENRICHMENT: Partial<
     aliases: ["wall push", "wall pushup", "wall push-up", "wall push ups"],
   },
   nia_lower_strength: {
-    // LE strength block — bridges, stands, steps (not yoga, not SLR/TKE form demos)
-    techniques: ["sit-to-stand", "leg-strength", "hip-strength", "step", "wall-sit", "glute-bridge", "calf-raise"],
+    // LE strength block — stands, steps, wall sit, calf raise.
+    // Glute-bridge owns mayo_glute_bridge (do not steal that technique).
+    techniques: ["sit-to-stand", "leg-strength", "hip-strength", "step", "wall-sit", "calf-raise", "tke", "knee-rom"],
     kind: "exercise",
     accuracyTier: "technique",
     aliases: [
@@ -430,12 +492,30 @@ const VIDEO_ENRICHMENT: Partial<
       "lower body strength",
       "squat",
       "step up",
-      "glute bridge",
-      "bridge",
       "wall sit",
       "heel raise",
       "calf raise",
+      "terminal knee",
+      "quad set",
     ],
+  },
+  mayo_glute_bridge: {
+    techniques: ["glute-bridge"],
+    kind: "exercise",
+    accuracyTier: "technique",
+    aliases: ["glute bridge", "bridge pose", "hip bridge", "glutes exercise", "bridge"],
+  },
+  choosept_bird_dog: {
+    techniques: ["bird-dog"],
+    kind: "exercise",
+    accuracyTier: "technique",
+    aliases: ["bird dog", "bird-dog", "bird dog exercise", "quadruped"],
+  },
+  dana_supine_bird_dog: {
+    techniques: ["dead-bug", "core-control"],
+    kind: "exercise",
+    accuracyTier: "technique",
+    aliases: ["dead bug", "dead-bug", "bird dog on your back", "supine core"],
   },
   nia_upper_strength: {
     techniques: ["row-pull", "shoulder-strength"],
@@ -459,7 +539,14 @@ const VIDEO_ENRICHMENT: Partial<
     techniques: ["thoracic-rotation", "side-bend"],
     kind: "stretch",
     accuracyTier: "technique",
-    aliases: ["side bend", "standing side bend", "lateral flexion"],
+    aliases: [
+      "side bend",
+      "standing side bend",
+      "lateral flexion",
+      "thread the needle",
+      "thoracic rotation",
+      "open book",
+    ],
   },
   cleveland_balance: {
     techniques: ["balance"],
@@ -487,10 +574,11 @@ const VIDEO_ENRICHMENT: Partial<
     ],
   },
   mayo_low_back: {
-    techniques: ["spinal-safe", "hip-hinge", "bird-dog", "core-control"],
+    // Education / dosing — not a bird-dog form demo (see choosept_bird_dog)
+    techniques: ["spinal-safe", "hip-hinge", "core-control"],
     kind: "both",
-    accuracyTier: "technique",
-    aliases: ["low back pain", "exercise with low back", "lumbar", "hip hinge", "bird dog", "bird-dog"],
+    accuracyTier: "regional",
+    aliases: ["low back pain", "exercise with low back", "lumbar", "hip hinge", "dos and donts"],
   },
   mayo_desk_five: {
     techniques: ["desk-mobility", "wrist-hand", "wrist-load", "posture"],
@@ -535,10 +623,11 @@ const VIDEO_ENRICHMENT: Partial<
     aliases: ["move more", "throughout the day", "simple exercises"],
   },
   vha_seated_core: {
-    techniques: ["dead-bug", "core-lateral", "core"],
+    // Seated core block — secondary for lateral core; dead-bug owns dana_supine_bird_dog
+    techniques: ["core-lateral", "core", "seated-core"],
     kind: "exercise",
     accuracyTier: "regional",
-    aliases: ["seated core", "core strengthening", "trunk strength", "dead bug"],
+    aliases: ["seated core", "core strengthening", "trunk strength", "seated"],
   },
   vha_taichi_back: {
     techniques: ["spinal-safe", "balance"],
@@ -830,10 +919,12 @@ type VideoCatalogKey = keyof typeof INSTITUTIONAL_VIDEOS;
  * “full body / yoga / OR stretch” demos from stealing specific movements.
  */
 export const VIDEO_BY_TECHNIQUE: Record<TechniqueKey, VideoCatalogKey> = {
+  // Neck / posture — workday + shoulder breaks are closest institutional neck education
   "chin-tuck": "mayo_workday",
   "neck-side": "mayo_workday",
   cervical: "mayo_workday",
   "cervical-iso": "mayo_workday",
+  // True named form demos
   "chest-open": "cleveland_chest",
   "cat-cow": "cleveland_cat_cow",
   "spinal-flex": "nia_back",
@@ -848,12 +939,12 @@ export const VIDEO_BY_TECHNIQUE: Record<TechniqueKey, VideoCatalogKey> = {
   "wrist-load": "mayo_desk_five",
   "thoracic-rotation": "cleveland_side_bend",
   scapular: "mayo_shoulders",
-  "glute-bridge": "nia_lower_strength",
-  // Bird-dog is a core motor-control pattern (not Superman prone extension)
-  "bird-dog": "mayo_low_back",
+  // Technique-true locks (must match listed movement, not generic LE blocks)
+  "glute-bridge": "mayo_glute_bridge",
+  "bird-dog": "choosept_bird_dog",
+  "dead-bug": "dana_supine_bird_dog",
   "sit-to-stand": "dartmouth_standing",
   "wall-push": "nia_wall_pushups",
-  "dead-bug": "vha_seated_core",
   step: "nia_lower_strength",
   "row-pull": "nia_upper_strength",
   balance: "cleveland_balance",
@@ -864,7 +955,8 @@ export const VIDEO_BY_TECHNIQUE: Record<TechniqueKey, VideoCatalogKey> = {
   "core-lateral": "vha_seated_core",
   "hip-hinge": "mayo_low_back",
   "knee-rom": "nia_lower_strength",
-  slr: "nia_hamstring", // SLR shares posterior-chain setup cues with hamstring education
+  // SLR is an exercise; hamstring stretch video is posterior-chain setup only (regional)
+  slr: "nia_hamstring",
   tke: "nia_lower_strength",
   "foot-intrinsic": "nia_ankle",
   "wall-sit": "nia_lower_strength",
@@ -958,7 +1050,7 @@ export function scoreCatalogVideoMatch(
   for (const alias of v.aliases || []) {
     const a = normalizeMatchText(alias);
     if (a.length < 4) continue;
-    if (name === a || name.includes(a)) score += 40;
+    if (name === a || name.includes(a) || a.includes(name)) score += 48;
     else if (tagBlob.includes(a)) score += 12;
   }
 
@@ -972,10 +1064,28 @@ export function scoreCatalogVideoMatch(
 
   // —— Name token overlap — only title/alias, not bag-of-regions ——
   const tokens = name.split(" ").filter((t) => t.length >= 3 && !STOP_WORDS.has(t));
+  let titleAliasHits = 0;
   for (const t of tokens) {
-    if (title.includes(t)) score += 12;
-    else if (aliasHay.includes(t)) score += 10;
+    if (title.includes(t)) {
+      score += 14;
+      titleAliasHits++;
+    } else if (aliasHay.includes(t)) {
+      score += 12;
+      titleAliasHits++;
+    }
   }
+
+  // Specificity gate: named movement with zero title/alias token hits loses
+  // against technique-true demos (prevents “workday minute” winning for “glute bridge”)
+  if (tokens.length >= 2 && titleAliasHits === 0) {
+    score -= 35;
+    if (v.accuracyTier === "general") score -= 25;
+    if (/minute|importance|wellness|full body|15-minute|or-stretch|between surgery/i.test(v.title)) {
+      score -= 30;
+    }
+  }
+  if (tokens.length >= 1 && titleAliasHits >= 2) score += 22;
+  if (tokens.length >= 1 && titleAliasHits >= 3) score += 12;
 
   // Multi-word phrase hits require title or alias (never generic region hay)
   const phrases = [
@@ -998,10 +1108,28 @@ export function scoreCatalogVideoMatch(
     "low back",
     "back of leg",
     "assisted chest",
+    "wall pushup",
+    "wall push-up",
+    "shoulder er",
+    "scapular row",
+    "side bend",
+    "single leg",
+    "stand on one foot",
   ];
   for (const ph of phrases) {
     if (name.includes(ph) && (title.includes(ph) || aliasHay.includes(ph))) {
-      score += 45;
+      score += 50;
+    }
+  }
+
+  // Technique key literally in title/alias is strongest form correlation
+  if (technique) {
+    const techPhrase = technique.replace(/-/g, " ");
+    if (title.includes(techPhrase) || aliasHay.includes(techPhrase)) score += 55;
+    // e.g. technique bird-dog and title "Bird Dog Exercise"
+    const compact = technique.replace(/-/g, "");
+    if (title.replace(/\s+/g, "").includes(compact) || aliasHay.replace(/\s+/g, "").includes(compact)) {
+      score += 20;
     }
   }
 
@@ -1094,7 +1222,9 @@ function formatMatchedVideo(
 /**
  * Best catalog video for a written stretch/exercise.
  * When a technique key is known, the VIDEO_BY_TECHNIQUE primary is locked unless
- * another entry *explicitly owns the same technique* and scores higher.
+ * another entry *explicitly owns the same technique* and scores higher —
+ * or a catalog video has a clear title/alias hit on the written movement name
+ * and owns the technique (specificity wins over weak map defaults).
  */
 export function bestCatalogVideoForMovement(opts: {
   name?: string;
@@ -1131,10 +1261,11 @@ export function bestCatalogVideoForMovement(opts: {
     const mapKey = VIDEO_BY_TECHNIQUE[inferredTech as TechniqueKey];
     const primary = enrichCatalogVideo(INSTITUTIONAL_VIDEOS[mapKey]);
     let best = primary;
+    // Modest map bias — not so large that a title-true peer can't win
     let bestScore =
-      scoreCatalogVideoMatch(primary, { ...scoreOpts, requireTechnique: false }) + 100;
+      scoreCatalogVideoMatch(primary, { ...scoreOpts, requireTechnique: false }) + 40;
 
-    // Only peers that own the same technique can dethrone the map primary
+    // Peers that own the same technique can dethrone the map primary
     for (const raw of Object.values(INSTITUTIONAL_VIDEOS)) {
       const v = enrichCatalogVideo(raw);
       if (v.youtubeId === primary.youtubeId) continue;
@@ -1145,6 +1276,21 @@ export function bestCatalogVideoForMovement(opts: {
         best = v;
       }
     }
+
+    // Safety: if primary is general-tier and a technique-tier owner exists, prefer owner
+    if ((primary.accuracyTier === "general" || primary.accuracyTier === "regional") && inferredTech) {
+      for (const raw of Object.values(INSTITUTIONAL_VIDEOS)) {
+        const v = enrichCatalogVideo(raw);
+        if (!videoOwnsTechnique(v, inferredTech)) continue;
+        if (v.accuracyTier !== "technique") continue;
+        const s = scoreCatalogVideoMatch(v, scoreOpts);
+        if (s + 10 >= bestScore) {
+          best = v;
+          bestScore = s + 10;
+        }
+      }
+    }
+
     return best;
   }
 
@@ -1164,6 +1310,30 @@ export function bestCatalogVideoForMovement(opts: {
 
   // Region primary as last resort (still institutional)
   return enrichCatalogVideo(VIDEO_BY_REGION[region] || INSTITUTIONAL_VIDEOS.nia_flexibility_6);
+}
+
+/**
+ * How specifically a catalog video matches a written movement (0–100 style).
+ * Used by resolver to decide whether preferred ID may be overridden.
+ */
+export function movementVideoMatchScore(opts: {
+  video: InstitutionalVideo;
+  name?: string;
+  technique?: string;
+  region?: string;
+  bodyParts?: string[];
+  tags?: string[];
+  kind?: "stretch" | "exercise";
+}): number {
+  return scoreCatalogVideoMatch(enrichCatalogVideo(opts.video), {
+    name: opts.name,
+    technique: opts.technique,
+    region: opts.region,
+    bodyParts: opts.bodyParts,
+    tags: opts.tags,
+    kind: opts.kind,
+    requireTechnique: Boolean(opts.technique),
+  });
 }
 
 /**

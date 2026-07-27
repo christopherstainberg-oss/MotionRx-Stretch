@@ -24,6 +24,10 @@ import {
   runEliteStoryEngine,
   type StoryEliteAnalysis,
 } from "@/lib/story-engine-elite";
+import {
+  conversationalRegion,
+  refineStoryFollowUps,
+} from "@/lib/interview-followups";
 
 function displayPreferredName(preferredName?: string | null): string {
   const p = (preferredName || "").trim();
@@ -221,7 +225,11 @@ function unique<T>(arr: T[]): T[] {
 
 function regionLabel(parts: BodyPart[]): string {
   if (!parts.length) return "what is bothering you";
-  const labels = parts.slice(0, 2).map((a) => BODY_PART_LABELS[a] || a);
+  // Conversational mid-sentence form (“your lower back”) — not catalog dual labels
+  const labels = parts.slice(0, 2).map((a) => {
+    const catalog = BODY_PART_LABELS[a] || a;
+    return conversationalRegion(catalog).replace(/^your\s+/i, "");
+  });
   if (labels.length === 1) return labels[0]!;
   return labels.join(" and ");
 }
@@ -1217,7 +1225,16 @@ export function analyzeStoryIntelligence(
     ...baseLiveRead,
     ...elite.liveReadLines.filter((l) => /Telemetry|Flight read|Conflict|Provisional|Highest-value|Evidence:/i.test(l)),
   ]).slice(0, 10);
-  const adaptiveQuestions = mergeAdaptiveQuestions(elite.adaptiveQuestions, baseAdaptive, 10);
+  // Merge elite + base, then refine: no re-asks of known facts, de-dupe near-identical prompts
+  const mergedAdaptive = mergeAdaptiveQuestions(elite.adaptiveQuestions, baseAdaptive, 14);
+  const adaptiveQuestions = refineStoryFollowUps(mergedAdaptive, {
+    raw,
+    name,
+    regionLabel: regionLabel(regions),
+    quote: primaryComplaint,
+    lastAnswer: answerSnippets.slice(-1)[0]?.text || raw.slice(-280),
+    cap: 10,
+  });
   const coachSummary = liveReadLines.slice(0, 4).join(" ");
 
   const priorPrompt = buildAdaptivePriorPrompt({
@@ -2033,21 +2050,42 @@ function buildAdaptiveQuestions(s: {
     });
   }
 
-  // —— Aggravator-specific adaptive probes ——
+  // —— Aggravator-specific adaptive probes (skip re-asking known dose/direction) ——
+  const rawL = s.raw.toLowerCase();
+  const sittingDoseKnown =
+    /\b(\d{1,3})\s*(min|mins|minutes|hour|hours)\b/.test(rawL) &&
+    /\b(sit|sitting|desk)\b/.test(rawL);
+  const stairsDirKnown =
+    /\b(going\s+)?(up|down|upstairs|downstairs)\b/.test(rawL) &&
+    /\b(stair|stairs)\b/.test(rawL);
+  const regionPhrase = conversationalRegion(region);
+
   if (s.aggravators.includes("sitting/desk")) {
-    push({
-      id: "adapt-sit-dose",
-      label: "Sitting tolerance?",
-      question: `You linked symptoms to sitting/desk time. About how many minutes before it builds, and does standing, walking, or changing lumbar support settle it?`,
-      category: "irritability",
-      theme: "aggravators",
-      reason: "You named sitting/desk as a problem",
-      priority: 90,
-    });
+    if (sittingDoseKnown) {
+      push({
+        id: "adapt-sit-recover",
+        label: "What ends the sit flare?",
+        question: `You already timed the sitting build-up. What ends that desk flare faster—standing, a short walk, lumbar support, or something else—and how long until it settles?`,
+        category: "irritability",
+        theme: "aggravators",
+        reason: "Sitting dose already in your words — deepen recovery",
+        priority: 90,
+      });
+    } else {
+      push({
+        id: "adapt-sit-dose",
+        label: "Sitting tolerance?",
+        question: `You linked symptoms to sitting/desk time. About how many minutes before it builds, and does standing, walking, or changing lumbar support settle it?`,
+        category: "irritability",
+        theme: "aggravators",
+        reason: "You named sitting/desk as a problem",
+        priority: 90,
+      });
+    }
     push({
       id: "adapt-sit-dir",
       label: "Sit vs stand preference?",
-      question: `When ${region} is angry from sitting, do you feel better standing/walking, or do you need to lie down—and does bending forward help or hurt?`,
+      question: `When ${regionPhrase} is angry from sitting, do you feel better standing/walking, or do you need to lie down—and does bending forward help or hurt?`,
       category: "behavior",
       theme: "aggravators",
       reason: "Directional preference from sitting story",
@@ -2055,15 +2093,27 @@ function buildAdaptiveQuestions(s: {
     });
   }
   if (s.aggravators.includes("stairs") || s.functionalLimits.includes("stairs")) {
-    push({
-      id: "adapt-stairs",
-      label: "Stairs: up, down, or both?",
-      question: `With stairs, is it worse going up, down, or both—and is the first limit pain, weakness, swelling, or a sense of giving way?`,
-      category: "function",
-      theme: "function-limits",
-      reason: "Stairs appear in your story",
-      priority: 88,
-    });
+    if (stairsDirKnown) {
+      push({
+        id: "adapt-stairs-limiter",
+        label: "What limits stairs first?",
+        question: `You already said which way on stairs is harder. Is the first limit pain, weakness, swelling, stiffness, or a sense of giving way?`,
+        category: "function",
+        theme: "function-limits",
+        reason: "Stairs direction already stated — ask limiter",
+        priority: 88,
+      });
+    } else {
+      push({
+        id: "adapt-stairs",
+        label: "Stairs: up, down, or both?",
+        question: `With stairs, is it worse going up, down, or both—and is the first limit pain, weakness, swelling, or a sense of giving way?`,
+        category: "function",
+        theme: "function-limits",
+        reason: "Stairs appear in your story",
+        priority: 88,
+      });
+    }
   }
   if (s.aggravators.includes("reaching/overhead") || s.functionalLimits.includes("reaching")) {
     push({
@@ -2091,7 +2141,7 @@ function buildAdaptiveQuestions(s: {
     push({
       id: "adapt-walk",
       label: "Walking distance?",
-      question: `How far can you walk before ${region} changes—and is it pain, tightness, numbness, or fatigue that stops you first?`,
+      question: `How far can you walk before ${regionPhrase} changes—and is it pain, tightness, numbness, or fatigue that stops you first?`,
       category: "function",
       theme: "function-limits",
       reason: "Walking shows up as limited",
@@ -2149,7 +2199,7 @@ function buildAdaptiveQuestions(s: {
     push({
       id: "adapt-pain-scale",
       label: "Pain 0–10 pattern",
-      question: `You have not given a 0–10 number yet—and I will not invent one. On a 0–10 scale, where does ${region} sit most of the day, and where does it go at its worst?`,
+      question: `You have not given a 0–10 number yet—and I will not invent one. On a 0–10 scale, where does ${regionPhrase} sit most of the day, and where does it go at its worst?`,
       category: "irritability",
       theme: "pain-intensity",
       reason: "No pain number stated (not assumed)",
@@ -2185,7 +2235,7 @@ function buildAdaptiveQuestions(s: {
     push({
       id: "adapt-ease",
       label: "What eases it?",
-      question: `You named things that aggravate ${region}. What reliably eases it even a little—position change, walk, heat, ice, meds, rest—and how long does relief last?`,
+      question: `You named things that aggravate ${regionPhrase}. What reliably eases it even a little—position change, walk, heat, ice, meds, rest—and how long does relief last?`,
       category: "behavior",
       theme: "easers",
       reason: "Have aggravators but not easers",
@@ -2211,7 +2261,7 @@ function buildAdaptiveQuestions(s: {
     push({
       id: "adapt-side",
       label: "Left, right, or both?",
-      question: `Is ${region} mainly left, right, both, or central—and if both, is one side clearly worse?`,
+      question: `Is ${regionPhrase} mainly left, right, both, or central—and if both, is one side clearly worse?`,
       category: "bother",
       theme: "laterality",
       reason: "Side not specified",
@@ -2282,7 +2332,7 @@ function buildAdaptiveQuestions(s: {
     push({
       id: "adapt-sleep-stress",
       label: "Sleep or stress link?",
-      question: `How are sleep and stress right now—and do you notice ${region} changing when you’re tired, tense, or under pressure?`,
+      question: `How are sleep and stress right now—and do you notice ${regionPhrase} changing when you’re tired, tense, or under pressure?`,
       category: "function",
       theme: "sleep-stress",
       reason: "Sleep/stress not covered",

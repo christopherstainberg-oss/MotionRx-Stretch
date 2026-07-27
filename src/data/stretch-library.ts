@@ -307,7 +307,10 @@ const SEEDS: Seed[] = [
         painMax: 3,
       },
     ]),
-    video: videoForTechnique("cat-cow", "Cat-cow spinal mobility — proper form"),
+    video: videoForTechnique(
+      "thoracic-rotation",
+      "Thread the needle / thoracic rotation — proper form"
+    ),
     evidenceNotes:
       "Thoracic rotation drills are standard in outpatient care for stiff mid-back and rib mobility.",
     equipment: ["mat"],
@@ -351,7 +354,7 @@ const SEEDS: Seed[] = [
         description: "Reduce wrist load by placing hands on a counter.",
       },
     ]),
-    video: videoForTechnique("spinal-safe", "Safe spinal mobility with low-back guidance"),
+    video: videoForTechnique("cat-cow", "Cat-cow spinal mobility — proper form"),
     evidenceNotes:
       "Repeated flexion-extension in comfortable range is a staple warm-up and motor control primer.",
     equipment: ["mat or chair"],

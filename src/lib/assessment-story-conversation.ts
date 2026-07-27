@@ -972,17 +972,27 @@ function pickFollowUpQuestion(ctx: AssessmentCoachContext, lastUserLower: string
       conditionIds: ctx.conditionIds,
       goals: ctx.goals,
     },
-    8
+    10
   );
 
-  const candidates = adaptive.filter(
-    (p) =>
-      !lastUserLower.includes(p.label.toLowerCase().slice(0, 12)) &&
-      !lastUserLower.includes(p.question.toLowerCase().slice(0, 24))
-  );
+  // Prefer questions not already answered; story intelligence already refined for partial facts
+  const candidates = adaptive.filter((p) => {
+    const qL = p.question.toLowerCase();
+    const lab = p.label.toLowerCase();
+    if (lastUserLower.includes(lab.slice(0, 12))) return false;
+    if (lastUserLower.includes(qL.slice(0, 28))) return false;
+    // Skip pure NRS re-ask if user just gave numbers
+    if (
+      /0\s*[-–/]\s*10|pain scale/.test(qL) &&
+      /\b([0-9]|10)\s*\/\s*10\b/.test(lastUserLower)
+    ) {
+      return false;
+    }
+    return true;
+  });
   const pool = candidates.length ? candidates : adaptive;
   return (
     pool[0]?.question ||
-    "What else about this bother should I understand before we lock a plan?"
+    "What else about this bother should a careful PT still understand before we lock a plan?"
   );
 }

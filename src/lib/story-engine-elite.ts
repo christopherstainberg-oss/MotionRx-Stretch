@@ -83,7 +83,15 @@ function snip(text: string, max = 72): string {
 
 function regionLabel(parts: BodyPart[]): string {
   if (!parts.length) return "the area that bothers you";
-  const labels = parts.slice(0, 2).map((a) => BODY_PART_LABELS[a] || a);
+  // Conversational mid-sentence form — avoid “Lower Back / Lumbar builds”
+  const labels = parts.slice(0, 2).map((a) => {
+    const catalog = BODY_PART_LABELS[a] || a;
+    return catalog
+      .split("/")[0]!
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+  });
   return labels.length === 1 ? labels[0]! : labels.join(" and ");
 }
 
@@ -461,13 +469,19 @@ function gradeIntelligence(completeness: number, wordCount: number): StoryEliteA
 
 function buildCriticalGaps(base: StoryIntelligence, name: string): CriticalGap[] {
   const region = regionLabel(base.regions);
+  const regionPhrase =
+    !region || /bothers you|what is bothering/i.test(region)
+      ? "this area"
+      : region.startsWith("your ")
+        ? region
+        : `your ${region}`;
   const gaps: CriticalGap[] = [];
 
   if (!base.aggravators.length) {
     gaps.push({
       theme: "aggravators",
       why: "No positions/actions/activities were stated as causal — cannot dose load without this.",
-      askNext: `${name}, what reliably makes ${region} worse—specific positions, actions, or activities—and how quickly does it build?`,
+      askNext: `${name}, what reliably makes ${regionPhrase} worse—specific positions, actions, or activities—and how quickly does it build?`,
       informationValue: 100,
     });
   }
@@ -475,7 +489,7 @@ function buildCriticalGaps(base: StoryIntelligence, name: string): CriticalGap[]
     gaps.push({
       theme: "pain-intensity",
       why: "No explicit 0–10 rating stated — intensity remains unknown (not assumed).",
-      askNext: `On a 0–10 scale, where does ${region} sit most of the day, and where does it go at its worst? (Only if you know—don’t guess.)`,
+      askNext: `On a 0–10 scale, where does ${regionPhrase} sit most of the day, and where does it go at its worst? (Only if you know—don’t guess.)`,
       informationValue: 88,
     });
   }
@@ -499,7 +513,7 @@ function buildCriticalGaps(base: StoryIntelligence, name: string): CriticalGap[]
     gaps.push({
       theme: "easers",
       why: "Aggravators are known but easers are not — incomplete control strategy.",
-      askNext: `What reliably eases ${region} even a little—and how long does relief last?`,
+      askNext: `What reliably eases ${regionPhrase} even a little—and how long does relief last?`,
       informationValue: 78,
     });
   }
@@ -523,7 +537,7 @@ function buildCriticalGaps(base: StoryIntelligence, name: string): CriticalGap[]
     gaps.push({
       theme: "laterality",
       why: "Side not specified for named region(s).",
-      askNext: `Is ${region} mainly left, right, both, or central?`,
+      askNext: `Is ${regionPhrase} mainly left, right, both, or central?`,
       informationValue: 55,
     });
   }
@@ -733,28 +747,69 @@ function buildEliteQuestions(
     });
   }
 
-  // Deepen only when evidence exists (probe, don’t invent)
+  // Deepen only when evidence exists (probe, don’t invent).
+  // Skip re-asking facts already in free text (minutes, up/down, etc.).
+  const rawL = base.raw.toLowerCase();
+  const sittingDoseKnown =
+    /\b(\d{1,3})\s*(min|mins|minutes|hour|hours)\b/.test(rawL) &&
+    /\b(sit|sitting|desk)\b/.test(rawL);
+  const stairsDirKnown =
+    /\b(going\s+)?(up|down|upstairs|downstairs)\b/.test(rawL) &&
+    /\b(stair|stairs)\b/.test(rawL);
+  const regionSoft = region
+    .split("/")[0]!
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  const regionPhrase = regionSoft.startsWith("your ")
+    ? regionSoft
+    : `your ${regionSoft || "symptoms"}`;
+
   if (base.aggravators.includes("sitting/desk")) {
-    push({
-      id: "elite-sit-dose",
-      label: "Sitting dose?",
-      question: `You linked symptoms to sitting/desk. About how many minutes before ${region} builds, and does standing or walking settle it?`,
-      category: "irritability",
-      theme: "aggravators",
-      reason: "Deepen stated sitting/desk aggravator",
-      priority: 91,
-    });
+    if (sittingDoseKnown) {
+      push({
+        id: "elite-sit-recover",
+        label: "What ends the sit flare?",
+        question: `You already timed how long sitting builds ${regionPhrase}. What ends that flare faster—standing, a short walk, lumbar support, or something else—and how long until it settles?`,
+        category: "irritability",
+        theme: "aggravators",
+        reason: "Sitting dose already stated — deepen recovery strategy",
+        priority: 91,
+      });
+    } else {
+      push({
+        id: "elite-sit-dose",
+        label: "Sitting dose?",
+        question: `You linked symptoms to sitting/desk. About how many minutes before symptoms in ${regionPhrase} build, and does standing or walking settle them?`,
+        category: "irritability",
+        theme: "aggravators",
+        reason: "Deepen stated sitting/desk aggravator",
+        priority: 91,
+      });
+    }
   }
   if (base.aggravators.includes("stairs") || base.functionalLimits.includes("stairs")) {
-    push({
-      id: "elite-stairs",
-      label: "Stairs: up/down?",
-      question: `With stairs, is it worse going up, down, or both—and is the first limit pain, weakness, swelling, or giving way?`,
-      category: "function",
-      theme: "function-limits",
-      reason: "Deepen stated stair limitation",
-      priority: 90,
-    });
+    if (stairsDirKnown) {
+      push({
+        id: "elite-stairs-limiter",
+        label: "What limits stairs first?",
+        question: `You already said which way on stairs is harder. Is the first limit pain, weakness, swelling, stiffness, or a sense of giving way?`,
+        category: "function",
+        theme: "function-limits",
+        reason: "Stairs direction already stated — ask limiter only",
+        priority: 90,
+      });
+    } else {
+      push({
+        id: "elite-stairs",
+        label: "Stairs: up/down?",
+        question: `With stairs, is it worse going up, down, or both—and is the first limit pain, weakness, swelling, or giving way?`,
+        category: "function",
+        theme: "function-limits",
+        reason: "Deepen stated stair limitation",
+        priority: 90,
+      });
+    }
   }
   if (base.neuroLanguage || base.radiation) {
     push({
@@ -1006,6 +1061,7 @@ export function runEliteStoryEngine(
 
 /**
  * Merge elite adaptive questions with base: elite first by priority, then unique base.
+ * Near-duplicate questions (same clinical slot) are collapsed — keep higher priority.
  */
 export function mergeAdaptiveQuestions(
   elite: AdaptiveStoryQuestion[],
@@ -1013,14 +1069,70 @@ export function mergeAdaptiveQuestions(
   cap = 10
 ): AdaptiveStoryQuestion[] {
   const out: AdaptiveStoryQuestion[] = [];
-  const seen = new Set<string>();
-  for (const q of [...elite, ...base]) {
-    const key = q.id;
-    if (seen.has(key)) continue;
-    // de-dupe near-identical themes with same label
-    if (out.some((x) => x.theme === q.theme && x.label === q.label)) continue;
-    seen.add(key);
+  const seenIds = new Set<string>();
+  const seenLabels = new Set<string>();
+  const normalizeLabel = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  for (const q of [...elite, ...base].sort((a, b) => b.priority - a.priority)) {
+    if (seenIds.has(q.id)) continue;
+    const lab = normalizeLabel(q.label);
+    // Collapse “Sitting dose?” vs “Sitting tolerance?” / “Stairs: up/down?” vs “Stairs: up, down, or both?”
+    const labKey = lab
+      .replace(/\btolerance\b/g, "dose")
+      .replace(/\bup down or both\b/g, "up down")
+      .replace(/\bup\/down\b/g, "up down");
+    if (seenLabels.has(labKey)) continue;
+    if (
+      out.some(
+        (x) =>
+          x.theme === q.theme &&
+          (normalizeLabel(x.label) === lab ||
+            questionNearDuplicate(x.question, q.question))
+      )
+    ) {
+      continue;
+    }
+    seenIds.add(q.id);
+    seenLabels.add(labKey);
     out.push(q);
+    if (out.length >= cap) break;
   }
-  return out.sort((a, b) => b.priority - a.priority).slice(0, cap);
+  return out;
+}
+
+function questionNearDuplicate(a: string, b: string): boolean {
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const na = norm(a);
+  const nb = norm(b);
+  if (na === nb) return true;
+  // Shared distinctive clinical stems
+  const stems = (s: string) =>
+    new Set(
+      s
+        .split(" ")
+        .filter(
+          (w) =>
+            w.length >= 4 &&
+            /sit|desk|stair|walk|pain|ease|sleep|fear|goal|after|reach|minute|weak|swell|numb|flare/.test(
+              w
+            )
+        )
+    );
+  const A = stems(na);
+  const B = stems(nb);
+  if (!A.size || !B.size) return false;
+  let inter = 0;
+  for (const w of A) if (B.has(w)) inter++;
+  const union = new Set([...A, ...B]).size;
+  return inter >= 3 && inter / union >= 0.55;
 }

@@ -26,6 +26,10 @@ import {
   parseStoryInterviewTurns,
   type ConversationPrompt,
 } from "@/lib/assessment-story-conversation";
+import {
+  conversationalRegion,
+  refineContinuousInterviewQuestions,
+} from "@/lib/interview-followups";
 
 export { STORY_Q_MARKER, JOURNAL_SAFETY_NOTE };
 
@@ -624,27 +628,31 @@ function buildJournalAdaptiveQuestions(s: {
     });
   }
 
-  // Fill from curated bank + multi-million virtual catalog sample
-  if (q.length < 6) {
+  // Fill from curated bank + virtual catalog — only to cover real gaps (not generic spam)
+  if (q.length < 5) {
     for (const tq of journalTherapeuticStarters(12)) {
+      // Prefer questions that match missing themes
+      const themeHit = tq.themes?.some((th) => s.missingThemes.includes(th as JournalTheme));
       push({
         id: `j-bank-${tq.id}`,
         label: tq.label,
         question: tq.question,
         category: tq.category,
         theme: tq.themes[0] || "primary",
-        reason: "Curated therapeutic bank",
-        priority: tq.priority - 5,
+        reason: themeHit
+          ? `Evidence gap: ${tq.themes.slice(0, 2).join(", ")}`
+          : "Curated therapeutic bank",
+        priority: tq.priority - (themeHit ? 2 : 8),
         source: tq.source,
       });
-      if (q.length >= 8) break;
+      if (q.length >= 7) break;
     }
   }
-  if (q.length < 8) {
+  if (q.length < 7) {
     const themes = s.missingThemes.slice(0, 4);
     const virtual = sampleTherapeuticQuestions(24, `journal:${s.raw.slice(0, 48)}`, {
       themes: themes.length ? themes : undefined,
-      preferCurated: false,
+      preferCurated: true,
     });
     for (const tq of virtual) {
       push({
@@ -653,15 +661,59 @@ function buildJournalAdaptiveQuestions(s: {
         question: tq.question,
         category: tq.category,
         theme: tq.themes[0] || "primary",
-        reason: `Virtual catalog (${THERAPEUTIC_QUESTION_CAPACITY.toLocaleString()} editions)`,
-        priority: Math.max(30, tq.priority - 10),
+        reason: `Gap-fill catalog (${THERAPEUTIC_QUESTION_CAPACITY.toLocaleString()} editions)`,
+        priority: Math.max(28, tq.priority - 12),
         source: tq.source,
       });
-      if (q.length >= 10) break;
+      if (q.length >= 9) break;
     }
   }
 
-  return q.sort((a, b) => b.priority - a.priority).slice(0, 10);
+  const regionLab =
+    s.regions.length > 0
+      ? conversationalRegion(BODY_PART_LABELS[s.regions[0]!] || s.regions[0]!)
+      : "this area";
+
+  // Personalize catalog questions with name + region; de-dupe; no re-asks of known facts
+  const personalized = q.map((item) => ({
+    ...item,
+    question: personalizeJournalQuestion(item.question, s.name, regionLab, s.raw),
+  }));
+
+  return refineContinuousInterviewQuestions(personalized, {
+    raw: s.raw,
+    name: s.name,
+    regionLabel: regionLab,
+    lastAnswer: s.raw.slice(-320),
+    cap: 10,
+  });
+}
+
+/** Make bank questions sound like a continuous clinical interview, not a random form */
+function personalizeJournalQuestion(
+  question: string,
+  name: string,
+  region: string,
+  raw: string
+): string {
+  let q = question.trim();
+  // Soft region swap for generic “your body/pain” when we know a region
+  if (region && region !== "this area") {
+    q = q.replace(/\byour (body|pain|symptoms)\b/gi, region);
+  }
+  // If user already gave 0–10, soften pure NRS re-asks are handled by refine —
+  // here just ensure name preface on cold bank items
+  if (name && !new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")},`, "i").test(q)) {
+    if (/^(what|how|which|where|on a|if |when |are you|do you)/i.test(q)) {
+      q = `${name}, ${q.charAt(0).toLowerCase()}${q.slice(1)}`;
+    }
+  }
+  // Ground top-level generic openers in last content snippet when rich enough
+  if (raw.length > 80 && /what do you most need someone to understand/i.test(q)) {
+    const snip = raw.trim().replace(/\s+/g, " ").slice(0, 52);
+    q = `${name}, you wrote about “${snip}${raw.trim().length > 52 ? "…" : ""}.” What still feels unfinished about today?`;
+  }
+  return q;
 }
 
 export type JournalFlowAction =

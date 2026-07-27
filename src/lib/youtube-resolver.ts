@@ -14,6 +14,7 @@ import {
   getCatalogVideoById,
   inferRegionFromBodyParts,
   inferTechniqueFromMovement,
+  movementVideoMatchScore,
   scoreCatalogVideoMatch,
   videoForRegion,
 } from "@/data/video-catalog";
@@ -109,15 +110,69 @@ export async function resolveLiveVideo(opts: {
         tags: opts.tags,
         kind: opts.kind,
       })
-    : undefined;
+    : technique
+      ? bestCatalogVideoForMovement({
+          technique,
+          region,
+          bodyParts: opts.bodyParts,
+          tags: opts.tags,
+          kind: opts.kind,
+        })
+      : undefined;
 
-  // Library preferred ID wins when it is still in our institutional catalog.
-  // Never re-rank to a different technique family while preferred is live.
-  const preferredId =
+  // Preferred library ID only wins when it still correlates with the written movement.
+  // Stale / weak preferred IDs (generic workday minute for glute bridge, etc.) yield to contentBest.
+  let preferredId =
     opts.preferredId?.trim() ||
     contentBest?.youtubeId ||
     VIDEO_BY_REGION[region]?.youtubeId ||
     VIDEO_BY_REGION.general.youtubeId;
+
+  const preferredMetaRaw = getCatalogVideoById(preferredId);
+  let preferredMeta = preferredMetaRaw
+    ? enrichCatalogVideo(preferredMetaRaw)
+    : undefined;
+
+  if (preferredMeta && contentBest && (movementHint || technique)) {
+    const prefScore = movementVideoMatchScore({
+      video: preferredMeta,
+      name: movementHint,
+      technique,
+      region,
+      bodyParts: opts.bodyParts,
+      tags: opts.tags,
+      kind: opts.kind,
+    });
+    const bestScore = movementVideoMatchScore({
+      video: contentBest,
+      name: movementHint,
+      technique,
+      region,
+      bodyParts: opts.bodyParts,
+      tags: opts.tags,
+      kind: opts.kind,
+    });
+    const preferredOwnsTech = technique
+      ? (preferredMeta.techniques || []).some(
+          (t) => t.toLowerCase() === technique.toLowerCase()
+        )
+      : true;
+    const bestOwnsTech = technique
+      ? (contentBest.techniques || []).some(
+          (t) => t.toLowerCase() === technique.toLowerCase()
+        )
+      : true;
+
+    // Override preferred when content-best is clearly more specific
+    if (
+      contentBest.youtubeId !== preferredMeta.youtubeId &&
+      bestOwnsTech &&
+      (bestScore >= prefScore + 25 || (!preferredOwnsTech && bestScore > prefScore))
+    ) {
+      preferredId = contentBest.youtubeId;
+      preferredMeta = enrichCatalogVideo(contentBest);
+    }
+  }
 
   const ordered: InstitutionalVideo[] = [];
   const seen = new Set<string>();
@@ -127,11 +182,16 @@ export async function resolveLiveVideo(opts: {
     ordered.push(enrichCatalogVideo(v));
   };
 
-  const preferredMeta = getCatalogVideoById(preferredId)
-    ? enrichCatalogVideo(getCatalogVideoById(preferredId)!)
-    : undefined;
-  if (preferredMeta) push(preferredMeta);
-  if (contentBest) push(contentBest);
+  // Content-best first when it won the specificity contest; else preferred then content
+  if (contentBest && preferredId === contentBest.youtubeId) {
+    push(contentBest);
+    if (preferredMeta && preferredMeta.youtubeId !== contentBest.youtubeId) {
+      push(preferredMeta);
+    }
+  } else {
+    if (preferredMeta) push(preferredMeta);
+    if (contentBest) push(contentBest);
+  }
 
   // Fallback chain: same technique family only, then same region, then ranked catalog
   const techKey = technique || preferredMeta?.techniques?.[0];

@@ -21,6 +21,10 @@ import {
   THERAPEUTIC_QUESTION_CAPACITY,
 } from "@/data/therapeutic-question-catalog";
 import { JOURNAL_SAFETY_NOTE } from "@/data/therapeutic-questions";
+import {
+  conversationalRegion,
+  refineContinuousInterviewQuestions,
+} from "@/lib/interview-followups";
 
 export type JefferyTheme =
   | "primary"
@@ -395,9 +399,11 @@ function buildJefferyAdaptive(s: {
     s.regions.length > 0
       ? s.regions
           .slice(0, 2)
-          .map((r) => BODY_PART_LABELS[r] || r)
+          .map((r) => conversationalRegion(BODY_PART_LABELS[r] || r).replace(/^your\s+/i, ""))
           .join(" and ")
       : "what bothers you";
+  const regionPhrase =
+    region === "what bothers you" ? "this area" : conversationalRegion(region);
 
   const push = (item: JefferyAdaptivePrompt) => {
     if (q.some((x) => x.id === item.id)) return;
@@ -433,7 +439,7 @@ function buildJefferyAdaptive(s: {
     push({
       id: "jf-pain",
       label: "Pain 0–10",
-      question: `On a 0–10 scale, where does ${region} sit most of the day, and where does it go at its worst?`,
+      question: `On a 0–10 scale, where does ${regionPhrase} sit most of the day, and where does it go at its worst?`,
       category: "irritability",
       theme: "pain",
       reason: "No pain number yet",
@@ -445,7 +451,7 @@ function buildJefferyAdaptive(s: {
     push({
       id: "jf-agg",
       label: "What makes it worse?",
-      question: `What positions, actions, or activities reliably make ${region} worse—and how quickly does it build?`,
+      question: `What positions, actions, or activities reliably make ${regionPhrase} worse—and how quickly does it build?`,
       category: "irritability",
       theme: "aggravators",
       reason: "Need causal load map",
@@ -493,7 +499,7 @@ function buildJefferyAdaptive(s: {
     push({
       id: "jf-sleep",
       label: "Sleep link?",
-      question: `How was sleep last night, and do you notice ${region} changing when you’re tired?`,
+      question: `How was sleep last night, and do you notice ${regionPhrase} changing when you’re tired?`,
       category: "function",
       theme: "sleep",
       reason: "Sleep not covered",
@@ -537,17 +543,36 @@ function buildJefferyAdaptive(s: {
     });
   }
 
-  // Deepen stated data
+  // Deepen stated data — don’t re-ask minutes if already timed
+  const lastL = s.lastUser.toLowerCase();
+  const storyL = s.story.raw.toLowerCase();
+  const sittingDoseKnown =
+    (/\b(\d{1,3})\s*(min|mins|minutes|hour|hours)\b/.test(lastL) ||
+      /\b(\d{1,3})\s*(min|mins|minutes|hour|hours)\b/.test(storyL)) &&
+    (/\b(sit|sitting|desk)\b/.test(lastL) || /\b(sit|sitting|desk)\b/.test(storyL));
+
   if (s.story.aggravators.includes("sitting/desk")) {
-    push({
-      id: "jf-sit-dose",
-      label: "Sitting tolerance?",
-      question: `About how many minutes of sitting before symptoms build, and does standing or walking settle them?`,
-      category: "irritability",
-      theme: "aggravators",
-      reason: "Sitting/desk stated",
-      priority: 90,
-    });
+    if (sittingDoseKnown) {
+      push({
+        id: "jf-sit-recover",
+        label: "What ends the sit flare?",
+        question: `${s.name}, you already timed the sitting build-up. What ends that desk flare faster—standing, a short walk, or support change—and how long until it settles?`,
+        category: "irritability",
+        theme: "aggravators",
+        reason: "Sitting dose known — deepen recovery",
+        priority: 90,
+      });
+    } else {
+      push({
+        id: "jf-sit-dose",
+        label: "Sitting tolerance?",
+        question: `About how many minutes of sitting before symptoms build, and does standing or walking settle them?`,
+        category: "irritability",
+        theme: "aggravators",
+        reason: "Sitting/desk stated",
+        priority: 90,
+      });
+    }
   }
 
   if (s.planFeedback === "too-hard" || s.planFeedback === "flare") {
@@ -574,29 +599,8 @@ function buildJefferyAdaptive(s: {
     });
   }
 
-  // Therapeutic virtual catalog fill
-  if (q.length < 6) {
-    const themes = s.missingThemes.slice(0, 4).map(String);
-    const sample = sampleTherapeuticQuestions(20, `jeffery:${s.lastUser.slice(0, 40)}`, {
-      themes: themes.length ? themes : undefined,
-      preferCurated: true,
-    });
-    for (const tq of sample) {
-      push({
-        id: `jf-tq-${tq.id}`,
-        label: tq.label,
-        question: tq.question,
-        category: tq.category,
-        theme: tq.themes[0] || "primary",
-        reason: `Therapeutic catalog (${THERAPEUTIC_QUESTION_CAPACITY.toLocaleString()} editions)`,
-        priority: Math.max(40, tq.priority - 15),
-      });
-      if (q.length >= 10) break;
-    }
-  }
-
-  // Prefer story adaptive when available
-  for (const aq of s.story.adaptiveQuestions.slice(0, 4)) {
+  // Prefer story-adaptive first (already refined for partial answers)
+  for (const aq of s.story.adaptiveQuestions.slice(0, 5)) {
     push({
       id: `jf-story-${aq.id}`,
       label: aq.label,
@@ -604,11 +608,46 @@ function buildJefferyAdaptive(s: {
       category: aq.category,
       theme: aq.theme,
       reason: aq.reason,
-      priority: aq.priority - 5,
+      priority: aq.priority + 2, // story-grounded beats generic bank
     });
   }
 
-  return q.sort((a, b) => b.priority - a.priority).slice(0, 10);
+  // Therapeutic catalog only to fill real gaps (prefer curated, lower priority)
+  if (q.length < 6) {
+    const themes = s.missingThemes.slice(0, 4).map(String);
+    const sample = sampleTherapeuticQuestions(16, `jeffery:${s.lastUser.slice(0, 40)}`, {
+      themes: themes.length ? themes : undefined,
+      preferCurated: true,
+    });
+    for (const tq of sample) {
+      let question = tq.question;
+      if (s.name && !question.toLowerCase().startsWith(s.name.toLowerCase())) {
+        if (/^(what|how|which|where|on a|if |when |are you|do you)/i.test(question)) {
+          question = `${s.name}, ${question.charAt(0).toLowerCase()}${question.slice(1)}`;
+        }
+      }
+      push({
+        id: `jf-tq-${tq.id}`,
+        label: tq.label,
+        question,
+        category: tq.category,
+        theme: tq.themes[0] || "primary",
+        reason: `Gap-fill catalog (${THERAPEUTIC_QUESTION_CAPACITY.toLocaleString()} editions)`,
+        priority: Math.max(32, tq.priority - 18),
+      });
+      if (q.length >= 9) break;
+    }
+  }
+
+  // Ground in last user turn; de-dupe sit/stairs/pain clusters; skip known facts
+  const combinedRaw = [s.story.raw, s.journal.raw, s.lastUser].filter(Boolean).join("\n");
+  return refineContinuousInterviewQuestions(q, {
+    raw: combinedRaw,
+    name: s.name,
+    regionLabel: regionPhrase,
+    lastAnswer: s.lastUser || s.story.raw.slice(-280),
+    cap: 10,
+  });
 }
 
 export type JefferyFlowAction =
