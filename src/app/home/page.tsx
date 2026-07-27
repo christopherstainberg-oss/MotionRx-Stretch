@@ -15,6 +15,7 @@ import { STARTER_ROUTINES } from "@/lib/routine-engine";
 import { AppLogo } from "@/components/Icons";
 import { HomeSearch } from "@/components/HomeSearch";
 import { ClinicalCorrelationCard } from "@/components/ClinicalCorrelationCard";
+import { HomeTodaySection } from "@/components/HomeTodaySection";
 
 export const metadata = { title: "Home" };
 
@@ -93,6 +94,9 @@ export default function HomePage() {
           </Link>
         </div>
       </section>
+
+      {/* NutriFit-style daily balance + PhysioPath readiness */}
+      <HomeTodaySection />
 
       <ClinicalCorrelationCard section="home" />
 

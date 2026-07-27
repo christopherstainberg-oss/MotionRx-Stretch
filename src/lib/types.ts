@@ -354,6 +354,14 @@ export interface PainProfile {
   medications?: import("@/data/medications-types").UserMedicationEntry[];
   /** Occupation catalog selections (Assessment) — from 100k backend catalog */
   occupations?: import("@/data/occupations-types").UserOccupationEntry[];
+  /** Return-to-sport goals (PhysioPath-inspired) */
+  sportIds?: string[];
+  /** Selected surgery catalog id */
+  surgeryId?: string;
+  /** ISO date of surgery for post-op weeks */
+  surgeryDate?: string;
+  /** Self-reported activity level */
+  activityLevel?: string;
   /** Clinical symptom IDs (Assessment / Journal) */
   clinicalSymptomIds?: string[];
   /** ADL difficulty entries */
@@ -530,6 +538,11 @@ export interface SymptomInput {
   medications?: import("@/data/medications-types").UserMedicationEntry[];
   /** Occupation catalog selections from Assessment (100k backend) */
   occupations?: import("@/data/occupations-types").UserOccupationEntry[];
+  /** Return-to-sport goals */
+  sportIds?: string[];
+  surgeryId?: string;
+  surgeryDate?: string;
+  activityLevel?: string;
   /** Clinically significant symptom IDs */
   clinicalSymptomIds?: string[];
   /** Activities of daily living with assistance levels */

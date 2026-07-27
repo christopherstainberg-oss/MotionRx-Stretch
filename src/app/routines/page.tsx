@@ -2,6 +2,7 @@ import Link from "next/link";
 import { STARTER_ROUTINES } from "@/lib/routine-engine";
 import { ListChecks } from "lucide-react";
 import { ClinicalCorrelationCard } from "@/components/ClinicalCorrelationCard";
+import { HomeTodaySection } from "@/components/HomeTodaySection";
 
 export const metadata = { title: "Routines" };
 
@@ -17,7 +18,7 @@ export default function RoutinesPage() {
           <p className="mt-1 text-sm text-brand-700/85">
             Hybrid outpatient-style templates combining stretches and exercises. Personalize from a
             written concern, rotate items or whole plans in Builder, and self-adjust with pain feedback
-            or Jeffery.
+            or Jeffery. Use the progress gate before advancing load.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -30,6 +31,7 @@ export default function RoutinesPage() {
         </div>
       </div>
 
+      <HomeTodaySection />
       <ClinicalCorrelationCard section="routines" />
 
       <div className="grid gap-4 md:grid-cols-2">

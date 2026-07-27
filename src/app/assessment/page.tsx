@@ -57,6 +57,10 @@ import { PainDescriptorPicker } from "@/components/PainDescriptorPicker";
 import { MedicationPicker } from "@/components/MedicationPicker";
 import { OccupationPicker } from "@/components/OccupationPicker";
 import type { UserOccupationEntry } from "@/data/occupations";
+import {
+  SportSurgeryPickers,
+  type SportSurgeryValue,
+} from "@/components/SportSurgeryPickers";
 import { ClinicalSymptomPicker } from "@/components/ClinicalSymptomPicker";
 import { AdlPicker } from "@/components/AdlPicker";
 import { ModalityPlanPanels } from "@/components/ModalitySuggestions";
@@ -384,6 +388,10 @@ export default function AssessmentPage() {
   const [homeBasedProgram, setHomeBasedProgram] = useState(true);
   const [medications, setMedications] = useState<UserMedicationEntry[]>([]);
   const [occupations, setOccupations] = useState<UserOccupationEntry[]>([]);
+  const [sportSurgery, setSportSurgery] = useState<SportSurgeryValue>({
+    sportIds: [],
+    activityLevel: "unknown",
+  });
   const [clinicalSymptomIds, setClinicalSymptomIds] = useState<string[]>([]);
   const [adlEntries, setAdlEntries] = useState<UserAdlEntry[]>([]);
   const [step, setStep] = useState(1);
@@ -463,6 +471,18 @@ export default function AssessmentPage() {
     if (local?.homeBasedProgram != null) setHomeBasedProgram(local.homeBasedProgram);
     if (local?.medications?.length) setMedications(local.medications);
     if (local?.occupations?.length) setOccupations(local.occupations);
+    if (
+      local?.sportIds?.length ||
+      local?.surgeryId ||
+      local?.activityLevel
+    ) {
+      setSportSurgery({
+        sportIds: local.sportIds || [],
+        surgeryId: local.surgeryId,
+        surgeryDate: local.surgeryDate,
+        activityLevel: (local.activityLevel as SportSurgeryValue["activityLevel"]) || "unknown",
+      });
+    }
     if (local?.clinicalSymptomIds?.length) setClinicalSymptomIds(local.clinicalSymptomIds);
     if (local?.adlEntries?.length) setAdlEntries(local.adlEntries);
     if (local?.sex) setSex(local.sex);
@@ -494,6 +514,20 @@ export default function AssessmentPage() {
         if (d.profile?.homeBasedProgram != null) setHomeBasedProgram(d.profile.homeBasedProgram);
         if (d.profile?.medications?.length) setMedications(d.profile.medications);
         if (d.profile?.occupations?.length) setOccupations(d.profile.occupations);
+        if (
+          d.profile?.sportIds?.length ||
+          d.profile?.surgeryId ||
+          d.profile?.activityLevel
+        ) {
+          setSportSurgery({
+            sportIds: d.profile.sportIds || [],
+            surgeryId: d.profile.surgeryId,
+            surgeryDate: d.profile.surgeryDate,
+            activityLevel:
+              (d.profile.activityLevel as SportSurgeryValue["activityLevel"]) ||
+              "unknown",
+          });
+        }
         if (d.profile?.clinicalSymptomIds?.length)
           setClinicalSymptomIds(d.profile.clinicalSymptomIds);
         if (d.profile?.sex && !local?.sex) setSex(d.profile.sex);
@@ -734,6 +768,13 @@ export default function AssessmentPage() {
       homeBasedProgram,
       medications,
       occupations,
+      sportIds: sportSurgery.sportIds,
+      surgeryId: sportSurgery.surgeryId,
+      surgeryDate: sportSurgery.surgeryDate,
+      activityLevel:
+        sportSurgery.activityLevel && sportSurgery.activityLevel !== "unknown"
+          ? sportSurgery.activityLevel
+          : undefined,
       clinicalSymptomIds,
       adlEntries,
       sex: sex || undefined,
@@ -762,6 +803,7 @@ export default function AssessmentPage() {
     homeBasedProgram,
     medications,
     occupations,
+    sportSurgery,
     clinicalSymptomIds,
     adlEntries,
     sex,
@@ -1295,6 +1337,13 @@ export default function AssessmentPage() {
       adjectiveSummary: routine.generatedFrom?.adjectiveSummary,
       medications,
       occupations,
+      sportIds: sportSurgery.sportIds,
+      surgeryId: sportSurgery.surgeryId,
+      surgeryDate: sportSurgery.surgeryDate,
+      activityLevel:
+        sportSurgery.activityLevel && sportSurgery.activityLevel !== "unknown"
+          ? sportSurgery.activityLevel
+          : undefined,
       clinicalSymptomIds,
       adlEntries,
       sex: sex || undefined,
@@ -1923,6 +1972,32 @@ export default function AssessmentPage() {
                   return p.trim() ? `${p.trim()}\n\n${snippet}` : snippet;
                 });
               }}
+            />
+          </SubSection>
+
+          <SubSection
+            title="Activity, sport & surgery"
+            hint="PhysioPath-style return-to-sport and post-op timeline. Surgery date drives protective dosing education (surgeon protocol always wins)."
+            action={
+              sportSurgery.sportIds.length || sportSurgery.surgeryId ? (
+                <span className="text-xs font-semibold text-brand-600">
+                  {[
+                    sportSurgery.sportIds.length
+                      ? `${sportSurgery.sportIds.length} sport`
+                      : null,
+                    sportSurgery.surgeryId ? "surgery" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              ) : null
+            }
+          >
+            <SportSurgeryPickers
+              value={sportSurgery}
+              onChange={setSportSurgery}
+              concernParagraph={debouncedParagraph}
+              compact
             />
           </SubSection>
 

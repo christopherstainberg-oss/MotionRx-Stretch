@@ -32,6 +32,13 @@ import {
   type StoryMovementPrefs,
 } from "@/lib/routine-specificity";
 import { buildSleepCorrelation } from "@/lib/psqi";
+import { getSportById } from "@/data/sports";
+import {
+  getSurgeryById,
+  weeksSinceSurgery,
+  surgeryPhaseLabel,
+} from "@/data/surgeries";
+import { getActivityLevel } from "@/lib/activity-level";
 import {
   composePtSession,
   reorderItemsLikePtSession,
@@ -622,6 +629,23 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ...(storyIntel?.planHints.avoidTags || []),
     ])
   );
+  // PhysioPath-inspired: sports, surgery timeline, activity level
+  const sports = (input.sportIds || [])
+    .map((id) => getSportById(id))
+    .filter(Boolean);
+  const surgery = input.surgeryId ? getSurgeryById(input.surgeryId) : undefined;
+  const postOpWeeks = weeksSinceSurgery(input.surgeryDate);
+  const activityLevel = getActivityLevel(input.activityLevel);
+  const sportPrefer = sports.flatMap((s) => s!.preferTags);
+  const surgeryPrefer = surgery?.preferTags || [];
+  const surgeryAvoid = surgery?.avoidTags || [];
+  const activityPrefer = activityLevel?.preferTags || [];
+  // Early post-op: force protective bias when within typical protect window
+  const earlyPostOp =
+    surgery &&
+    postOpWeeks != null &&
+    postOpWeeks < (surgery.protectWeeksTypical || 6);
+
   const mergedPrefer = Array.from(
     new Set([
       ...descHints.preferTags,
@@ -631,9 +655,22 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ...rehabWithStory.preferTags,
       ...(storyIntel?.planHints.preferTags || []),
       ...(sleepCorr?.preferTags || []),
+      ...sportPrefer,
+      ...surgeryPrefer,
+      ...activityPrefer,
+      ...(earlyPostOp ? ["gentle", "protected", "walking"] : []),
       ...(homeBased ? ["home", "minimal-equipment", "chair", "wall"] : []),
     ])
   );
+  // Merge surgery avoid into avoid list
+  for (const t of surgeryAvoid) {
+    if (!mergedAvoid.includes(t)) mergedAvoid.push(t);
+  }
+  if (earlyPostOp) {
+    for (const t of ["plyo", "impact", "heavy-load", "jump"]) {
+      if (!mergedAvoid.includes(t)) mergedAvoid.push(t);
+    }
+  }
 
   const rank = { beginner: 1, intermediate: 2, advanced: 3 };
   const pickMaxDiff = (...opts: (Difficulty | undefined)[]): Difficulty | undefined => {
@@ -723,7 +760,13 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         ...(parsed?.goals ?? []),
         ...(storyIntel?.planHints.functionalGoals || []),
         ...(storyIntel?.goals || []),
+        ...sports.map((s) => `Return toward ${s!.name}`),
       ].filter(Boolean);
+  if (surgery) {
+    goals.push(
+      surgeryPhaseLabel(postOpWeeks, surgery)
+    );
+  }
   const rawAvg =
     areas.reduce(
       (sum, a) =>
@@ -761,6 +804,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   if (sxSummary?.redFlags.length || sxSummary?.maxDifficulty === "beginner")
     difficulty = "beginner";
   if (adlSummary?.maxDifficulty === "beginner") difficulty = "beginner";
+  if (earlyPostOp || surgery?.maxDifficulty === "beginner") difficulty = "beginner";
 
   // Fold clinical symptom labels into free-text symptom chips for scoring
   const symptomLabels = Array.from(
@@ -922,7 +966,10 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       (storyIntel?.planHints.minutesScale ?? 1) *
       (adlSummary?.minutesScale ?? 1) *
       (sxSummary?.minutesScale ?? 1) *
-      (sleepCorr?.minutesScale ?? 1)
+      (sleepCorr?.minutesScale ?? 1) *
+      (surgery?.minutesScale ?? 1) *
+      (activityLevel?.minutesScale ?? 1) *
+      (earlyPostOp ? 0.85 : 1)
   );
   if (
     combinedHints.biases.includes("short-volume") ||
