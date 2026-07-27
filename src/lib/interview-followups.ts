@@ -101,13 +101,16 @@ export function conversationalRegion(regionLabel: string): string {
 /** Window of text around a keyword (local co-occurrence, avoids false positives) */
 function nearKeyword(text: string, keywordRe: RegExp, window = 48): string {
   const flags = keywordRe.flags.includes("g") ? keywordRe.flags : `${keywordRe.flags}g`;
-  const matches = text.matchAll(new RegExp(keywordRe.source, flags));
+  const re = new RegExp(keywordRe.source, flags);
   const chunks: string[] = [];
-  for (const m of matches) {
-    const i = m.index ?? 0;
+  // Avoid for..of matchAll (needs downlevelIteration under Next production TS)
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const i = m.index;
     chunks.push(
       text.slice(Math.max(0, i - window), Math.min(text.length, i + (m[0]?.length || 0) + window))
     );
+    if (!re.global) break;
   }
   return chunks.join(" || ");
 }
