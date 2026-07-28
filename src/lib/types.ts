@@ -476,18 +476,23 @@ export interface Routine {
     adlSummary?: string[];
     adlCoachingTips?: string[];
     /**
-     * Evidence-based rehab dynamics (tissue stage, prognosis framing, selection notes).
-     * Replaces the removed PhysioPath multi-phase program builder.
+     * Intelligent rehab dynamics (tissue stage, mechanism, multi-issue efficiency).
      */
     rehabDynamics?: {
       tissueStage: string;
       phase: string;
       prognosisBand: string;
+      primaryMechanism?: string;
+      mechanisms?: string[];
       summaryLines: string[];
       evidenceLines: string[];
       prognosisLines: string[];
+      efficiencyLines?: string[];
+      primaryAreas?: string[];
+      chainAreas?: string[];
       weeksSince?: number;
       postOpWeeks?: number;
+      intelligenceVersion?: number;
     };
   };
   selfAdjustHistory: RoutineAdjustment[];

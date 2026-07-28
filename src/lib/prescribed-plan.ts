@@ -145,20 +145,30 @@ export function buildPrescribedPlanDocument(opts: {
         const dyn = routine.generatedFrom?.rehabDynamics;
         if (!dyn) {
           return [
-            "Exercise choice is shaped by tissue stage (inflammatory → proliferative → remodeling → capacity), irritability, onset/post-op timing, and common outpatient PT load-management rules.",
-            "High irritability or early post-op → protect, gentle motion, isometrics; settled chronic presentations → progressive loading and graded exposure.",
+            "Intelligent recovery generation ranks mechanism (tendon, joint, nerve, muscle, posture…), tissue stage, kinetic-chain partners, and functional goals.",
+            "Programs use minimal-effective-dose selection: high-value multi-purpose moves, diversity control, and primary-issue focus with light secondary coverage.",
             "Educational framing only — surgeon/PT protocol always overrides; not a personal medical prognosis.",
           ].join(" ");
         }
         const lines = [
+          dyn.primaryMechanism
+            ? `Primary mechanism: ${String(dyn.primaryMechanism).replace(/-/g, " ")}`
+            : null,
           `Tissue dosing stage: ${String(dyn.tissueStage).replace(/-/g, " ")}`,
           `Session phase: ${String(dyn.phase).replace(/-/g, " ")}`,
           `Outlook framing: ${String(dyn.prognosisBand).replace(/-/g, " ")} (population-level education, not a personal forecast)`,
+          dyn.primaryAreas?.length
+            ? `Primary focus: ${dyn.primaryAreas.map((a) => String(a).replace(/-/g, " ")).join(", ")}`
+            : null,
+          dyn.chainAreas?.length
+            ? `Kinetic chain: ${dyn.chainAreas.map((a) => String(a).replace(/-/g, " ")).join(", ")}`
+            : null,
           dyn.weeksSince != null
             ? `Onset framing ~${dyn.weeksSince} weeks (educational stage map)`
             : null,
           dyn.postOpWeeks != null ? `Post-op week ~${dyn.postOpWeeks}` : null,
-          ...(dyn.summaryLines || []).slice(0, 4),
+          ...(dyn.efficiencyLines || []).slice(0, 3),
+          ...(dyn.summaryLines || []).slice(0, 3),
           ...(dyn.evidenceLines || []).slice(0, 4),
           ...(dyn.prognosisLines || []).slice(0, 2),
           "",

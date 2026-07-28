@@ -247,8 +247,33 @@ export function composePtSession(opts: {
   functionalLimits?: string[];
   /** Optional occupation session notes for reason lines */
   occupationNotes?: string[];
+  /** Intelligent recovery quotas (override phase defaults when provided) */
+  stretchQuotaHint?: number;
+  exerciseQuotaHint?: number;
 }): ComposedSession {
-  const budget = phaseItemBudget(opts.phase, opts.minutesTarget);
+  const baseBudget = phaseItemBudget(opts.phase, opts.minutesTarget);
+  const budget =
+    opts.stretchQuotaHint != null || opts.exerciseQuotaHint != null
+      ? {
+          maxStretch: Math.max(
+            2,
+            Math.min(6, opts.stretchQuotaHint ?? baseBudget.maxStretch)
+          ),
+          maxExercise: Math.max(
+            2,
+            Math.min(6, opts.exerciseQuotaHint ?? baseBudget.maxExercise)
+          ),
+          maxTotal: Math.max(
+            5,
+            Math.min(
+              12,
+              (opts.stretchQuotaHint ?? baseBudget.maxStretch) +
+                (opts.exerciseQuotaHint ?? baseBudget.maxExercise) +
+                1 // room for cool-down
+            )
+          ),
+        }
+      : baseBudget;
   const avoidTags = Array.from(
     new Set((opts.avoidTags || []).map((t) => t.toLowerCase()))
   );

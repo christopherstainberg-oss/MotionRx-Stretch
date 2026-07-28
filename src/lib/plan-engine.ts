@@ -51,6 +51,7 @@ import {
   applyDynamicsToRehabPlan,
   buildRehabDynamics,
   dynamicsMovementBoost,
+  efficiencyRerank,
   type RehabDynamics,
 } from "@/lib/rehab-dynamics";
 import type {
@@ -946,7 +947,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
                   ? parsed.preferKinds
                   : (["stretch", "exercise"] as MovementKind[]);
 
-  const stretchCandidates = BASE_STRETCHES.filter((s) => {
+  const stretchScored = BASE_STRETCHES.filter((s) => {
     if (!rankOk(s.difficulty, difficulty, avgPain)) return false;
     const blob = `${s.name} ${s.tags.join(" ")}`.toLowerCase();
     for (const t of mergedAvoid) {
@@ -954,28 +955,39 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       if (blob.includes(t) || s.tags.includes(t)) return false;
     }
     return true;
-  })
-    .map((s) => ({
-      s,
-      score: scoreMovement(
-        s.bodyParts,
-        s.tags,
-        s.name,
-        s.benefits,
-        merged,
-        Math.max(...s.bodyParts.map((bp) => merged.painLevels[bp] ?? avgPain), 0),
-        "stretch",
-        combinedHints,
-        rehabWithStory,
-        s.id,
-        storyIntel,
-        storyPrefs,
-        dynamics
-      ),
-    }))
-    .sort((a, b) => b.score - a.score);
+  }).map((s) => ({
+    id: s.id,
+    s,
+    score: scoreMovement(
+      s.bodyParts,
+      s.tags,
+      s.name,
+      s.benefits,
+      merged,
+      Math.max(...s.bodyParts.map((bp) => merged.painLevels[bp] ?? avgPain), 0),
+      "stretch",
+      combinedHints,
+      rehabWithStory,
+      s.id,
+      storyIntel,
+      storyPrefs,
+      dynamics
+    ),
+  }));
 
-  const exerciseCandidates = BASE_EXERCISES.filter((e) => {
+  // Diversity + multi-issue efficiency re-rank (avoids near-duplicate stretch lists)
+  const stretchCandidates = efficiencyRerank(stretchScored, (id) => {
+    const s = BASE_STRETCHES.find((x) => x.id === id);
+    return s
+      ? { tags: s.tags, bodyParts: s.bodyParts, name: s.name }
+      : undefined;
+  }, {
+    primaryAreas: dynamics.primaryAreas.length ? dynamics.primaryAreas : areas,
+    secondaryAreas: dynamics.secondaryAreas,
+    limit: Math.max(24, dynamics.stretchQuotaHint * 4),
+  }).map(({ s, score }) => ({ s, score }));
+
+  const exerciseScored = BASE_EXERCISES.filter((e) => {
     if (!rankOk(e.difficulty, difficulty, avgPain)) return false;
     // Safety: drop high-load / impact when precautions demand
     const blob = `${e.name} ${e.tags.join(" ")}`.toLowerCase();
@@ -1030,26 +1042,36 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       return false;
     }
     return true;
-  })
-    .map((e) => ({
-      e,
-      score: scoreMovement(
-        e.bodyParts,
-        e.tags,
-        e.name,
-        e.benefits,
-        merged,
-        Math.max(...e.bodyParts.map((bp) => merged.painLevels[bp] ?? avgPain), 0),
-        "exercise",
-        combinedHints,
-        rehabWithStory,
-        e.id,
-        storyIntel,
-        storyPrefs,
-        dynamics
-      ),
-    }))
-    .sort((a, b) => b.score - a.score);
+  }).map((e) => ({
+    id: e.id,
+    e,
+    score: scoreMovement(
+      e.bodyParts,
+      e.tags,
+      e.name,
+      e.benefits,
+      merged,
+      Math.max(...e.bodyParts.map((bp) => merged.painLevels[bp] ?? avgPain), 0),
+      "exercise",
+      combinedHints,
+      rehabWithStory,
+      e.id,
+      storyIntel,
+      storyPrefs,
+      dynamics
+    ),
+  }));
+
+  const exerciseCandidates = efficiencyRerank(exerciseScored, (id) => {
+    const e = BASE_EXERCISES.find((x) => x.id === id);
+    return e
+      ? { tags: e.tags, bodyParts: e.bodyParts, name: e.name }
+      : undefined;
+  }, {
+    primaryAreas: dynamics.primaryAreas.length ? dynamics.primaryAreas : areas,
+    secondaryAreas: [...dynamics.secondaryAreas, ...dynamics.chainAreas],
+    limit: Math.max(24, dynamics.exerciseQuotaHint * 4),
+  }).map(({ e, score }) => ({ e, score }));
 
   let minutes = 0;
   let target = Math.max(8, Math.min(45, input.availableMinutes));
@@ -1146,7 +1168,9 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   const composed = composePtSession({
     phase: rehabWithStory.phase,
     patterns: rehabWithStory.patterns,
-    priorityAreas: rehabWithStory.priorityAreas,
+    priorityAreas: dynamics.primaryAreas.length
+      ? dynamics.primaryAreas
+      : rehabWithStory.priorityAreas,
     stretchCandidates: wantStretch ? stretchRefs : stretchRefs.slice(0, 3),
     exerciseCandidates: exerciseRefs,
     preferredStretchIds: wantStretch ? rehabWithStory.preferredStretchIds : [],
@@ -1158,6 +1182,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       storyIntel?.occupation?.source === "stated"
         ? storyIntel.occupation.sessionNotes
         : undefined,
+    stretchQuotaHint: dynamics.stretchQuotaHint,
+    exerciseQuotaHint: dynamics.exerciseQuotaHint,
   });
 
   const items: RoutineItem[] = [];
@@ -1329,13 +1355,16 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   const dynamicsDetail = dynamics.summaryLines.length
     ? ` Rehab dynamics: ${dynamics.summaryLines.join(" · ")}.`
     : "";
+  const efficiencyDetail = dynamics.efficiencyLines.length
+    ? ` Efficiency: ${dynamics.efficiencyLines.slice(0, 2).join(" · ")}.`
+    : "";
   const prognosisDetail = dynamics.prognosisLines[0]
     ? ` Outlook education: ${dynamics.prognosisLines[0]}`
     : "";
 
   const adjustment: RoutineAdjustment = {
     at: new Date().toISOString(),
-    reason: `Evidence-informed ${rehabWithStory.phase} HEP (${dynamics.tissueStage} tissue stage; ${dynamics.prognosisBand} outlook framing) from story, injury patterns (${rehabWithStory.patterns.join(", ")}), conditions, and irritability-based dosing${storyPrefs.stretchIds.length || storyPrefs.exerciseIds.length ? "; story-seeded functional movements" : ""}`,
+    reason: `Intelligent recovery HEP · ${dynamics.primaryMechanism} mechanism · ${dynamics.tissueStage} stage · ${rehabWithStory.phase} phase · ${dynamics.prognosisBand} outlook (patterns: ${rehabWithStory.patterns.join(", ") || "general"})${storyPrefs.stretchIds.length || storyPrefs.exerciseIds.length ? "; story-seeded function" : ""}`,
     painFactor: avgPain,
     action:
       combinedHints.biases.includes("defer-to-provider") ||
@@ -1360,6 +1389,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
           : "Lower irritability: maintain mobility, progress motor control and functional capacity with warm-up/cool-down structure.") +
       rehabDetail +
       dynamicsDetail +
+      efficiencyDetail +
       prognosisDetail +
       hrDetail +
       descDetail +
@@ -1401,7 +1431,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         ? `${kindsLabel} · ${rehabWithStory.phase.replace(/-/g, " ")}`
         : `${primaryRegion.replace(/-/g, " ")}: ${patternLabel || kindsLabel}`,
     description: [
-      `Outpatient-style HEP for “${rehabWithStory.phase.replace(/-/g, " ")}” with tissue-stage dosing (${dynamics.tissueStage.replace(/-/g, " ")}) — not a random stretch list.`,
+      `Intelligent recovery HEP for “${rehabWithStory.phase.replace(/-/g, " ")}” · mechanism ${dynamics.primaryMechanism.replace(/-/g, " ")} · tissue stage ${dynamics.tissueStage.replace(/-/g, " ")} — minimal-effective-dose, not a random stretch list.`,
+      dynamics.efficiencyLines[0] || null,
       dynamics.prognosisLines[0] || null,
       storyIntel
         ? `From your story: ${
@@ -1478,13 +1509,26 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ].slice(0, 18),
       safetyEducation: [
         {
-          title: "Injury dynamics & recovery framing",
-          body: dynamics.summaryLines.join(" · "),
+          title: "Intelligent recovery path",
+          body: [
+            ...dynamics.efficiencyLines.slice(0, 3),
+            ...dynamics.summaryLines.slice(0, 2),
+          ].join(" · "),
           bullets: [
+            `Mechanism: ${dynamics.primaryMechanism.replace(/-/g, " ")}${
+              dynamics.mechanisms.length > 1
+                ? ` (+ ${dynamics.mechanisms
+                    .slice(1)
+                    .map((m) => m.replace(/-/g, " "))
+                    .join(", ")})`
+                : ""
+            }`,
             ...dynamics.evidenceLines.slice(0, 4),
             ...dynamics.prognosisLines.slice(0, 2),
-            `Preferred stage tags: ${dynamics.preferTags.slice(0, 6).join(", ") || "—"}`,
-          ].filter(Boolean).slice(0, 10),
+            `Preferred tags: ${dynamics.preferTags.slice(0, 6).join(", ") || "—"}`,
+          ]
+            .filter(Boolean)
+            .slice(0, 10),
         },
         {
           title: "Evidence-informed PT session blueprint",
@@ -1557,16 +1601,22 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       sex: input.sex,
       pastMedicalHistory: input.pastMedicalHistory,
       currentMedicalHistory: input.currentMedicalHistory,
-      // Evidence-based rehab dynamics (replaces PhysioPath program builder)
+      // Intelligent rehab dynamics (mechanism + stage + efficiency)
       rehabDynamics: {
         tissueStage: dynamics.tissueStage,
         phase: dynamics.phase,
         prognosisBand: dynamics.prognosisBand,
+        primaryMechanism: dynamics.primaryMechanism,
+        mechanisms: dynamics.mechanisms,
         summaryLines: dynamics.summaryLines,
         evidenceLines: dynamics.evidenceLines,
         prognosisLines: dynamics.prognosisLines,
+        efficiencyLines: dynamics.efficiencyLines,
+        primaryAreas: dynamics.primaryAreas,
+        chainAreas: dynamics.chainAreas,
         weeksSince: dynamics.weeksSince,
         postOpWeeks: dynamics.postOpWeeks ?? undefined,
+        intelligenceVersion: dynamics.intelligenceVersion,
       },
     },
     selfAdjustHistory: [adjustment],

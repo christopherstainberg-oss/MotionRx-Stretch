@@ -2748,13 +2748,20 @@ export default function AssessmentPage() {
                   </p>
                 )}
 
-                {/* Evidence-based rehab dynamics (tissue stage / prognosis framing) */}
+                {/* Intelligent recovery dynamics (mechanism + stage + efficiency) */}
                 {generated.generatedFrom?.rehabDynamics && (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-800 dark:bg-emerald-950/30">
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
-                      Injury dynamics & recovery framing
+                      Intelligent recovery path
                     </p>
                     <div className="flex flex-wrap gap-2 text-xs">
+                      {generated.generatedFrom.rehabDynamics.primaryMechanism && (
+                        <span className="rounded-full bg-emerald-700 px-2.5 py-0.5 font-semibold capitalize text-white">
+                          {String(
+                            generated.generatedFrom.rehabDynamics.primaryMechanism
+                          ).replace(/-/g, " ")}
+                        </span>
+                      )}
                       <span className="rounded-full bg-emerald-600 px-2.5 py-0.5 font-semibold capitalize text-white">
                         {String(generated.generatedFrom.rehabDynamics.tissueStage).replace(
                           /-/g,
@@ -2772,9 +2779,28 @@ export default function AssessmentPage() {
                         )}
                       </span>
                     </div>
+                    {(generated.generatedFrom.rehabDynamics.primaryAreas?.length ||
+                      generated.generatedFrom.rehabDynamics.chainAreas?.length) && (
+                      <p className="mt-2 text-xs text-brand-600 dark:text-brand-300">
+                        {generated.generatedFrom.rehabDynamics.primaryAreas?.length
+                          ? `Focus: ${generated.generatedFrom.rehabDynamics.primaryAreas
+                              .map((a) => String(a).replace(/-/g, " "))
+                              .join(", ")}`
+                          : ""}
+                        {generated.generatedFrom.rehabDynamics.primaryAreas?.length &&
+                        generated.generatedFrom.rehabDynamics.chainAreas?.length
+                          ? " · "
+                          : ""}
+                        {generated.generatedFrom.rehabDynamics.chainAreas?.length
+                          ? `Chain: ${generated.generatedFrom.rehabDynamics.chainAreas
+                              .map((a) => String(a).replace(/-/g, " "))
+                              .join(", ")}`
+                          : ""}
+                      </p>
+                    )}
                     {(generated.generatedFrom.rehabDynamics.weeksSince != null ||
                       generated.generatedFrom.rehabDynamics.postOpWeeks != null) && (
-                      <p className="mt-2 text-xs text-brand-600 dark:text-brand-300">
+                      <p className="mt-1 text-xs text-brand-600 dark:text-brand-300">
                         {generated.generatedFrom.rehabDynamics.weeksSince != null
                           ? `Onset ~${generated.generatedFrom.rehabDynamics.weeksSince} weeks`
                           : ""}
@@ -2788,7 +2814,11 @@ export default function AssessmentPage() {
                       </p>
                     )}
                     <ul className="mt-3 space-y-1.5 text-xs text-brand-800 dark:text-brand-100">
-                      {(generated.generatedFrom.rehabDynamics.summaryLines || [])
+                      {(
+                        generated.generatedFrom.rehabDynamics.efficiencyLines ||
+                        generated.generatedFrom.rehabDynamics.summaryLines ||
+                        []
+                      )
                         .slice(0, 4)
                         .map((line) => (
                           <li key={line} className="flex gap-2">
@@ -2806,9 +2836,9 @@ export default function AssessmentPage() {
                         ))}
                     </ul>
                     <p className="mt-2 text-[11px] text-brand-500">
-                      Exercise choice follows tissue stage, irritability, and evidence-informed
-                      load progression (protect → motion → control → capacity → function). Educational
-                      only — your clinician or surgeon protocol always overrides.
+                      Smarter program generation: mechanism + tissue stage + kinetic chain +
+                      minimal-effective-dose selection for efficient recovery. Educational only —
+                      your clinician or surgeon protocol always overrides.
                     </p>
                   </div>
                 )}
