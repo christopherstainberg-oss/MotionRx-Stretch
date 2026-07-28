@@ -75,23 +75,27 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d) => {
-        if (cancelled) return;
-        if (d.user) {
-          setSignedIn(true);
-          setDisplayName(d.user.name || d.user.email);
-        } else {
-          setSignedIn(false);
-          setDisplayName(null);
-        }
-      })
-      .catch(() => {});
+    // Cache-aware — do not re-hit /api/auth/me on every route change
+    import("@/lib/auth-session").then(({ getMeCached }) => {
+      getMeCached(false)
+        .then((user) => {
+          if (cancelled) return;
+          if (user) {
+            setSignedIn(true);
+            setDisplayName(
+              (user.name as string) || (user.email as string) || null
+            );
+          } else {
+            setSignedIn(false);
+            setDisplayName(null);
+          }
+        })
+        .catch(() => {});
+    });
     return () => {
       cancelled = true;
     };
-  }, [pathname]);
+  }, []);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -108,6 +112,8 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
 
   async function logout() {
     try {
+      const { clearMeCache } = await import("@/lib/auth-session");
+      clearMeCache();
       await apiFetch("/api/auth/logout", { method: "POST" });
     } catch {
       /* still leave session UI */

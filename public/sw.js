@@ -8,7 +8,7 @@
  *
  * Bump CACHE when changing SW strategies so activate clears old shells.
  */
-const CACHE = "motionrx-v5";
+const CACHE = "motionrx-v6";
 const PRECACHE = [
   "/login",
   "/home",
@@ -102,7 +102,24 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Navigations + Next bundles: network-first so deploys show up immediately online
+  // Next hashed assets: cache-first (immutable filenames) — snappy repeat visits
+  if (url.pathname.startsWith("/_next/static/")) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
+          if (response && response.status === 200 && response.type === "basic") {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // Navigations + other Next assets: network-first with cache fallback (fresh HTML when online)
   if (request.mode === "navigate" || isNextAsset(url.pathname)) {
     event.respondWith(
       fetch(request, { cache: request.mode === "navigate" ? "no-cache" : "default" })

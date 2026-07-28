@@ -2,7 +2,14 @@
 const nextConfig = {
   output: "standalone",
   reactStrictMode: true,
+  poweredByHeader: false,
+  compress: true,
+  // Tree-shake lucide icons — large win on every client page
+  experimental: {
+    optimizePackageImports: ["lucide-react"],
+  },
   images: {
+    formats: ["image/avif", "image/webp"],
     remotePatterns: [
       { protocol: "https", hostname: "i.ytimg.com" },
       { protocol: "https", hostname: "img.youtube.com" },
@@ -58,6 +65,16 @@ const nextConfig = {
       source: "/manifest.webmanifest",
       headers: [
         { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
+      ],
+    },
+    {
+      // Long-cache hashed Next assets for snappy repeat visits
+      source: "/_next/static/:path*",
+      headers: [
+        {
+          key: "Cache-Control",
+          value: "public, max-age=31536000, immutable",
+        },
       ],
     },
   ],

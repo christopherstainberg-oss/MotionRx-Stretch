@@ -47,6 +47,8 @@ html {
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* Promote compositor-friendly scrolling on mobile PWAs */
+  -webkit-overflow-scrolling: touch;
 }
 
 html,
@@ -64,7 +66,21 @@ body {
   overscroll-behavior-y: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  /* Avoid full-page color transitions (janky on low-end phones) */
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* PWA standalone: slightly calmer chrome */
@@ -107,19 +123,22 @@ body {
   .card {
     @apply rounded-2xl border border-brand-100/60 bg-white/90 shadow-none
       dark:border-brand-800/60 dark:bg-brand-950/90 dark:shadow-none;
+    /* Skip off-screen paint work for long lists / multi-card pages */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 180px;
   }
 
   .card-interactive {
-    @apply card transition duration-150 hover:border-brand-200 hover:bg-brand-50/40
+    @apply card transition-colors duration-100 hover:border-brand-200 hover:bg-brand-50/40
       active:bg-brand-50/70
       dark:hover:border-brand-700 dark:hover:bg-brand-900/50;
   }
 
   .btn {
-    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors
       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
       dark:focus-visible:ring-offset-brand-950
-      disabled:pointer-events-none disabled:opacity-50 active:scale-[0.99];
+      disabled:pointer-events-none disabled:opacity-50 active:opacity-90;
   }
 
   .btn-primary {

@@ -39,11 +39,11 @@ export function AccountMenu({ className = "" }: { className?: string }) {
   const [toast, setToast] = useState<string | null>(null);
   const [avatarBust, setAvatarBust] = useState(0);
 
-  const refreshMe = useCallback(() => {
-    apiFetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d) => {
-        setUser(d.user || null);
+  const refreshMe = useCallback((force = false) => {
+    import("@/lib/auth-session")
+      .then(({ getMeCached }) => getMeCached(force))
+      .then((u) => {
+        setUser((u as MeUser) || null);
       })
       .catch(() => setUser(null))
       .finally(() => setChecked(true));
@@ -77,6 +77,8 @@ export function AccountMenu({ className = "" }: { className?: string }) {
   async function logout() {
     setBusy("logout");
     try {
+      const { clearMeCache } = await import("@/lib/auth-session");
+      clearMeCache();
       await apiFetch("/api/auth/logout", { method: "POST" });
     } catch {
       /* still leave */
@@ -198,7 +200,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
         onClick={() => {
           setOpen((o) => !o);
           if (!open) {
-            refreshMe();
+            refreshMe(true);
             setAvatarBust((n) => n + 1);
           }
         }}

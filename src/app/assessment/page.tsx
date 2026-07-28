@@ -459,13 +459,13 @@ export default function AssessmentPage() {
   /** When true, story paragraph can auto-fill sex / history fields */
   const [autoApplyHistory, setAutoApplyHistory] = useState(true);
 
-  /** Heavy clinical matching runs on debounced text so the textarea stays responsive */
-  const debouncedParagraph = useDebouncedValue(paragraph, 400);
+  /** Heavy clinical matching — longer debounce keeps free-text typing snappy */
+  const debouncedParagraph = useDebouncedValue(paragraph, 650);
   /**
    * Short pause so typing settles before we *detect* a complete answer.
    * The longer conversation-speed delay (default 5s) runs after that so the user can still edit.
    */
-  const flowParagraph = useDebouncedValue(paragraph, 300);
+  const flowParagraph = useDebouncedValue(paragraph, 350);
   const { delayMs: conversationDelayMs } = useConversationSpeed();
 
   useEffect(() => {
