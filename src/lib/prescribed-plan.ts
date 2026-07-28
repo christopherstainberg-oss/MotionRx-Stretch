@@ -14,7 +14,6 @@ import {
 } from "@/lib/clinical-rehab-intel";
 import { displayPreferredName, type AssessmentCoachContext } from "@/lib/assessment-coach";
 import { generateHybridPlan, adjustRoutineFromFeedback } from "@/lib/plan-engine";
-import { formatProgramPhasesText } from "@/lib/program-creation";
 
 export type PrescribedPlanDocument = {
   title: string;
@@ -141,17 +140,31 @@ export function buildPrescribedPlanDocument(opts: {
       ].join(" "),
     },
     {
-      heading: "3b. Multi-phase recovery program (PhysioPath Program Creation Model)",
+      heading: "3b. Injury dynamics & recovery framing (evidence-informed)",
       body: (() => {
-        const prog = routine.generatedFrom?.program;
-        if (!prog) {
-          return "A multi-phase recovery scaffold is generated with your HEP: acute (≤6 weeks) vs chronic (>6 weeks) track, condition-specific timelines, variants (grade/approach/pace), comorbidity healing scale, phase criteria, and signature/RTS/sport/falls exercise layers. Surgeon/PT protocol always overrides.";
+        const dyn = routine.generatedFrom?.rehabDynamics;
+        if (!dyn) {
+          return [
+            "Exercise choice is shaped by tissue stage (inflammatory → proliferative → remodeling → capacity), irritability, onset/post-op timing, and common outpatient PT load-management rules.",
+            "High irritability or early post-op → protect, gentle motion, isometrics; settled chronic presentations → progressive loading and graded exposure.",
+            "Educational framing only — surgeon/PT protocol always overrides; not a personal medical prognosis.",
+          ].join(" ");
         }
-        return [
-          formatProgramPhasesText(prog),
+        const lines = [
+          `Tissue dosing stage: ${String(dyn.tissueStage).replace(/-/g, " ")}`,
+          `Session phase: ${String(dyn.phase).replace(/-/g, " ")}`,
+          `Outlook framing: ${String(dyn.prognosisBand).replace(/-/g, " ")} (population-level education, not a personal forecast)`,
+          dyn.weeksSince != null
+            ? `Onset framing ~${dyn.weeksSince} weeks (educational stage map)`
+            : null,
+          dyn.postOpWeeks != null ? `Post-op week ~${dyn.postOpWeeks}` : null,
+          ...(dyn.summaryLines || []).slice(0, 4),
+          ...(dyn.evidenceLines || []).slice(0, 4),
+          ...(dyn.prognosisLines || []).slice(0, 2),
           "",
-          "Educational timeline only — criteria and clinician orders decide progression, not the calendar alone.",
-        ].join("\n");
+          "Progress by 24-hour symptom response and task ease, not calendar alone. Surgeon/PT protocol always overrides.",
+        ].filter(Boolean);
+        return lines.join("\n");
       })(),
     },
     {
@@ -212,16 +225,12 @@ export function buildPrescribedPlanDocument(opts: {
       targetOverall: targetPain,
       rule: "Reduce pain interference while improving a daily task; do not chase zero pain at the cost of all movement.",
     },
-    frequency:
-      routine.generatedFrom?.program?.sessions ||
-      "5–6 days/week (most days), quality over intensity",
-    durationWeeks: routine.generatedFrom?.program
-      ? `${routine.generatedFrom.program.totalWeeks}-week ${routine.generatedFrom.program.track} program (educational); 2-week check-in`
+    frequency: "5–6 days/week (most days), quality over intensity",
+    durationWeeks: routine.generatedFrom?.rehabDynamics
+      ? `Tissue stage “${routine.generatedFrom.rehabDynamics.tissueStage}”; outlook “${routine.generatedFrom.rehabDynamics.prognosisBand}” (educational); 2-week check-in`
       : "2-week check-in; 2–6 week functional window for many goals",
     sessionMinutes: routine.estimatedMinutes,
-    phase: routine.generatedFrom?.program
-      ? `${routine.generatedFrom.program.phases[routine.generatedFrom.program.currentPhaseIndex]?.title || rehab.phase} (phase ${routine.generatedFrom.program.currentPhaseIndex + 1}/${routine.generatedFrom.program.phases.length})`
-      : rehab.phase,
+    phase: routine.generatedFrom?.rehabDynamics?.phase || rehab.phase,
     patterns: rehab.patterns,
     version: 1,
   };

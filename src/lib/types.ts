@@ -476,14 +476,19 @@ export interface Routine {
     adlSummary?: string[];
     adlCoachingTips?: string[];
     /**
-     * PhysioPath-style multi-phase Program Creation Model
-     * (track, condition timeline, variants, healing scale, phase criteria, seeds).
+     * Evidence-based rehab dynamics (tissue stage, prognosis framing, selection notes).
+     * Replaces the removed PhysioPath multi-phase program builder.
      */
-    program?: import("@/lib/program-creation").MotionRxProgram;
-    /** Program model summary lines for UI */
-    programSummary?: string[];
-    /** Current-phase signature / RTS / sport seed notes */
-    programPhaseSeeds?: string[];
+    rehabDynamics?: {
+      tissueStage: string;
+      phase: string;
+      prognosisBand: string;
+      summaryLines: string[];
+      evidenceLines: string[];
+      prognosisLines: string[];
+      weeksSince?: number;
+      postOpWeeks?: number;
+    };
   };
   selfAdjustHistory: RoutineAdjustment[];
   createdAt: string;

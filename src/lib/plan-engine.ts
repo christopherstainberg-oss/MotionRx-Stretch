@@ -48,12 +48,11 @@ import {
   type MovementCatalogRef,
 } from "@/lib/routine-session-composer";
 import {
-  createProgramCreationInputFromSymptom,
-  generateProgram,
-  programHintsForScoring,
-  programSeedNotes,
-  formatProgramPhasesText,
-} from "@/lib/program-creation";
+  applyDynamicsToRehabPlan,
+  buildRehabDynamics,
+  dynamicsMovementBoost,
+  type RehabDynamics,
+} from "@/lib/rehab-dynamics";
 import type {
   BodyPart,
   Difficulty,
@@ -71,12 +70,7 @@ export { matchConditionsFromText, summarizeConditions } from "@/data/clinical-co
 export { buildClinicalSafetyPlan } from "@/data/clinical-safety";
 export { analyzeAssessmentAdjectives } from "@/data/assessment-adjectives";
 export { buildClinicalRehabPlan } from "@/lib/clinical-rehab-intel";
-export {
-  generateProgram,
-  createProgramCreationInputFromSymptom,
-  planDrift,
-  formatProgramPhasesText,
-} from "@/lib/program-creation";
+export { buildRehabDynamics } from "@/lib/rehab-dynamics";
 
 const DIFFICULTY_RANK: Record<Difficulty, number> = {
   beginner: 1,
@@ -303,7 +297,8 @@ function scoreMovement(
   rehab?: ClinicalRehabPlan,
   movementId?: string,
   storyIntel?: StoryIntelligence | null,
-  storyPrefs?: StoryMovementPrefs | null
+  storyPrefs?: StoryMovementPrefs | null,
+  dynamics?: RehabDynamics | null
 ): number {
   let score = 0;
   // Priority-weighted area match (primary complaint regions first)
@@ -420,6 +415,17 @@ function scoreMovement(
       tags,
       bodyParts,
       benefits,
+    });
+  }
+
+  // Injury dynamics + prognosis-informed selection (tissue stage, evidence tags)
+  if (dynamics && movementId) {
+    score += dynamicsMovementBoost(dynamics, {
+      id: movementId,
+      kind,
+      name,
+      tags,
+      bodyParts,
     });
   }
 
@@ -646,13 +652,22 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ...(storyIntel?.planHints.avoidTags || []),
     ])
   );
-  // PhysioPath Program Creation Model — multi-phase timeline, variants, healing scale,
-  // signature / RTS / sport / falls layers, load guidance, builtFrom fingerprint
-  const programInput = createProgramCreationInputFromSymptom(input);
-  const motionProgram = generateProgram(programInput);
-  const programHints = programHintsForScoring(motionProgram);
+  // Evidence-based rehab dynamics (tissue stage, prognosis framing, realistic seeds)
+  // Replaces the removed PhysioPath multi-phase program builder.
+  const dynamics = buildRehabDynamics({
+    input: {
+      ...input,
+      areas: input.areas.length ? input.areas : storyAreas,
+      painDescriptorIds,
+      conditionIds,
+    },
+    rehab: rehabWithStory,
+    storyIntel,
+  });
+  // Merge dynamics into rehab plan used for scoring + session composition
+  Object.assign(rehabWithStory, applyDynamicsToRehabPlan(rehabWithStory, dynamics));
 
-  // PhysioPath-inspired: sports, surgery timeline, activity level
+  // Sports, surgery timeline, activity level
   const sports = (input.sportIds || [])
     .map((id) => getSportById(id))
     .filter(Boolean);
@@ -718,18 +733,18 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ...sportPrefer,
       ...surgeryPrefer,
       ...activityPrefer,
-      ...programHints.preferTags,
+      ...dynamics.preferTags,
       ...(earlyPostOp ? ["gentle", "protected", "walking"] : []),
       ...(homeBased ? ["home", "minimal-equipment", "chair", "wall"] : []),
     ])
   );
-  // Merge surgery / sport / vitals / labs / program-phase avoid tags
+  // Merge surgery / sport / vitals / labs / dynamics avoid tags
   for (const t of [
     ...surgeryAvoid,
     ...(latePhase?.avoidTags || []),
     ...(vitalsHints?.avoidTags || []),
     ...(labHints?.avoidTags || []),
-    ...programHints.avoidTags,
+    ...dynamics.avoidTags,
   ]) {
     if (!mergedAvoid.includes(t)) mergedAvoid.push(t);
   }
@@ -873,12 +888,15 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   if (adlSummary?.maxDifficulty === "beginner") difficulty = "beginner";
   if (earlyPostOp || surgery?.maxDifficulty === "beginner") difficulty = "beginner";
   if (vitalsHints?.caution || labHints?.critical) difficulty = "beginner";
-  // Program model early protect phase caps difficulty
+  // Tissue-stage protect caps difficulty
+  if (rank[dynamics.maxDifficulty] < rank[difficulty]) {
+    difficulty = dynamics.maxDifficulty;
+  }
   if (
-    motionProgram.currentPhaseIndex === 0 &&
-    rank[programHints.maxDifficulty] < rank[difficulty]
+    dynamics.tissueStage === "inflammatory" ||
+    dynamics.tissueStage === "post-op-protect"
   ) {
-    difficulty = programHints.maxDifficulty;
+    difficulty = "beginner";
   }
 
   // Fold clinical symptom labels into free-text symptom chips for scoring
@@ -951,7 +969,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         rehabWithStory,
         s.id,
         storyIntel,
-        storyPrefs
+        storyPrefs,
+        dynamics
       ),
     }))
     .sort((a, b) => b.score - a.score);
@@ -1026,7 +1045,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
         rehabWithStory,
         e.id,
         storyIntel,
-        storyPrefs
+        storyPrefs,
+        dynamics
       ),
     }))
     .sort((a, b) => b.score - a.score);
@@ -1038,7 +1058,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       safety.minutesScale *
       adj.minutesScale *
       rehabWithStory.minutesScale *
-      programHints.minutesScale *
+      dynamics.minutesScale *
       (storyIntel?.planHints.minutesScale ?? 1) *
       (adlSummary?.minutesScale ?? 1) *
       (sxSummary?.minutesScale ?? 1) *
@@ -1306,16 +1326,16 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     ? ` Story→movement: ${storyPrefs.reasonLines.slice(0, 2).join(" ")}`
     : "";
 
-  const programDetail = motionProgram.summaryLines.length
-    ? ` Program model: ${motionProgram.summaryLines.join(" · ")}.`
+  const dynamicsDetail = dynamics.summaryLines.length
+    ? ` Rehab dynamics: ${dynamics.summaryLines.join(" · ")}.`
     : "";
-  const programPhaseDetail = motionProgram.phases[motionProgram.currentPhaseIndex]
-    ? ` Phase criteria: ${motionProgram.phases[motionProgram.currentPhaseIndex]!.criteria}. Load: ${motionProgram.load}`
+  const prognosisDetail = dynamics.prognosisLines[0]
+    ? ` Outlook education: ${dynamics.prognosisLines[0]}`
     : "";
 
   const adjustment: RoutineAdjustment = {
     at: new Date().toISOString(),
-    reason: `PT-style ${rehabWithStory.phase} HEP + PhysioPath ${motionProgram.track} ${motionProgram.totalWeeks}-wk program (${motionProgram.plan?.label || "template"}, phase ${motionProgram.currentPhaseIndex + 1}) from story, injury patterns (${rehabWithStory.patterns.join(", ")}), conditions, and irritability-based dosing${storyPrefs.stretchIds.length || storyPrefs.exerciseIds.length ? "; story-seeded functional movements" : ""}`,
+    reason: `Evidence-informed ${rehabWithStory.phase} HEP (${dynamics.tissueStage} tissue stage; ${dynamics.prognosisBand} outlook framing) from story, injury patterns (${rehabWithStory.patterns.join(", ")}), conditions, and irritability-based dosing${storyPrefs.stretchIds.length || storyPrefs.exerciseIds.length ? "; story-seeded functional movements" : ""}`,
     painFactor: avgPain,
     action:
       combinedHints.biases.includes("defer-to-provider") ||
@@ -1323,7 +1343,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       avgPain >= 6 ||
       safety.programBiases.includes("nwb") ||
       rehabWithStory.phase === "protect-calm" ||
-      motionProgram.currentPhaseIndex === 0 ||
+      dynamics.tissueStage === "inflammatory" ||
+      dynamics.tissueStage === "post-op-protect" ||
       storyIntel?.activityResponse === "delayed-worse"
         ? "regress"
         : avgPain >= 4
@@ -1338,8 +1359,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
           ? "Moderate irritability: targeted mobility + activation with mid volume; progress only if 24h response stays green."
           : "Lower irritability: maintain mobility, progress motor control and functional capacity with warm-up/cool-down structure.") +
       rehabDetail +
-      programDetail +
-      programPhaseDetail +
+      dynamicsDetail +
+      prognosisDetail +
       hrDetail +
       descDetail +
       condDetail +
@@ -1376,21 +1397,12 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     id: uuid(),
     userId,
     name:
-      motionProgram.plan?.label
-        ? `${motionProgram.plan.label}: phase ${motionProgram.currentPhaseIndex + 1} ${kindsLabel}`
-        : primaryRegion === "full-body"
-          ? `PT-style ${kindsLabel} plan (${rehabWithStory.phase.replace(/-/g, " ")})`
-          : `${primaryRegion.replace(/-/g, " ")}: ${patternLabel || kindsLabel}`,
+      primaryRegion === "full-body"
+        ? `${kindsLabel} · ${rehabWithStory.phase.replace(/-/g, " ")}`
+        : `${primaryRegion.replace(/-/g, " ")}: ${patternLabel || kindsLabel}`,
     description: [
-      `PhysioPath-style ${motionProgram.track} program (${motionProgram.totalWeeks} weeks) — current phase “${
-        motionProgram.phases[motionProgram.currentPhaseIndex]?.title || rehabWithStory.phase
-      }” with a realistic outpatient HEP session (not a random stretch list).`,
-      motionProgram.plan
-        ? `Matched timeline: ${motionProgram.plan.label}${
-            motionProgram.plan.variant ? ` · ${motionProgram.plan.variant.label}` : ""
-          }. ${motionProgram.sessions}.`
-        : null,
-      motionProgram.load,
+      `Outpatient-style HEP for “${rehabWithStory.phase.replace(/-/g, " ")}” with tissue-stage dosing (${dynamics.tissueStage.replace(/-/g, " ")}) — not a random stretch list.`,
+      dynamics.prognosisLines[0] || null,
       storyIntel
         ? `From your story: ${
             storyIntel.irritability !== "unknown"
@@ -1460,19 +1472,18 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       suggestedAssistiveDeviceIds: safety.suggestedAssistiveDeviceIds,
       safetySummary: [
         ...(storyIntel?.liveReadLines || []),
+        ...dynamics.summaryLines,
         ...rehabWithStory.summaryLines,
         ...safety.summaryLines,
       ].slice(0, 18),
       safetyEducation: [
         {
-          title: "Multi-phase recovery program (PhysioPath model)",
-          body: formatProgramPhasesText(motionProgram).slice(0, 1200),
+          title: "Injury dynamics & recovery framing",
+          body: dynamics.summaryLines.join(" · "),
           bullets: [
-            ...motionProgram.summaryLines.slice(0, 4),
-            motionProgram.phases[motionProgram.currentPhaseIndex]
-              ? `Advance when: ${motionProgram.phases[motionProgram.currentPhaseIndex]!.criteria}`
-              : "",
-            ...programSeedNotes(motionProgram).slice(0, 4),
+            ...dynamics.evidenceLines.slice(0, 4),
+            ...dynamics.prognosisLines.slice(0, 2),
+            `Preferred stage tags: ${dynamics.preferTags.slice(0, 6).join(", ") || "—"}`,
           ].filter(Boolean).slice(0, 10),
         },
         {
@@ -1546,10 +1557,17 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       sex: input.sex,
       pastMedicalHistory: input.pastMedicalHistory,
       currentMedicalHistory: input.currentMedicalHistory,
-      // PhysioPath Program Creation Model (full multi-phase structure)
-      program: motionProgram,
-      programSummary: motionProgram.summaryLines,
-      programPhaseSeeds: programSeedNotes(motionProgram),
+      // Evidence-based rehab dynamics (replaces PhysioPath program builder)
+      rehabDynamics: {
+        tissueStage: dynamics.tissueStage,
+        phase: dynamics.phase,
+        prognosisBand: dynamics.prognosisBand,
+        summaryLines: dynamics.summaryLines,
+        evidenceLines: dynamics.evidenceLines,
+        prognosisLines: dynamics.prognosisLines,
+        weeksSince: dynamics.weeksSince,
+        postOpWeeks: dynamics.postOpWeeks ?? undefined,
+      },
     },
     selfAdjustHistory: [adjustment],
     createdAt: new Date().toISOString(),

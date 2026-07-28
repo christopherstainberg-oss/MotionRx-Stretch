@@ -21,10 +21,7 @@ export {
   applyHomeBasedProgram,
   buildClinicalSafetyPlan,
   analyzeAssessmentAdjectives,
-  generateProgram,
-  createProgramCreationInputFromSymptom,
-  planDrift,
-  formatProgramPhasesText,
+  buildRehabDynamics,
 } from "@/lib/plan-engine";
 
 function itemsFrom(
