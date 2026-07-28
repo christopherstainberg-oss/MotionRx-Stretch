@@ -461,7 +461,8 @@ export default function AssessmentPage() {
   const [coachQuestion, setCoachQuestion] = useState("");
   const [coachLog, setCoachLog] = useState<CoachExchange[]>([]);
   /** Progressive Q&A guide inserts open-ended questions into free text */
-  const [guideStoryQa, setGuideStoryQa] = useState(true);
+  /** Off by default — user opts in to put guided questions in the story box */
+  const [guideStoryQa, setGuideStoryQa] = useState(false);
   /** Keep seeding / advancing the free-text interview without waiting for first keystroke */
   const [continuousFlow, setContinuousFlow] = useState(true);
   const storyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
