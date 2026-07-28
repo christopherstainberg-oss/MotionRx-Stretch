@@ -239,12 +239,22 @@ export function AccountMenu({ className = "" }: { className?: string }) {
           id={menuId}
           role="menu"
           aria-label="Account"
-          className="absolute right-0 top-full z-[65] mt-2 w-[min(100vw-1.5rem,20rem)] overflow-hidden rounded-2xl border border-brand-100 bg-white shadow-2xl dark:border-brand-800 dark:bg-brand-950"
+          className={cn(
+            // Fixed + max-height so PWA/mobile can scroll every account action
+            "fixed z-[65] w-[min(100vw-1rem,20rem)] overflow-y-auto overscroll-contain rounded-2xl border border-brand-100 bg-white shadow-2xl dark:border-brand-800 dark:bg-brand-950",
+            "right-2 sm:right-3"
+          )}
+          style={{
+            top: "calc(var(--safe-top, 0px) + var(--header-h, 3.5rem) + 0.35rem)",
+            maxHeight:
+              "min(80dvh, calc(100dvh - var(--safe-top, 0px) - var(--header-h, 3.5rem) - var(--safe-bottom, 0px) - 1rem))",
+            WebkitOverflowScrolling: "touch",
+          }}
         >
           {/* Profile summary */}
           <div className="border-b border-brand-50 bg-brand-50/50 px-4 py-3 dark:border-brand-800 dark:bg-brand-900/40">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-500">
-              👤 Account
+              👤 Account Menu
             </p>
             {user ? (
               <div className="mt-1.5 flex items-start gap-3">
@@ -294,7 +304,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
             <MenuLink
               href="/account"
               emoji="⚙️"
-              label="Account settings"
+              label="Account Settings"
               hint="Profile, photo, preferences"
               onNavigate={() => setOpen(false)}
             />
@@ -313,7 +323,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
               <MenuLink
                 href="/account#password"
                 emoji="🔑"
-                label="Change password"
+                label="Change Password"
                 hint="Update password · signs out other sessions"
                 onNavigate={() => setOpen(false)}
               />
@@ -322,7 +332,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
               href="/account#security"
               emoji="🔐"
               label="Enable Face ID / Touch ID"
-              hint="Faster sign-in with biometrics"
+              hint="Faster Sign-In With Biometrics"
               onNavigate={() => setOpen(false)}
             />
             <MenuLink
@@ -335,15 +345,15 @@ export function AccountMenu({ className = "" }: { className?: string }) {
             <MenuLink
               href="/progress"
               emoji="🎯"
-              label="Progress & goals"
-              hint="Outcomes over time"
+              label="Progress & Goals"
+              hint="Outcomes Over Time"
               onNavigate={() => setOpen(false)}
             />
             <MenuLink
               href="/sleep"
               emoji="😴"
               label="Sleep (PSQI)"
-              hint="Questionnaire, metrics & tips"
+              hint="Questionnaire, Metrics & Tips"
               onNavigate={() => setOpen(false)}
             />
           </div>
@@ -351,7 +361,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
           {/* Data actions: Export / Import / Reset */}
           <div className="border-t border-brand-50 p-1.5 dark:border-brand-800">
             <p className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-brand-500">
-              💾 Your data
+              💾 Your Data
             </p>
             <button
               type="button"
@@ -365,10 +375,10 @@ export function AccountMenu({ className = "" }: { className?: string }) {
               </span>
               <span>
                 <span className="font-semibold text-brand-900 dark:text-brand-50">
-                  {busy === "export" ? "Exporting…" : "Export data"}
+                  {busy === "export" ? "Exporting…" : "Export Data"}
                 </span>
                 <span className="mt-0.5 block text-[11px] text-brand-500">
-                  Download JSON backup (private)
+                  Download JSON Backup (Private)
                 </span>
               </span>
             </button>
@@ -384,10 +394,10 @@ export function AccountMenu({ className = "" }: { className?: string }) {
               </span>
               <span>
                 <span className="font-semibold text-brand-900 dark:text-brand-50">
-                  {busy === "import" ? "Importing…" : "Import data"}
+                  {busy === "import" ? "Importing…" : "Import Data"}
                 </span>
                 <span className="mt-0.5 block text-[11px] text-brand-500">
-                  Restore from a MotionRx export
+                  Restore From A MotionRx Export
                 </span>
               </span>
             </button>
@@ -401,8 +411,8 @@ export function AccountMenu({ className = "" }: { className?: string }) {
             <MenuLink
               href="/account#session-data"
               emoji="🔄"
-              label="Reset data"
-              hint="Reset all or daily — type Reset to confirm"
+              label="Reset Data"
+              hint="Reset All Or Daily — Type Reset To Confirm"
               onNavigate={() => setOpen(false)}
               danger
             />
@@ -432,7 +442,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
                 <span className="w-6 text-center text-base leading-none" aria-hidden>
                   🚪
                 </span>
-                {busy === "logout" ? "Signing out…" : "Log out"}
+                {busy === "logout" ? "Signing Out…" : "Log Out"}
               </button>
             ) : (
               <Link
@@ -444,7 +454,7 @@ export function AccountMenu({ className = "" }: { className?: string }) {
                 <span className="w-6 text-center text-base leading-none" aria-hidden>
                   🛡️
                 </span>
-                Sign in or register
+                Sign In Or Register
               </Link>
             )}
           </div>

@@ -47,7 +47,7 @@ export default function ExercisesPage({
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold text-brand-950">
           <Dumbbell className="h-7 w-7 text-brand-600" />
-          Exercise library
+          Exercise Library
         </h1>
         <p className="mt-1 max-w-3xl text-sm text-brand-700/85">
           <strong>Separate from stretches.</strong> Clinician-styled strength, activation, balance,

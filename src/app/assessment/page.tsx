@@ -668,27 +668,8 @@ export default function AssessmentPage() {
     ]
   );
 
-  // Auto-merge paragraph-detected implants/precautions when auto-apply is on
-  useEffect(() => {
-    if (!autoApplyDesc || debouncedParagraph.trim().length < 12) return;
-    setPrecautionIds((prev) => {
-      const next = Array.from(new Set([...prev, ...safetyPreview.precautionIds]));
-      return sameStringArray(prev, next) ? prev : next;
-    });
-    setImplantIds((prev) => {
-      const next = Array.from(new Set([...prev, ...safetyPreview.implantIds]));
-      return sameStringArray(prev, next) ? prev : next;
-    });
-    setOrthoticIds((prev) => {
-      const next = Array.from(new Set([...prev, ...safetyPreview.orthoticIds]));
-      return sameStringArray(prev, next) ? prev : next;
-    });
-    setProstheticIds((prev) => {
-      const next = Array.from(new Set([...prev, ...safetyPreview.prostheticIds]));
-      return sameStringArray(prev, next) ? prev : next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on debounced paragraph / auto flag
-  }, [debouncedParagraph, autoApplyDesc]);
+  // Precautions / implants / devices: never auto-select from free text (no invent).
+  // High-precision suggestions appear under Precautions & Devices for user opt-in.
 
   // Auto-detect catalog medications named in the story (user can edit doses later)
   useEffect(() => {
@@ -2316,7 +2297,7 @@ export default function AssessmentPage() {
                 [
                   ["precautions", "Precautions"],
                   ["implants", "Implants"],
-                  ["supports", "Braces & aids"],
+                  ["supports", "Braces & Aids"],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -2336,6 +2317,41 @@ export default function AssessmentPage() {
 
             {deviceTab === "precautions" && (
               <div className="max-h-72 space-y-2 overflow-y-auto pr-0.5">
+                {(safetyPreview.storyMatches?.precautions?.length ?? 0) > 0 && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-100">
+                      From Your Story (Tap Only If Correct — Nothing Auto-Selected)
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {safetyPreview.storyMatches!.precautions.map((m) => {
+                        const p = CLINICAL_PRECAUTIONS.find((x) => x.id === m.id);
+                        if (!p) return null;
+                        const on = precautionIds.includes(m.id);
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            title={m.reason}
+                            onClick={() =>
+                              setPrecautionIds((prev) =>
+                                on ? prev.filter((id) => id !== m.id) : [...prev, m.id]
+                              )
+                            }
+                            className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
+                              on
+                                ? "border-amber-600 bg-amber-600 text-white"
+                                : "border-amber-200 bg-white text-amber-950 dark:border-amber-800 dark:bg-brand-950 dark:text-amber-100"
+                            }`}
+                          >
+                            {on ? "✓ " : "+ "}
+                            {p.shortLabel}
+                            <span className="ml-1 opacity-70">· “{m.matchedPhrase}”</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {(
                   Object.keys(PRECAUTION_CATEGORY_LABELS) as Array<
                     keyof typeof PRECAUTION_CATEGORY_LABELS

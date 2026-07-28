@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn, toTitleCase } from "@/lib/utils";
 
 export function PageHeader({
   title,
@@ -21,8 +21,8 @@ export function PageHeader({
       )}
     >
       <div className="min-w-0 space-y-1.5">
-        {eyebrow ? <p className="section-label">{eyebrow}</p> : null}
-        <h1 className="section-title">{title}</h1>
+        {eyebrow ? <p className="section-label">{toTitleCase(eyebrow)}</p> : null}
+        <h1 className="section-title">{toTitleCase(title)}</h1>
         {description ? (
           <p className="section-sub max-w-xl">{description}</p>
         ) : null}

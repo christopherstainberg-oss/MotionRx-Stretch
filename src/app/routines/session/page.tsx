@@ -348,7 +348,7 @@ function SessionInner() {
       <div className="mx-auto max-w-lg space-y-4">
         <div className="card p-6 text-center">
           <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
-          <h1 className="mt-3 text-2xl font-bold text-brand-950">Session complete</h1>
+          <h1 className="mt-3 text-2xl font-bold text-brand-950">Session Complete</h1>
           <p className="mt-2 text-sm text-brand-700">
             Plan adjusted using clinically styled pain + effort rules.
           </p>
@@ -394,7 +394,7 @@ function SessionInner() {
   if (!current) {
     return (
       <div className="mx-auto max-w-lg space-y-4">
-        <h1 className="text-xl font-bold">Finish & feedback</h1>
+        <h1 className="text-xl font-bold">Finish & Feedback</h1>
         <div className="card space-y-4 p-5">
           <PainScale label="Pain after session" value={painAfter} onChange={setPainAfter} id="pain-after" />
           <div>

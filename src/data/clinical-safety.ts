@@ -153,14 +153,14 @@ export type ClinicalPrecaution = {
 };
 
 export const PRECAUTION_CATEGORY_LABELS: Record<PrecautionCategory, string> = {
-  "weight-bearing": "Weight-bearing",
+  "weight-bearing": "Weight-Bearing",
   sternal: "Sternal",
-  abdominal: "Abdominal / core",
+  abdominal: "Abdominal / Core",
   spinal: "Spinal",
-  hip: "Hip (arthroplasty-style)",
-  shoulder: "Shoulder / UE post-op",
-  "cardiac-activity": "Cardiac activity limits",
-  "general-surgical": "General surgical",
+  hip: "Hip (Arthroplasty-Style)",
+  shoulder: "Shoulder / UE Post-Op",
+  "cardiac-activity": "Cardiac Activity Limits",
+  "general-surgical": "General Surgical",
 };
 
 export const CLINICAL_PRECAUTIONS: ClinicalPrecaution[] = [
@@ -1325,46 +1325,357 @@ export function getProstheticById(id: string): ProstheticDevice | undefined {
   return PROSTHETIC_DEVICES.find((d) => d.id === id);
 }
 
-// ─── Matching & plan application ─────────────────────────────────────────────
+// ─── Matching & plan application (high precision — do not invent) ───────────
 
-function matchIdsByTerms<T extends { id: string; searchTerms: string[] }>(
-  items: T[],
-  text: string,
-  limit = 12
-): string[] {
-  const t = text.toLowerCase();
-  if (t.length < 3) return [];
-  const scored = items
-    .map((item) => {
-      let score = 0;
-      for (const term of item.searchTerms) {
-        if (t.includes(term.toLowerCase())) score += term.length;
-      }
-      return { id: item.id, score };
-    })
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit).map((x) => x.id);
+export type SafetyTextMatch = {
+  id: string;
+  score: number;
+  confidence: "high" | "medium";
+  matchedPhrase: string;
+  reason: string;
+};
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function textHasPhrase(haystack: string, phrase: string): boolean {
+  const p = phrase.toLowerCase().trim();
+  if (p.length < 2) return false;
+  const re = new RegExp(
+    `(?:^|[^a-z0-9%])${escapeRe(p).replace(/\s+/g, "\\s+")}(?![a-z0-9])`,
+    "i"
+  );
+  return re.test(haystack);
+}
+
+/** User denied / deferred precautions — never invent */
+const PRECAUTION_NEGATION =
+  /\b(?:no precautions?|without precautions?|not on precautions?|precautions? (?:were )?lifted|cleared from precautions?|no longer (?:on |have )?precautions?|don'?t have (?:any )?precautions?|not weight[- ]bearing restricted|full weight bearing cleared)\b/i;
+
+/**
+ * Language that states an ordered restriction (not bare diagnosis/surgery names).
+ */
+const PRECAUTION_ORDER_LANG =
+  /\b(?:precaution|precautions|restricted to|restriction|non[- ]weight|nwb|ttwb|tdwb|pwb|wbat|fwb|no (?:bend|lift|twist)|blt|sternal|sling|brace ordered|weight[- ]bearing|wb status|surgeon (?:said|ordered|told)|pt (?:said|ordered|told)|i'?m (?:on|under)|on (?:nwb|ttwb|pwb|precautions))\b/i;
+
+/**
+ * High-specificity precaution phrases: enough alone (explicit restriction wording).
+ * Medium phrases: need PRECAUTION_ORDER_LANG or clear “I am/on …” framing.
+ */
+const PRECAUTION_MATCH_RULES: Array<{
+  id: string;
+  high: string[];
+  medium?: string[];
+}> = [
+  {
+    id: "wb-nwb",
+    high: ["non-weight-bearing", "non weight bearing", "nonweight bearing", "nwb", "no weight bearing", "0% weight bearing"],
+    medium: ["non-weight", "non weight"],
+  },
+  {
+    id: "wb-ttwb",
+    high: ["toe-touch weight-bearing", "toe touch weight bearing", "ttwb", "toe-touch only", "toe touch only"],
+    medium: ["toe-touch", "toe touch"],
+  },
+  {
+    id: "wb-tdwb",
+    high: ["touch-down weight-bearing", "touch down weight bearing", "tdwb"],
+    medium: ["touch-down weight", "touch down weight"],
+  },
+  {
+    id: "wb-pwb",
+    high: ["partial weight-bearing", "partial weight bearing", "pwb", "25% weight", "50% weight", "25% weight-bearing", "50% weight-bearing"],
+    medium: ["partial weight"],
+  },
+  {
+    id: "wb-wbat",
+    high: ["weight bearing as tolerated", "weight-bearing as tolerated", "wbat", "wb as tolerated"],
+  },
+  {
+    id: "wb-fwb",
+    high: ["full weight-bearing", "full weight bearing", "fwb"],
+  },
+  {
+    id: "sternal-standard",
+    high: ["sternal precautions", "sternal precaution", "sternotomy precautions"],
+    medium: ["sternotomy", "open-heart precautions", "open heart precautions"],
+  },
+  {
+    id: "sternal-move-in-tube",
+    high: ["move in the tube", "move-in-the-tube", "modified sternal"],
+  },
+  {
+    id: "abdominal-standard",
+    high: ["abdominal precautions", "abdominal precaution", "core precautions", "no heavy lifting after abdominal"],
+    medium: ["abdominal surgery precautions", "c-section precautions", "cesarean precautions"],
+  },
+  {
+    id: "abdominal-hernia",
+    high: ["hernia precautions", "hernia repair precautions", "after hernia repair"],
+    medium: ["inguinal repair precautions", "umbilical hernia precautions"],
+  },
+  {
+    id: "spinal-blts",
+    high: [
+      "spinal precautions",
+      "spinal precaution",
+      "blt precautions",
+      "no bend lift twist",
+      "no bending lifting twisting",
+      "bend lift twist precautions",
+    ],
+    medium: ["lumbar fusion precautions", "discectomy precautions", "laminectomy precautions"],
+  },
+  {
+    id: "spinal-cervical",
+    high: ["cervical precautions", "cervical post-op precautions", "neck precautions", "cervical collar"],
+    medium: ["acdf precautions", "cervical fusion precautions"],
+  },
+  {
+    id: "spinal-brace",
+    high: ["tlso", "lso", "spinal brace", "back brace ordered", "wear my tlso", "wearing a tlso"],
+    medium: ["spinal orthosis"],
+  },
+  {
+    id: "hip-posterior",
+    high: ["posterior hip precautions", "hip precautions", "classic hip precautions"],
+    medium: ["posterior approach precautions"],
+  },
+  {
+    id: "hip-anterior",
+    high: ["anterior hip precautions", "direct anterior precautions", "anterior approach hip precautions"],
+  },
+  {
+    id: "shoulder-sling",
+    high: ["shoulder sling", "in a sling", "wearing a sling", "sling precautions", "abduction pillow"],
+    medium: ["rotator cuff repair sling", "post-op sling"],
+  },
+  {
+    id: "cardiac-phase1",
+    high: ["cardiac rehab precautions", "cardiac activity limits", "phase 1 cardiac", "phase i cardiac"],
+    medium: ["cardiac rehab phase"],
+  },
+];
+
+/**
+ * Explicit implant/device ownership language (stated possession, not bare medical words).
+ */
+const DEVICE_STATED =
+  /\b(?:i have|i'?ve got|i wear|wearing|implanted|my (?:pacemaker|icd|lvad|stimulator|pump|brace|afo|prosthes)|have a|has a|with a)\b/i;
+
+const IMPLANT_MATCH_RULES: Array<{ id: string; high: string[]; medium?: string[] }> = [
+  { id: "ppm", high: ["permanent pacemaker", "pacemaker implant", "i have a pacemaker", "my pacemaker"], medium: ["pacemaker"] },
+  { id: "icd", high: ["implantable cardioverter", "implantable defibrillator", "i have an icd", "my icd"], medium: ["icd"] },
+  { id: "crt", high: ["cardiac resynchronization", "crt-d", "crt-p", "biventricular pacemaker"], medium: ["crt device"] },
+  { id: "loop-recorder", high: ["loop recorder", "implantable loop recorder", "linq monitor"], medium: ["ilr"] },
+  { id: "lvad", high: ["left ventricular assist", "lvad", "heart pump vad"], medium: ["vad"] },
+  { id: "tavr", high: ["transcatheter aortic", "tavr", "tavi"] },
+  {
+    id: "open-valve-cabg",
+    high: ["after cabg", "had cabg", "open-heart surgery", "open heart surgery", "sternotomy for bypass"],
+  },
+  {
+    id: "coronary-stent",
+    high: ["coronary stent", "cardiac stent", "stents in my heart", "pci with stent"],
+    medium: ["angioplasty with stent"],
+  },
+  { id: "scs", high: ["spinal cord stimulator", "scs implant", "cord stimulator"] },
+  { id: "dbs", high: ["deep brain stimulator", "dbs implant"] },
+  {
+    id: "joint-arthroplasty",
+    high: ["knee replacement implant", "hip replacement implant", "joint replacement hardware"],
+  },
+  { id: "orif-hardware", high: ["plates and screws", "orif hardware", "intramedullary rod", "im nail"] },
+  { id: "insulin-pump", high: ["insulin pump", "continuous glucose monitor", "my cgm"], medium: ["cgm"] },
+];
+
+const ORTHOTIC_MATCH_RULES: Array<{ id: string; high: string[]; medium?: string[] }> = [
+  { id: "afo", high: ["ankle foot orthosis", "ankle-foot orthosis", "i wear an afo", "my afo"], medium: ["afo"] },
+  { id: "kafo", high: ["knee ankle foot orthosis", "kafo"] },
+  { id: "knee-immobilizer", high: ["knee immobilizer", "knee immob"] },
+  { id: "hinged-knee", high: ["acl brace", "hinged knee brace", "functional knee brace"] },
+  { id: "cam-boot", high: ["cam boot", "walking boot", "fracture boot"] },
+  { id: "post-op-shoe", high: ["post op shoe", "post-op shoe", "surgical shoe"] },
+  { id: "cervical-collar", high: ["cervical collar", "neck collar", "aspen collar", "miami j"] },
+  { id: "wrist-cockup", high: ["wrist splint", "cock-up splint", "wrist brace ordered"] },
+  { id: "shoulder-abduction-sling", high: ["shoulder immobilizer", "ultrasling", "abduction sling"] },
+  { id: "tlso", high: ["tlso", "i wear a tlso", "wearing a tlso"] },
+];
+
+const PROSTHETIC_MATCH_RULES: Array<{ id: string; high: string[]; medium?: string[] }> = [
+  {
+    id: "tt-prosthesis",
+    high: ["below knee prosthesis", "transtibial prosthesis", "bk prosthesis", "bka prosthesis"],
+  },
+  {
+    id: "tf-prosthesis",
+    high: ["above knee prosthesis", "transfemoral prosthesis", "ak prosthesis", "aka prosthesis"],
+  },
+  { id: "ue-myoelectric", high: ["myoelectric arm", "myoelectric prosthesis"] },
+  { id: "ue-body-powered", high: ["body powered arm", "upper limb prosthesis", "arm prosthesis"] },
+];
+
+const ASSISTIVE_MATCH_RULES: Array<{ id: string; high: string[]; medium?: string[] }> = [
+  {
+    id: "sw",
+    high: ["standard walker", "i use a walker", "use a walker", "walking with a walker"],
+    medium: ["walker"],
+  },
+  { id: "rw", high: ["rolling walker", "four wheeled walker"] },
+  { id: "rollator", high: ["rollator"] },
+  {
+    id: "crutches-axillary",
+    high: ["axillary crutches", "underarm crutches", "on crutches", "using crutches"],
+    medium: ["crutches"],
+  },
+  {
+    id: "spc",
+    high: ["single point cane", "i use a cane", "walking with a cane"],
+    medium: ["cane"],
+  },
+  { id: "quad-cane", high: ["quad cane"] },
+  { id: "raised-toilet", high: ["raised toilet seat", "elevated toilet seat"] },
+  { id: "reacher", high: ["reacher grabber", "grabber tool", "reacher tool"] },
+  { id: "sock-aid", high: ["sock aid", "sock donner"] },
+  { id: "grab-bars", high: ["grab bars", "bathroom grab bar"] },
+];
+
+function detectByRules(
+  text: string,
+  rules: Array<{ id: string; high: string[]; medium?: string[] }>,
+  opts: {
+    negation?: RegExp;
+    /** medium phrases need this context (or DEVICE_STATED for devices) */
+    mediumNeeds?: RegExp;
+    deviceMode?: boolean;
+    limit: number;
+  }
+): SafetyTextMatch[] {
+  const raw = (text || "").trim();
+  if (raw.length < 4) return [];
+  if (opts.negation?.test(raw)) return [];
+  const t = raw.toLowerCase();
+  const hits: SafetyTextMatch[] = [];
+  const orderOk = opts.mediumNeeds ? opts.mediumNeeds.test(raw) : true;
+  const deviceOk = opts.deviceMode ? DEVICE_STATED.test(raw) || orderOk : orderOk;
+
+  for (const rule of rules) {
+    let best: SafetyTextMatch | null = null;
+    for (const phrase of rule.high) {
+      if (!textHasPhrase(t, phrase)) continue;
+      const score = 20 + Math.min(phrase.length, 24);
+      const cand: SafetyTextMatch = {
+        id: rule.id,
+        score,
+        confidence: "high",
+        matchedPhrase: phrase,
+        reason: `Matched explicit phrase “${phrase}” in your story (not assumed)`,
+      };
+      if (!best || cand.score > best.score) best = cand;
+    }
+    for (const phrase of rule.medium || []) {
+      if (!textHasPhrase(t, phrase)) continue;
+      // Medium: require order/device ownership language — never bare diagnosis
+      if (!deviceOk && !orderOk) continue;
+      // Short codes still need stronger framing
+      if (phrase.length <= 4 && !DEVICE_STATED.test(raw) && !PRECAUTION_ORDER_LANG.test(raw)) continue;
+      const score = 12 + Math.min(phrase.length, 16);
+      const cand: SafetyTextMatch = {
+        id: rule.id,
+        score,
+        confidence: "medium",
+        matchedPhrase: phrase,
+        reason: `Matched “${phrase}” with stated restriction/device language (not invented from bare medical words)`,
+      };
+      if (!best || cand.score > best.score) best = cand;
+    }
+    if (best) hits.push(best);
+  }
+
+  hits.sort((a, b) => b.score - a.score || b.matchedPhrase.length - a.matchedPhrase.length);
+  // Prefer one WB status (highest score)
+  const wb = hits.filter((h) => h.id.startsWith("wb-"));
+  if (wb.length > 1) {
+    const keep = wb[0]!.id;
+    for (let i = hits.length - 1; i >= 0; i--) {
+      if (hits[i]!.id.startsWith("wb-") && hits[i]!.id !== keep) hits.splice(i, 1);
+    }
+  }
+  // Prefer one hip approach
+  if (hits.some((h) => h.id === "hip-posterior") && hits.some((h) => h.id === "hip-anterior")) {
+    const ant = hits.find((h) => h.id === "hip-anterior");
+    if (ant && /anterior/i.test(t)) {
+      const idx = hits.findIndex((h) => h.id === "hip-posterior");
+      if (idx >= 0) hits.splice(idx, 1);
+    } else {
+      const idx = hits.findIndex((h) => h.id === "hip-anterior");
+      if (idx >= 0) hits.splice(idx, 1);
+    }
+  }
+  return hits.slice(0, opts.limit);
+}
+
+/** High-precision precaution detection from free text (no invent). */
+export function detectPrecautionsFromText(text: string, limit = 10): SafetyTextMatch[] {
+  return detectByRules(text, PRECAUTION_MATCH_RULES, {
+    negation: PRECAUTION_NEGATION,
+    mediumNeeds: PRECAUTION_ORDER_LANG,
+    limit,
+  });
+}
+
+export function detectImplantsFromText(text: string, limit = 8): SafetyTextMatch[] {
+  return detectByRules(text, IMPLANT_MATCH_RULES, {
+    mediumNeeds: DEVICE_STATED,
+    deviceMode: true,
+    limit,
+  });
+}
+
+export function detectOrthoticsFromText(text: string, limit = 8): SafetyTextMatch[] {
+  return detectByRules(text, ORTHOTIC_MATCH_RULES, {
+    mediumNeeds: DEVICE_STATED,
+    deviceMode: true,
+    limit,
+  });
+}
+
+export function detectProstheticsFromText(text: string, limit = 6): SafetyTextMatch[] {
+  return detectByRules(text, PROSTHETIC_MATCH_RULES, {
+    mediumNeeds: DEVICE_STATED,
+    deviceMode: true,
+    limit,
+  });
+}
+
+export function detectAssistiveFromText(text: string, limit = 8): SafetyTextMatch[] {
+  return detectByRules(text, ASSISTIVE_MATCH_RULES, {
+    mediumNeeds: DEVICE_STATED,
+    deviceMode: true,
+    limit,
+  });
+}
+
+/** IDs only — high-precision, no invent (suggestions / opt-in). */
 export function matchPrecautionsFromText(text: string, limit = 10): string[] {
-  return matchIdsByTerms(CLINICAL_PRECAUTIONS, text, limit);
+  return detectPrecautionsFromText(text, limit).map((m) => m.id);
 }
 
 export function matchImplantsFromText(text: string, limit = 8): string[] {
-  return matchIdsByTerms(IMPLANTED_DEVICES, text, limit);
+  return detectImplantsFromText(text, limit).map((m) => m.id);
 }
 
 export function matchOrthoticsFromText(text: string, limit = 8): string[] {
-  return matchIdsByTerms(ORTHOTIC_DEVICES, text, limit);
+  return detectOrthoticsFromText(text, limit).map((m) => m.id);
 }
 
 export function matchProstheticsFromText(text: string, limit = 6): string[] {
-  return matchIdsByTerms(PROSTHETIC_DEVICES, text, limit);
+  return detectProstheticsFromText(text, limit).map((m) => m.id);
 }
 
 export function matchAssistiveFromText(text: string, limit = 8): string[] {
-  return matchIdsByTerms(ASSISTIVE_DEVICES, text, limit);
+  return detectAssistiveFromText(text, limit).map((m) => m.id);
 }
 
 export type ClinicalSafetyInput = {
@@ -1388,12 +1699,26 @@ export type ClinicalSafetyPlan = {
   hrZones?: ReturnType<typeof hrZonesFromMax>;
   borg: BorgTarget;
   targetHrCap?: number;
+  /** User-selected only — free text never silently invents these */
   precautionIds: string[];
   implantIds: string[];
   orthoticIds: string[];
   prostheticIds: string[];
   assistiveDeviceIds: string[];
+  /** High-precision free-text suggestions (opt-in; not auto-applied) */
+  suggestedPrecautionIds: string[];
+  suggestedImplantIds: string[];
+  suggestedOrthoticIds: string[];
+  suggestedProstheticIds: string[];
   suggestedAssistiveDeviceIds: string[];
+  /** Match evidence for UI chips */
+  storyMatches?: {
+    precautions: SafetyTextMatch[];
+    implants: SafetyTextMatch[];
+    orthotics: SafetyTextMatch[];
+    prosthetics: SafetyTextMatch[];
+    assistive: SafetyTextMatch[];
+  };
   precautions: ClinicalPrecaution[];
   implants: ImplantedDevice[];
   orthotics: OrthoticDevice[];
@@ -1414,28 +1739,41 @@ function harderDiff(a: Difficulty, b: Difficulty): Difficulty {
   return rank[a] <= rank[b] ? a : b;
 }
 
-/** Merge user selections + paragraph auto-detect into a safety plan that doses the routine */
+/**
+ * Build safety plan from **user-selected** IDs only.
+ * Free-text matches become suggestions — never silently assumed into the plan.
+ */
 export function buildClinicalSafetyPlan(input: ClinicalSafetyInput): ClinicalSafetyPlan {
   const paragraph = input.concernParagraph || "";
-  const autoPrec = matchPrecautionsFromText(paragraph);
-  const autoImp = matchImplantsFromText(paragraph);
-  const autoOrth = matchOrthoticsFromText(paragraph);
-  const autoPros = matchProstheticsFromText(paragraph);
-  const autoAd = matchAssistiveFromText(paragraph);
+  const storyPrec = detectPrecautionsFromText(paragraph, 8);
+  const storyImp = detectImplantsFromText(paragraph, 6);
+  const storyOrth = detectOrthoticsFromText(paragraph, 6);
+  const storyPros = detectProstheticsFromText(paragraph, 4);
+  const storyAd = detectAssistiveFromText(paragraph, 6);
 
-  let precautionIds = Array.from(new Set([...(input.precautionIds || []), ...autoPrec]));
-  const implantIds = Array.from(new Set([...(input.implantIds || []), ...autoImp]));
-  const orthoticIds = Array.from(new Set([...(input.orthoticIds || []), ...autoOrth]));
-  const prostheticIds = Array.from(new Set([...(input.prostheticIds || []), ...autoPros]));
-  let assistiveDeviceIds = Array.from(
-    new Set([...(input.assistiveDeviceIds || []), ...autoAd])
-  );
+  // Selected = explicit user choices only (no free-text invent)
+  let precautionIds = Array.from(new Set([...(input.precautionIds || [])]));
+  const implantIds = Array.from(new Set([...(input.implantIds || [])]));
+  const orthoticIds = Array.from(new Set([...(input.orthoticIds || [])]));
+  const prostheticIds = Array.from(new Set([...(input.prostheticIds || [])]));
+  let assistiveDeviceIds = Array.from(new Set([...(input.assistiveDeviceIds || [])]));
 
-  // Implants pull default precautions
+  // User-selected implants may pull their default precautions (explicit device choice)
   for (const id of implantIds) {
     const imp = getImplantById(id);
     if (imp) precautionIds = Array.from(new Set([...precautionIds, ...imp.defaultPrecautionIds]));
   }
+
+  const suggestedPrecautionIds = storyPrec
+    .map((m) => m.id)
+    .filter((id) => !precautionIds.includes(id));
+  const suggestedImplantIds = storyImp.map((m) => m.id).filter((id) => !implantIds.includes(id));
+  const suggestedOrthoticIds = storyOrth
+    .map((m) => m.id)
+    .filter((id) => !orthoticIds.includes(id));
+  const suggestedProstheticIds = storyPros
+    .map((m) => m.id)
+    .filter((id) => !prostheticIds.includes(id));
 
   const precautions = precautionIds
     .map(getPrecautionById)
@@ -1454,14 +1792,13 @@ export function buildClinicalSafetyPlan(input: ClinicalSafetyInput): ClinicalSaf
     .filter(Boolean)
     .map((p) => p!);
 
-  // Suggest assistive devices from precautions
-  const suggestedAssistiveDeviceIds: string[] = [];
+  // Suggest assistive devices from selected precautions + story (opt-in only)
+  const suggestedAssistiveDeviceIds: string[] = [...storyAd.map((m) => m.id)];
   for (const ad of ASSISTIVE_DEVICES) {
     if (ad.pairsWithPrecautionIds?.some((pid) => precautionIds.includes(pid))) {
       suggestedAssistiveDeviceIds.push(ad.id);
     }
   }
-  // NWB/TTWB always suggest walker or crutches
   if (precautionIds.some((id) => ["wb-nwb", "wb-ttwb", "wb-tdwb"].includes(id))) {
     suggestedAssistiveDeviceIds.push("sw", "crutches-axillary", "rw");
   }
@@ -1476,8 +1813,10 @@ export function buildClinicalSafetyPlan(input: ClinicalSafetyInput): ClinicalSaf
     suggestedAssistiveDeviceIds.push("reacher", "raised-toilet");
   }
 
-  const uniqueSuggested = Array.from(new Set(suggestedAssistiveDeviceIds));
-  assistiveDeviceIds = Array.from(new Set([...assistiveDeviceIds, ...uniqueSuggested.slice(0, 4)]));
+  const uniqueSuggested = Array.from(
+    new Set(suggestedAssistiveDeviceIds.filter((id) => !assistiveDeviceIds.includes(id)))
+  );
+  // Do not auto-add assistive devices — suggestions only
 
   const assistiveDevices = assistiveDeviceIds
     .map(getAssistiveById)
@@ -1634,7 +1973,18 @@ export function buildClinicalSafetyPlan(input: ClinicalSafetyInput): ClinicalSaf
     orthoticIds,
     prostheticIds,
     assistiveDeviceIds,
+    suggestedPrecautionIds,
+    suggestedImplantIds,
+    suggestedOrthoticIds,
+    suggestedProstheticIds,
     suggestedAssistiveDeviceIds: uniqueSuggested,
+    storyMatches: {
+      precautions: storyPrec,
+      implants: storyImp,
+      orthotics: storyOrth,
+      prosthetics: storyPros,
+      assistive: storyAd,
+    },
     precautions,
     implants,
     orthotics,

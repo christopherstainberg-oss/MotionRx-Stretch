@@ -13,7 +13,7 @@ export default function RoutinesPage() {
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-brand-950">
             <ListChecks className="h-7 w-7 text-brand-600" />
-            Stretch + exercise routines
+            Stretch + Exercise Routines
           </h1>
           <p className="mt-1 text-sm text-brand-700/85">
             Hybrid outpatient-style templates combining stretches and exercises. Personalize from a
@@ -26,7 +26,7 @@ export default function RoutinesPage() {
             Start Assessment
           </Link>
           <Link href="/builder" className="btn-secondary">
-            Open builder
+            Open Builder
           </Link>
         </div>
       </div>

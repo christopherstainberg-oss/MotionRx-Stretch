@@ -198,7 +198,7 @@ function ModalitiesInner() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Clinical adjuncts"
-        title="Physical therapy modalities"
+        title="Physical Therapy Modalities"
         description={`Evidence-informed suggestions for pre-visit, post-visit, sessions, and flares—matched to your pain rating, descriptors, and experience. ${MODALITY_STATS.total} modalities · ${MODALITY_STATS.home} home-capable · ${MODALITY_STATS.clinic} clinic education.`}
         actions={
           <Link href="/assessment" className="btn-secondary text-sm">

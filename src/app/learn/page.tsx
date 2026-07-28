@@ -10,7 +10,7 @@ export default function LearnPage() {
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold text-brand-950">
           <GraduationCap className="h-7 w-7 text-brand-600" />
-          Education hub
+          Education Hub
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-brand-700/85">
           Physical therapy concepts, injury prevention, and why routines are dosed like an outpatient

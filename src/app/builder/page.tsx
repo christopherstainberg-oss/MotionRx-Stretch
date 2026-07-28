@@ -119,7 +119,7 @@ function BuilderInner() {
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-brand-950">
             <ListPlus className="h-7 w-7 text-brand-600" />
-            Routine builder
+            Routine Builder
           </h1>
           <p className="mt-1 text-sm text-brand-700/85">
             Add stretches, exercises, and PT modalities (with pre-visit / post-visit flags). Rotate

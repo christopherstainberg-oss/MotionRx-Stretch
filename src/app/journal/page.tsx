@@ -550,7 +550,7 @@ export default function JournalPage() {
     <div className="mx-auto max-w-xl space-y-6 pb-10 sm:max-w-2xl">
       <header className="text-center sm:text-left">
         <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">
-          Daily reflection
+          Daily Reflection
         </p>
         <h1 className="mt-1 inline-flex items-center gap-2 text-xl font-bold text-brand-950 sm:text-2xl">
           <BookOpen className="h-6 w-6 text-brand-600" />

@@ -77,7 +77,7 @@ export default function InsightsPage() {
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold text-brand-950">
           <Network className="h-7 w-7 text-brand-600" />
-          Correlated insights
+          Correlated Insights
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-brand-700/85">
           Clinical pain descriptors, modalities, sessions, journal, goals, routines, and Jeffery
