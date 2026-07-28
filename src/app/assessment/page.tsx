@@ -170,8 +170,8 @@ function goalsToFreeText(list: string[]): string {
 }
 
 /**
- * Auto-populate the single-line Goals field from story intelligence + body areas.
- * Prefers user-stated goals; falls back to assumed + region-aware suggestions.
+ * Mirror only user-stated goals from free-text story into the Goals field.
+ * Does not invent region-based or assumed goals — free-write is source of truth.
  */
 function buildAutoGoalsFreeText(opts: {
   statedGoals?: string[];
@@ -188,32 +188,7 @@ function buildAutoGoalsFreeText(opts: {
   };
 
   for (const g of opts.statedGoals || []) push(g);
-  for (const g of opts.assumedGoals || []) push(g);
-
-  // Region-aware educational goals when story is thin
-  if (lines.length < 2) {
-    const areas = opts.areas || [];
-    if (areas.some((a) => /neck|jaw|shoulder|upper-back|thoracic/.test(a))) {
-      push("tolerate desk / screen time with less neck and shoulder stiffness");
-    }
-    if (areas.some((a) => /lower-back|pelvis|hip|glute/.test(a))) {
-      push("move, sit, and stand with less low-back or hip irritation");
-    }
-    if (areas.some((a) => /knee|hamstring|quad|calf|ankle|foot/.test(a))) {
-      push("walk stairs and daily distances with more confidence");
-    }
-    if (areas.some((a) => /wrist|hand|elbow|forearm/.test(a))) {
-      push("use hands and arms for daily tasks with less flare");
-    }
-    for (const lim of (opts.functionalLimits || []).slice(0, 2)) {
-      push(`improve ease with: ${lim}`);
-    }
-  }
-
-  if (!lines.length) {
-    push("move with less stiffness and more confidence in daily activities");
-    push("build a short, sustainable home mobility routine I can stick with");
-  }
+  // Never invent assumed/region/default goals — leave empty until user free-writes them
 
   // One line in the box; multiple goals separated by "; "
   return lines.slice(0, 6).join("; ");

@@ -49,9 +49,11 @@ import {
 } from "@/lib/routine-session-composer";
 import {
   applyDynamicsToRehabPlan,
+  applyVarietyBand,
   buildRehabDynamics,
   dynamicsMovementBoost,
   efficiencyRerank,
+  varietyOffset,
   type RehabDynamics,
 } from "@/lib/rehab-dynamics";
 import type {
@@ -201,26 +203,32 @@ export function parseConcernParagraph(paragraph: string): {
     if (text.includes(s.split(" ")[0]!)) symptoms.push(s);
   }
 
+  // Goals only from explicit story goals / stated goal language — never invent from bare activity words
   const goals: string[] = [];
-  if (text.includes("flexib")) goals.push("improve flexibility");
-  if (text.includes("strength") || text.includes("weak")) goals.push("build strength");
-  if (text.includes("posture")) goals.push("better posture");
-  if (text.includes("walk") || text.includes("stair")) goals.push("move easier walking");
-  if (text.includes("desk") || text.includes("work")) goals.push("move easier at work");
-  if (text.includes("sport") || text.includes("run")) goals.push("prepare for sport");
-  for (const g of intel?.planHints.functionalGoals || []) goals.push(g);
-  for (const g of intel?.goals || []) if (g !== "stated goal") goals.push(g);
-  if (goals.length === 0) goals.push("reduce stiffness", "move easier");
+  for (const g of intel?.goals || []) {
+    if (g && g !== "stated goal") goals.push(g);
+  }
+  for (const g of intel?.planHints.functionalGoals || []) {
+    if (g && !goals.includes(g)) goals.push(g);
+  }
+  // Explicit intent phrases only (not bare "walk" / "desk")
+  if (/\b(want to|hope to|goal is|trying to|get back to)\b.{0,40}\bflexib/i.test(paragraph)) {
+    goals.push("improve flexibility");
+  }
+  if (/\b(want to|hope to|goal is|trying to|get back to)\b.{0,40}\b(strength|stronger)/i.test(paragraph)) {
+    goals.push("build strength");
+  }
+  if (/\b(want to|hope to|goal is|trying to|get back to)\b.{0,40}\b(run|sport|gym)/i.test(paragraph)) {
+    goals.push("prepare for sport");
+  }
 
-  let pain = intel?.painNow ?? 3;
-  const painMatch = text.match(/pain\s*(?:is|=|:)?\s*(\d{1,2})/);
-  if (painMatch) pain = Math.min(10, Number(painMatch[1]));
-  else if (intel?.painNow != null) pain = intel.painNow;
-  else if (text.includes("severe") || text.includes("unbearable")) pain = 7;
-  else if (text.includes("moderate")) pain = 4;
-  else if (text.includes("mild") || text.includes("slight")) pain = 2;
-  else if (text.includes("sharp")) pain = 6;
-  if (intel?.irritability === "high") pain = Math.max(pain, 5);
+  // Pain: only explicit 0–10 or story-stated numbers — never invent from severe/mild/sharp
+  let pain = 3; // neutral dosing default when user left pain blank (not a clinical claim)
+  const painMatch = text.match(
+    /(?:pain|it's|its|about|around|rated?|rate(?:d)?(?:\s+it)?|level)\s*(?:is|=|:|at)?\s*(\d{1,2})\s*(?:\/\s*10|out of 10)?/
+  );
+  if (intel?.painNow != null) pain = intel.painNow;
+  else if (painMatch) pain = Math.min(10, Number(painMatch[1]));
 
   const painDescriptorIds = Array.from(
     new Set([
@@ -270,7 +278,7 @@ export function parseConcernParagraph(paragraph: string): {
 
   return {
     areas: areas.size ? Array.from(areas) : ["full-body"],
-    symptoms: symptoms.length ? symptoms : ["general stiffness"],
+    symptoms: symptoms.length ? symptoms : [],
     goals: Array.from(new Set(goals)),
     preferKinds,
     estimatedPain: pain,
@@ -976,16 +984,24 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   }));
 
   // Diversity + multi-issue efficiency re-rank (avoids near-duplicate stretch lists)
-  const stretchCandidates = efficiencyRerank(stretchScored, (id) => {
-    const s = BASE_STRETCHES.find((x) => x.id === id);
-    return s
-      ? { tags: s.tags, bodyParts: s.bodyParts, name: s.name }
-      : undefined;
-  }, {
-    primaryAreas: dynamics.primaryAreas.length ? dynamics.primaryAreas : areas,
-    secondaryAreas: dynamics.secondaryAreas,
-    limit: Math.max(24, dynamics.stretchQuotaHint * 4),
-  }).map(({ s, score }) => ({ s, score }));
+  // Variety band rotates near-ties from free-text seed for more versatile programs
+  const varietySeed = varietyOffset(
+    `${input.concernParagraph || ""}|${areas.join(",")}|${(input.goals || []).join(",")}`
+  );
+  const stretchCandidates = applyVarietyBand(
+    efficiencyRerank(stretchScored, (id) => {
+      const s = BASE_STRETCHES.find((x) => x.id === id);
+      return s
+        ? { tags: s.tags, bodyParts: s.bodyParts, name: s.name }
+        : undefined;
+    }, {
+      primaryAreas: dynamics.primaryAreas.length ? dynamics.primaryAreas : areas,
+      secondaryAreas: dynamics.secondaryAreas,
+      limit: Math.max(28, dynamics.stretchQuotaHint * 5),
+    }),
+    varietySeed,
+    10
+  ).map(({ s, score }) => ({ s, score }));
 
   const exerciseScored = BASE_EXERCISES.filter((e) => {
     if (!rankOk(e.difficulty, difficulty, avgPain)) return false;
@@ -1062,16 +1078,20 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     ),
   }));
 
-  const exerciseCandidates = efficiencyRerank(exerciseScored, (id) => {
-    const e = BASE_EXERCISES.find((x) => x.id === id);
-    return e
-      ? { tags: e.tags, bodyParts: e.bodyParts, name: e.name }
-      : undefined;
-  }, {
-    primaryAreas: dynamics.primaryAreas.length ? dynamics.primaryAreas : areas,
-    secondaryAreas: [...dynamics.secondaryAreas, ...dynamics.chainAreas],
-    limit: Math.max(24, dynamics.exerciseQuotaHint * 4),
-  }).map(({ e, score }) => ({ e, score }));
+  const exerciseCandidates = applyVarietyBand(
+    efficiencyRerank(exerciseScored, (id) => {
+      const e = BASE_EXERCISES.find((x) => x.id === id);
+      return e
+        ? { tags: e.tags, bodyParts: e.bodyParts, name: e.name }
+        : undefined;
+    }, {
+      primaryAreas: dynamics.primaryAreas.length ? dynamics.primaryAreas : areas,
+      secondaryAreas: [...dynamics.secondaryAreas, ...dynamics.chainAreas],
+      limit: Math.max(28, dynamics.exerciseQuotaHint * 5),
+    }),
+    varietySeed + 17,
+    10
+  ).map(({ e, score }) => ({ e, score }));
 
   let minutes = 0;
   let target = Math.max(8, Math.min(45, input.availableMinutes));
@@ -1142,7 +1162,14 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       durationSeconds: s.durationSeconds,
     });
   };
-  for (const id of rehabWithStory.preferredStretchIds) pushStretchRef(stretchById.get(id));
+  // Rotate preferred seed order by variety seed for alternate but still first-line picks
+  const prefStretchOrder = [...rehabWithStory.preferredStretchIds];
+  if (prefStretchOrder.length > 2) {
+    const o = varietySeed % prefStretchOrder.length;
+    const rotated = [...prefStretchOrder.slice(o), ...prefStretchOrder.slice(0, o)];
+    prefStretchOrder.splice(0, prefStretchOrder.length, ...rotated);
+  }
+  for (const id of prefStretchOrder) pushStretchRef(stretchById.get(id));
   for (const { s } of stretchCandidates) pushStretchRef(s);
 
   const exerciseRefs: MovementCatalogRef[] = [];
@@ -1162,7 +1189,13 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       durationSeconds: e.durationSeconds,
     });
   };
-  for (const id of rehabWithStory.preferredExerciseIds) pushExRef(exerciseById.get(id));
+  const prefExOrder = [...rehabWithStory.preferredExerciseIds];
+  if (prefExOrder.length > 2) {
+    const o = (varietySeed + 5) % prefExOrder.length;
+    const rotated = [...prefExOrder.slice(o), ...prefExOrder.slice(0, o)];
+    prefExOrder.splice(0, prefExOrder.length, ...rotated);
+  }
+  for (const id of prefExOrder) pushExRef(exerciseById.get(id));
   for (const { e } of exerciseCandidates) pushExRef(e);
 
   const composed = composePtSession({
@@ -1626,8 +1659,10 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   };
 }
 
-/** Rotate a single item to a clinical alternative for same body regions */
+/** Rotate a single item to a clinical alternative for same body regions (scored variety). */
 export function rotateRoutineItem(routine: Routine, itemId: string): Routine {
+  const focus = routine.focusAreas || [];
+  const used = new Set(routine.items.map((i) => i.movementId));
   const items = routine.items.map((item) => {
     if (item.id !== itemId) return item;
     if (item.kind === "stretch") {
@@ -1635,30 +1670,44 @@ export function rotateRoutineItem(routine: Routine, itemId: string): Routine {
       const pool = BASE_STRETCHES.filter(
         (s) =>
           s.id !== item.movementId &&
-          (!current || s.bodyParts.some((bp) => current.bodyParts.includes(bp)))
-      );
-      const next = pool[(item.rotationSeed ?? 0) % Math.max(pool.length, 1)] ?? current;
+          !used.has(s.id) &&
+          (!current || s.bodyParts.some((bp) => current.bodyParts.includes(bp) || focus.includes(bp)))
+      ).sort((a, b) => {
+        const sa = a.bodyParts.filter((bp) => focus.includes(bp)).length;
+        const sb = b.bodyParts.filter((bp) => focus.includes(bp)).length;
+        return sb - sa;
+      });
+      const idx = (item.rotationSeed ?? 0) % Math.max(pool.length, 1);
+      const next = pool[idx] ?? current;
       if (!next) return item;
       return {
         ...item,
         movementId: next.id,
+        variationId: pickHomeVariationId(next.variations) || item.variationId,
         rotationSeed: (item.rotationSeed ?? 0) + 1,
-        notes: `Rotated from previous stretch for variety/tolerance`,
+        notes: `Rotated to related stretch for variety/tolerance (evidence-matched region)`,
       };
     }
     const current = getExerciseById(item.movementId);
     const pool = BASE_EXERCISES.filter(
       (e) =>
         e.id !== item.movementId &&
-        (!current || e.bodyParts.some((bp) => current.bodyParts.includes(bp)))
-    );
-    const next = pool[(item.rotationSeed ?? 0) % Math.max(pool.length, 1)] ?? current;
+        !used.has(e.id) &&
+        (!current || e.bodyParts.some((bp) => current.bodyParts.includes(bp) || focus.includes(bp)))
+    ).sort((a, b) => {
+      const sa = a.bodyParts.filter((bp) => focus.includes(bp)).length;
+      const sb = b.bodyParts.filter((bp) => focus.includes(bp)).length;
+      return sb - sa;
+    });
+    const idx = (item.rotationSeed ?? 0) % Math.max(pool.length, 1);
+    const next = pool[idx] ?? current;
     if (!next) return item;
     return {
       ...item,
       movementId: next.id,
+      variationId: pickHomeVariationId(next.variations) || item.variationId,
       rotationSeed: (item.rotationSeed ?? 0) + 1,
-      notes: `Rotated from previous exercise for variety/tolerance`,
+      notes: `Rotated to related exercise for variety/tolerance (evidence-matched region)`,
     };
   });
 
@@ -1864,7 +1913,8 @@ export function addModalityToRoutine(
   } = {}
 ): Routine {
   const r = ensureRoutineItems(routine);
-  const preVisit = opts.preVisit ?? true;
+  // Timing flags default OFF — user selects pre/post visit (and session) intentionally
+  const preVisit = opts.preVisit ?? false;
   const postVisit = opts.postVisit ?? false;
   const existing = (r.modalities || []).find((m) => m.modalityId === modalityId);
   if (existing) {
@@ -1872,8 +1922,8 @@ export function addModalityToRoutine(
       m.modalityId === modalityId
         ? {
             ...m,
-            preVisit: opts.preVisit !== undefined ? opts.preVisit : m.preVisit || preVisit,
-            postVisit: opts.postVisit !== undefined ? opts.postVisit : m.postVisit || postVisit,
+            preVisit: opts.preVisit !== undefined ? opts.preVisit : m.preVisit,
+            postVisit: opts.postVisit !== undefined ? opts.postVisit : m.postVisit,
             preSession: opts.preSession !== undefined ? opts.preSession : m.preSession,
             postSession: opts.postSession !== undefined ? opts.postSession : m.postSession,
             variantId: opts.variantId ?? m.variantId,
@@ -1892,8 +1942,8 @@ export function addModalityToRoutine(
     modalityId,
     preVisit,
     postVisit,
-    preSession: opts.preSession ?? preVisit,
-    postSession: opts.postSession ?? postVisit,
+    preSession: opts.preSession ?? false,
+    postSession: opts.postSession ?? false,
     variantId: opts.variantId,
     notes: opts.notes,
     order: (r.modalities || []).length,

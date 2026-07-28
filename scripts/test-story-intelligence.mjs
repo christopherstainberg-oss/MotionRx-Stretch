@@ -36,12 +36,12 @@ function assert(cond, msg) {
   assert(s.painNow == null, "no official painNow from severe/sharp/moderate/mild");
   assert(s.painWorst == null, "no official painWorst from qualitative words");
   assert(
-    s.painEstimate?.source === "assumed" && s.painEstimate.now != null,
-    `soft painEstimate allowed when no 0–10: ${JSON.stringify(s.painEstimate)}`
+    s.painEstimate == null || s.painEstimate.source === "stated",
+    `no assumed painEstimate: ${JSON.stringify(s.painEstimate)}`
   );
   assert(
-    s.liveReadLines.some((l) => /assumed|not stated|0–10/i.test(l)),
-    "live read distinguishes assumed vs stated pain"
+    s.liveReadLines.some((l) => /not stated|not invented|0–10/i.test(l)),
+    "live read notes pain 0–10 not stated"
   );
 }
 
@@ -76,12 +76,12 @@ function assert(cond, msg) {
     `bare work/walk must not become functional limits, got: ${JSON.stringify(s.functionalLimits)}`
   );
   assert(
-    s.assumedAggravators.length > 0,
-    `soft assumed context from bare mentions: ${JSON.stringify(s.assumedAggravators)}`
+    s.assumedAggravators.length === 0,
+    `no assumed aggravators from bare mentions: ${JSON.stringify(s.assumedAggravators)}`
   );
   assert(
-    s.liveReadLines.some((l) => /assumed context|Aggravators:/i.test(l)),
-    "live read discloses soft assumed context vs stated"
+    s.liveReadLines.some((l) => /Aggravators: none stated|not invented|Free-write/i.test(l)),
+    "live read keeps free-write / no invent policy"
   );
 }
 
@@ -146,20 +146,20 @@ function assert(cond, msg) {
   assert(s.sleepImpact, "night pain / can't get comfortable sets sleepImpact");
 }
 
-// —— Hybrid: stated fields pure; labeled assumptions fill gaps ——
+// —— Hybrid: stated fields pure; no assumption fill ——
 {
   const s = analyzeStoryIntelligence("My lower back hurts.");
   assert(s.painNow == null, "no official painNow from silence");
   assert(s.aggravators.length === 0, "stated aggravators empty without causal language");
   assert(s.goals.length === 0, "stated goals empty");
   assert(
-    s.irritability === "moderate" && s.irritabilitySource === "assumed",
-    `thin story uses assumed moderate irritability, got ${s.irritability}/${s.irritabilitySource}`
+    s.irritability === "unknown" && s.irritabilitySource === "unknown",
+    `thin story leaves irritability unknown, got ${s.irritability}/${s.irritabilitySource}`
   );
-  assert(s.assumptions.length > 0, "assumptions ledger non-empty for gap fill");
+  assert(s.assumptions.length === 0, "no assumptions ledger for free-write mode");
   assert(
-    s.liveReadLines.some((l) => /assumed/i.test(l)),
-    "live read discloses assumptions"
+    s.liveReadLines.some((l) => /not assumed|Free-write|none stated/i.test(l)),
+    "live read states free-write / no invent"
   );
 }
 
@@ -190,11 +190,11 @@ function assert(cond, msg) {
   assert(s.painNow === 7, "explicit 7/10");
   assert(s.activityResponse === "delayed-worse", `delayed response: ${s.activityResponse}`);
   assert(s.irritability === "high" || s.irritability === "moderate", `evidence-based irritability: ${s.irritability}`);
-  // Stated goals empty; assumed goals from limits are OK if labeled
+  // Stated goals empty; free-write mode does NOT invent goals from limits
   assert(s.goals.length === 0, "stated goals still empty without goal language");
   assert(
-    s.assumedGoals.some((g) => /stairs/i.test(g)) || s.planHints.functionalGoals.some((g) => /stairs/i.test(g)),
-    `assumed/plan goals may derive from stated stair limit: assumed=${JSON.stringify(s.assumedGoals)} plan=${JSON.stringify(s.planHints.functionalGoals)}`
+    s.assumedGoals.length === 0,
+    `no assumed goals from stair limit: ${JSON.stringify(s.assumedGoals)}`
   );
 }
 

@@ -113,6 +113,40 @@ function uniqueBp(arr: BodyPart[]): BodyPart[] {
   return Array.from(new Set(arr.filter(Boolean)));
 }
 
+/** Stable variety seed from free-text (same story → same order; different stories → different near-tie picks). */
+export function varietyOffset(text: string, salt = 0): number {
+  const s = `${text || ""}\0${salt}`;
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h >>> 0);
+}
+
+/**
+ * Among near-equal top scores, rotate which candidate wins so programs are more versatile
+ * while staying clinically ranked.
+ */
+export function applyVarietyBand<T extends { score: number; id: string }>(
+  ranked: T[],
+  seed: number,
+  band = 8
+): T[] {
+  if (ranked.length <= 1) return ranked;
+  const top = ranked[0]!.score;
+  const near: T[] = [];
+  const rest: T[] = [];
+  for (const r of ranked) {
+    if (top - r.score <= band) near.push(r);
+    else rest.push(r);
+  }
+  if (near.length <= 1) return ranked;
+  const start = seed % near.length;
+  const rotated = [...near.slice(start), ...near.slice(0, start)];
+  return [...rotated, ...rest];
+}
+
 /**
  * Map healing time + irritability → tissue stage (educational synthesis).
  */
@@ -505,33 +539,93 @@ const REGION_SEEDS: Partial<
   Record<BodyPart, { stretches: string[]; exercises: string[]; tags: string[] }>
 > = {
   "lower-back": {
-    stretches: ["cat-cow", "knee-to-chest", "childs-pose", "pelvic-tilt"],
-    exercises: ["ex-bird-dog", "ex-dead-bug", "ex-glute-bridge", "ex-hip-hinge-dowel"],
+    stretches: [
+      "cat-cow",
+      "knee-to-chest",
+      "childs-pose",
+      "pelvic-tilt",
+      "figure-four-glute",
+      "open-book-thoracic",
+    ],
+    exercises: [
+      "ex-bird-dog",
+      "ex-dead-bug",
+      "ex-glute-bridge",
+      "ex-hip-hinge-dowel",
+      "ex-side-lying-abduction",
+      "ex-sit-to-stand",
+    ],
     tags: ["lumbar", "core", "glute", "motor-control"],
   },
   neck: {
-    stretches: ["chin-tuck", "upper-trap-stretch", "open-book-thoracic"],
-    exercises: ["ex-cervical-isometrics", "ex-scapular-rows-band", "ex-thoracic-extension-foam"],
+    stretches: [
+      "chin-tuck",
+      "upper-trap-stretch",
+      "open-book-thoracic",
+      "doorway-chest-stretch",
+      "levator-scapulae-stretch",
+    ],
+    exercises: [
+      "ex-cervical-isometrics",
+      "ex-scapular-rows-band",
+      "ex-thoracic-extension-foam",
+      "ex-serratus-punch",
+    ],
     tags: ["cervical", "posture", "scapular"],
   },
   shoulders: {
-    stretches: ["doorway-chest-stretch", "upper-trap-stretch"],
-    exercises: ["ex-scapular-rows-band", "ex-serratus-punch", "ex-shoulder-er-band"],
+    stretches: [
+      "doorway-chest-stretch",
+      "upper-trap-stretch",
+      "open-book-thoracic",
+      "thread-the-needle",
+    ],
+    exercises: [
+      "ex-scapular-rows-band",
+      "ex-serratus-punch",
+      "ex-shoulder-er-band",
+      "ex-wall-pushup",
+    ],
     tags: ["shoulder", "scapular", "rotator-cuff"],
   },
   knee: {
-    stretches: ["supine-hamstring-strap", "quad-standing"],
-    exercises: ["ex-quad-set", "ex-terminal-knee-extension", "ex-sit-to-stand", "ex-glute-bridge"],
+    stretches: ["supine-hamstring-strap", "quad-standing", "half-kneeling-hip-flexor", "figure-four-glute"],
+    exercises: [
+      "ex-quad-set",
+      "ex-terminal-knee-extension",
+      "ex-sit-to-stand",
+      "ex-glute-bridge",
+      "ex-side-lying-abduction",
+      "ex-step-up",
+      "ex-heel-raises",
+    ],
     tags: ["knee", "quad", "closed-chain-gentle"],
   },
   hips: {
-    stretches: ["half-kneeling-hip-flexor", "figure-four-glute"],
-    exercises: ["ex-glute-bridge", "ex-side-lying-abduction", "ex-sit-to-stand"],
+    stretches: [
+      "half-kneeling-hip-flexor",
+      "figure-four-glute",
+      "supine-hamstring-strap",
+      "cat-cow",
+    ],
+    exercises: [
+      "ex-glute-bridge",
+      "ex-side-lying-abduction",
+      "ex-sit-to-stand",
+      "ex-hip-hinge-dowel",
+      "ex-bird-dog",
+    ],
     tags: ["hip", "glute"],
   },
   ankles: {
-    stretches: ["ankle-alphabet", "plantar-fascia-wall", "gastroc-wall"],
-    exercises: ["ex-heel-raises", "ex-tandem-balance", "ex-ankle-alphabet-strength"],
+    stretches: ["ankle-alphabet", "plantar-fascia-wall", "gastroc-wall", "soleus-wall"],
+    exercises: [
+      "ex-heel-raises",
+      "ex-tandem-balance",
+      "ex-ankle-alphabet-strength",
+      "ex-short-foot",
+      "ex-sit-to-stand",
+    ],
     tags: ["ankle", "balance", "proprioception"],
   },
   thoracic: {

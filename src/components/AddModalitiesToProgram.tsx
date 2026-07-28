@@ -51,9 +51,10 @@ export function AddModalitiesToProgram({
 }) {
   const [routine, setRoutine] = useState<Routine | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [preVisit, setPreVisit] = useState(true);
-  const [postVisit, setPostVisit] = useState(true);
-  const [preSession, setPreSession] = useState(true);
+  // Do not pre-select visit/session timing — user opts in explicitly
+  const [preVisit, setPreVisit] = useState(false);
+  const [postVisit, setPostVisit] = useState(false);
+  const [preSession, setPreSession] = useState(false);
   const [postSession, setPostSession] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<ModalityCategory | "all">("all");
@@ -111,10 +112,7 @@ export function AddModalitiesToProgram({
       setMsg("Select at least one modality.");
       return;
     }
-    if (!preVisit && !postVisit && !preSession && !postSession) {
-      setMsg("Choose Pre-visit and/or Post-visit (or session timing).");
-      return;
-    }
+    // Timing flags optional — user may add modalities without visit/session tags
     const next = addModalitiesToRoutine(routine, Array.from(selected), {
       preVisit,
       postVisit,
