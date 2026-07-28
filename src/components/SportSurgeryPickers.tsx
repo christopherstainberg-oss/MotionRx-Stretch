@@ -10,10 +10,11 @@ import {
 import {
   searchSurgeries,
   getSurgeryById,
-  matchSurgeriesFromText,
+  detectSurgeriesFromText,
   weeksSinceSurgery,
   surgeryPhaseLabel,
   type Surgery,
+  type SurgeryTextMatch,
 } from "@/data/surgeries";
 import {
   ACTIVITY_LEVELS,
@@ -55,8 +56,8 @@ export function SportSurgeryPickers({
     () => matchSportsFromText(concernParagraph, 4),
     [concernParagraph]
   );
-  const textSurgeries = useMemo(
-    () => matchSurgeriesFromText(concernParagraph, 3),
+  const textSurgeryMatches = useMemo(
+    () => detectSurgeriesFromText(concernParagraph, 3),
     [concernParagraph]
   );
 
@@ -228,18 +229,27 @@ export function SportSurgeryPickers({
           </div>
         ) : (
           <>
-            {textSurgeries.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                {textSurgeries.map((su) => (
-                  <button
-                    key={su.id}
-                    type="button"
-                    onClick={() => pickSurgery(su)}
-                    className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"
-                  >
-                    + {su.name}
-                  </button>
-                ))}
+            {textSurgeryMatches.length > 0 && (
+              <div className="mb-2 space-y-1.5">
+                <p className="text-[11px] text-brand-500">
+                  From Your Story (tap only if correct — nothing auto-selected)
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {textSurgeryMatches.map((m: SurgeryTextMatch) => (
+                    <button
+                      key={m.surgery.id}
+                      type="button"
+                      onClick={() => pickSurgery(m.surgery)}
+                      title={m.reason}
+                      className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"
+                    >
+                      + {m.surgery.name}
+                      <span className="ml-1 opacity-70">
+                        · “{m.matchedPhrase}” · {m.confidence}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             <div className="relative">

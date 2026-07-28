@@ -198,14 +198,30 @@ function detectPatterns(input: {
   const has = (...keys: string[]) => keys.some((k) => p.includes(k) || hist.includes(k));
   const area = (...bps: BodyPart[]) => bps.some((b) => areas.has(b));
 
-  // Post-op only with explicit surgical language or structured precautions — not soft clearance alone
-  if (
-    has("surgery", "post-op", "postop", "replacement", "s/p", "after my operation", "fusion surgery") ||
-    (input.precautionIds && input.precautionIds.length > 0) ||
-    (input.clearanceRequired &&
-      has("surgeon", "protocol", "weight bearing", "nwb", "ttwb", "sling", "brace after"))
-  ) {
-    patterns.push("post-op-conservative");
+  // Post-op only when free text clearly states a surgical event/procedure — never bare injury names
+  {
+    const storyBlob = `${input.paragraph || ""} ${hist}`;
+    // Lazy import avoided: inline high-precision cues (mirrors surgeries.storyStatesPostOp)
+    const surgicalNeg =
+      /\b(?:no surgery|never had (?:any )?surgery|without surgery|considering surgery|might need surgery|before surgery|pre[-\s]?op|scheduled for surgery)\b/i.test(
+        storyBlob
+      );
+    const surgicalEvent =
+      !surgicalNeg &&
+      (/\b(?:had|have had|underwent|after my|status post|s\s*\/\s*p|post[-\s]?op|recovering from).{0,48}\b(?:surgery|replacement|reconstruction|repair|fusion|arthroplasty|orif)\b/i.test(
+        storyBlob
+      ) ||
+        /\b(?:tka|tha|aclr|acdf|cabg|knee replacement|hip replacement|acl reconstruction|rotator cuff repair|spinal fusion|total knee|total hip)\b/i.test(
+          storyBlob
+        ));
+    if (
+      surgicalEvent ||
+      (input.precautionIds && input.precautionIds.length > 0) ||
+      (input.clearanceRequired &&
+        has("surgeon", "protocol", "weight bearing", "nwb", "ttwb", "sling", "brace after"))
+    ) {
+      patterns.push("post-op-conservative");
+    }
   }
 
   if (

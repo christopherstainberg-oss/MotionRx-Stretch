@@ -10,6 +10,7 @@
     "lint": "next lint",
     "test:story-intel": "tsx scripts/test-story-intelligence.mjs",
     "test:rehab-dynamics": "tsx scripts/test-rehab-dynamics.mjs",
+    "test:surgery-detection": "tsx scripts/test-surgery-detection.mjs",
     "test:youtube-management": "tsx scripts/test-youtube-management.mjs",
     "test:input-security": "tsx scripts/test-input-security.mjs",
     "gen:curated-videos": "node scripts/gen-curated-movement-videos.mjs",

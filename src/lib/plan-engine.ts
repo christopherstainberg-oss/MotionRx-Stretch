@@ -1133,12 +1133,13 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
 
   const wantStretch = prefer.includes("stretch");
   // Only suppress exercises for true post-op / defer-to-provider clearance — not soft free-text matches
+  // Hard clearance only for true stated post-op / selected surgery — not bare “surgery” words
   const hardClearance =
     combinedHints.biases.includes("defer-to-provider") ||
     safety.programBiases.includes("lvad") ||
+    Boolean(surgery) ||
     (condHints.clearanceRequired &&
-      (rehabWithStory.patterns.includes("post-op-conservative") ||
-        /surgery|post-?op|replacement|fusion|s\/p/i.test(input.concernParagraph || "")));
+      rehabWithStory.patterns.includes("post-op-conservative"));
   const wantExercise = prefer.includes("exercise") && !hardClearance;
 
   // —— PT-style session composition (warm-up → mobility → control → function → cool-down) ——

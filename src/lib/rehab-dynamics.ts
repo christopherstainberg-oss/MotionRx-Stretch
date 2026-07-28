@@ -701,10 +701,19 @@ export function detectTissueMechanisms(opts: {
     else scored.push({ m, w });
   };
 
-  if (
-    opts.clearanceRequired ||
-    opts.surgery ||
-    /surgery|post-?op|s\/p|replacement|fusion|after my operation/.test(blob)
+  // Post-op mechanism only when surgery is selected or free text states a procedure/event
+  if (opts.clearanceRequired || opts.surgery) {
+    add("post-op", 12);
+  } else if (
+    !/\b(?:no surgery|never had (?:any )?surgery|considering surgery|might need surgery|before surgery|pre[-\s]?op)\b/i.test(
+      blob
+    ) &&
+    (/\b(?:had|have had|underwent|after my|status post|s\s*\/\s*p|post[-\s]?op|recovering from).{0,48}\b(?:surgery|replacement|reconstruction|repair|fusion|arthroplasty|orif)\b/i.test(
+      blob
+    ) ||
+      /\b(?:tka|tha|aclr|acdf|cabg|knee replacement|hip replacement|acl reconstruction|rotator cuff repair|spinal fusion)\b/i.test(
+        blob
+      ))
   ) {
     add("post-op", 12);
   }
