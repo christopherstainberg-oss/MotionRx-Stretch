@@ -224,6 +224,8 @@ function buildAutoGoalsFreeText(opts: {
  * Nested function components remount on every parent render, which steals
  * focus from textareas/inputs and makes typing feel broken.
  */
+
+/** Primary block — always visible, airy, no divider walls */
 function SubSection({
   title,
   hint,
@@ -236,16 +238,59 @@ function SubSection({
   action?: ReactNode;
 }) {
   return (
-    <div className="space-y-3 border-t border-brand-100 pt-5 first:border-t-0 first:pt-0 dark:border-brand-800">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-semibold text-brand-950">{title}</h3>
-          {hint && <p className="mt-0.5 text-xs text-brand-500">{hint}</p>}
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-brand-950 dark:text-brand-50">{title}</h3>
+          {hint ? (
+            <p className="mt-1 max-w-prose text-xs leading-relaxed text-brand-500">{hint}</p>
+          ) : null}
         </div>
         {action}
       </div>
       {children}
     </div>
+  );
+}
+
+/**
+ * Secondary / optional content — collapsed by default so the page stays calm.
+ * Uses <details> so no focus-stealing remounts on parent re-render.
+ */
+function OptionalSection({
+  title,
+  hint,
+  children,
+  badge,
+  defaultOpen = false,
+}: {
+  title: string;
+  hint?: string;
+  children: ReactNode;
+  badge?: ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details
+      className="group rounded-2xl border border-brand-100/70 bg-brand-50/30 open:bg-white dark:border-brand-800/70 dark:bg-brand-950/40 dark:open:bg-brand-950"
+      open={defaultOpen || undefined}
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3.5 marker:content-none [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="h-4 w-4 shrink-0 text-brand-400 transition group-open:rotate-90" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium text-brand-900 dark:text-brand-50">
+            {title}
+          </span>
+          {hint ? (
+            <span className="mt-0.5 block text-xs text-brand-500">{hint}</span>
+          ) : null}
+        </span>
+        {badge}
+      </summary>
+      <div className="space-y-3 border-t border-brand-100/70 px-4 py-4 dark:border-brand-800/70">
+        {children}
+      </div>
+    </details>
   );
 }
 
@@ -259,50 +304,61 @@ function StepNav({
   onStep: (id: number) => void;
 }) {
   const progress = ((step - 1) / (STEPS.length - 1)) * 100;
+  const current = STEPS[step - 1];
   return (
-    <nav aria-label="Assessment steps" className="mb-6">
-      <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-brand-100 dark:bg-brand-900">
+    <nav aria-label="Assessment steps" className="mb-8">
+      <div className="mb-4 flex items-baseline justify-between gap-3">
+        <div>
+          <p className="section-label">
+            Step {step} of {STEPS.length}
+          </p>
+          <p className="mt-1 text-lg font-semibold tracking-tight text-brand-950 dark:text-brand-50">
+            {current?.title}
+          </p>
+        </div>
+      </div>
+      <div className="mb-3 h-1 overflow-hidden rounded-full bg-brand-100 dark:bg-brand-900">
         <div
           className="h-full rounded-full bg-brand-600 transition-all duration-300"
           style={{ width: `${progress}%` }}
         />
       </div>
-      <ol className="grid grid-cols-5 gap-1">
+      <ol className="flex items-center justify-between gap-1">
         {STEPS.map((s) => {
           const active = step === s.id;
           const done = step > s.id || (s.id === 5 && generated);
           return (
-            <li key={s.id}>
+            <li key={s.id} className="flex-1">
               <button
                 type="button"
                 onClick={() => onStep(s.id)}
-                className={`flex w-full flex-col items-center gap-1 rounded-lg px-0.5 py-1.5 text-center transition ${
-                  active ? "text-brand-900" : done ? "text-brand-700" : "text-brand-400"
-                }`}
+                title={s.title}
+                aria-current={active ? "step" : undefined}
+                className="flex w-full flex-col items-center gap-1.5 py-1"
               >
                 <span
-                  className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
+                  className={`flex h-2.5 w-full max-w-[2.5rem] rounded-full transition ${
                     active
-                      ? "bg-brand-600 text-white"
+                      ? "bg-brand-600"
                       : done
-                        ? "bg-brand-200 text-brand-900 dark:bg-brand-800 dark:text-brand-100"
-                        : "bg-brand-50 text-brand-500 ring-1 ring-brand-100 dark:bg-brand-950 dark:ring-brand-800"
+                        ? "bg-brand-300 dark:bg-brand-700"
+                        : "bg-brand-100 dark:bg-brand-900"
+                  }`}
+                />
+                <span
+                  className={`text-[10px] font-medium ${
+                    active
+                      ? "text-brand-800 dark:text-brand-100"
+                      : "text-brand-400"
                   }`}
                 >
-                  {done && !active ? <Check className="h-4 w-4" /> : s.id}
-                </span>
-                <span className="hidden text-[10px] font-medium leading-tight sm:block">
-                  {s.title}
+                  {s.id}
                 </span>
               </button>
             </li>
           );
         })}
       </ol>
-      <p className="mt-2 text-center text-sm font-medium text-brand-800">
-        {STEPS[step - 1]?.short}
-        <span className="font-normal text-brand-500"> · of {STEPS.length}</span>
-      </p>
     </nav>
   );
 }
@@ -327,14 +383,14 @@ function FooterNav({
   canGenerate?: boolean;
 }) {
   return (
-    <div className="mt-6 flex items-center justify-between gap-3 border-t border-brand-100 pt-5 dark:border-brand-800">
+    <div className="mt-8 flex items-center justify-between gap-3 pt-2">
       {onBack ? (
-        <button type="button" className="btn-ghost px-3" onClick={onBack}>
+        <button type="button" className="btn-ghost px-2" onClick={onBack}>
           <ChevronLeft className="h-4 w-4" />
           Back
         </button>
       ) : (
-        <span className="w-20" />
+        <span className="w-16" />
       )}
       {showGenerate ? (
         <button
@@ -1463,17 +1519,14 @@ export default function AssessmentPage() {
   }
 
   return (
-    <div className="mx-auto max-w-xl pb-10 sm:max-w-2xl">
-      <header className="mb-4 text-center sm:mb-6 sm:text-left">
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-500">
+    <div className="page-narrow stack pb-8">
+      <header className="pt-1">
+        <p className="section-label">Assessment</p>
+        <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-brand-950 dark:text-brand-50">
           Clinical intake
-        </p>
-        <h1 className="inline-flex items-center gap-2 text-xl font-bold text-brand-950 sm:text-2xl">
-          <Stethoscope className="h-6 w-6 shrink-0 text-brand-600" />
-          Assessment
         </h1>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-brand-600 sm:mx-0">
-          One step at a time. Finish when you are ready—most fields are optional.
+        <p className="mt-2 max-w-md text-sm leading-relaxed text-brand-600 dark:text-brand-300">
+          One calm step at a time. Most fields are optional.
         </p>
       </header>
 
@@ -1481,82 +1534,43 @@ export default function AssessmentPage() {
 
       {/* ─── Step 1: Story ─── */}
       {step === 1 && (
-        <section className="card space-y-0 p-5 sm:p-6">
-          <SubSection
-            title="Describe your issue"
-            hint="Friendly clinical interview in one free-text box. Prior prompt first; open-ended questions auto-appear and can drop into the box as you write."
-            action={
-              coachLog.length > 0 ? (
-                <span className="text-xs font-semibold text-brand-600">
-                  {coachLog.length} coach turns
-                </span>
-              ) : null
-            }
-          >
-            <div className="space-y-3">
-              {/* Prior prompt — opening “what’s bothering you” style invitation */}
-              <div className="rounded-xl border border-brand-200 bg-gradient-to-br from-brand-600/10 via-white to-brand-50/80 px-3.5 py-3 dark:border-brand-700 dark:from-brand-900/60 dark:via-brand-950 dark:to-brand-950 sm:px-4">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                  Prior prompt · start here
-                </p>
-                <p className="mt-1 text-base font-semibold leading-snug text-brand-950 dark:text-brand-50">
-                  {storyPriorPrompt.heading}
-                </p>
-                <p className="mt-1.5 text-sm leading-relaxed text-brand-800 dark:text-brand-100">
-                  {storyPriorPrompt.question}
-                </p>
-                <p className="mt-2 text-xs leading-relaxed text-brand-600 dark:text-brand-300">
-                  {storyPriorPrompt.coachLine}
-                </p>
+        <div className="stack">
+          <section className="card space-y-5 p-5 sm:p-6">
+            <SubSection
+              title="Your story"
+              hint={storyPriorPrompt.question}
+              action={
+                coachLog.length > 0 ? (
+                  <span className="text-xs text-brand-500">{coachLog.length} turns</span>
+                ) : null
+              }
+            >
+              <div className="space-y-3">
                 {!paragraph.trim() && nextGuidedQuestion ? (
                   <button
                     type="button"
-                    className="btn-secondary mt-3 text-xs"
+                    className="text-xs font-semibold text-brand-700 hover:underline dark:text-brand-200"
                     onClick={() => insertQuestionIntoStory(nextGuidedQuestion)}
                   >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Put this question in the box
+                    Use guided question →
                   </button>
                 ) : null}
-              </div>
 
-              <label className="block">
-                <span className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-sm font-medium text-brand-800 dark:text-brand-100">
-                  <span>
-                    Free-text story &amp; Q&amp;A
-                    {preferredName ? (
-                      <span className="font-normal text-brand-500">
-                        {" "}
-                        · {displayPreferredName(preferredName)}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-500">
-                    {completedTurns > 0 ? `${completedTurns} turns` : "ready"}
-                    {flowStatus.type === "wait"
-                      ? " · waiting for your answer"
-                      : flowStatus.type === "advance"
-                        ? " · queuing next question…"
-                        : flowStatus.type === "done"
-                          ? " · interview solid"
-                          : continuousFlow && guideStoryQa
-                            ? " · continuous flow on"
-                            : ""}
-                  </span>
-                </span>
-                <ConversationComposer
-                  settling={storySettle.settling}
-                  editing={storySettle.editing}
-                  remainingSec={storySettle.remainingSec}
-                  onSend={commitStoryAdvanceNow}
-                  onEdit={editStoryAnswer}
-                >
-                  <textarea
-                    ref={storyTextareaRef}
-                    className="input conversation-text-box-field min-h-[220px] resize-y rounded-none text-base leading-relaxed"
-                    value={paragraph}
-                    onChange={(e) => {
-                      storyUserEditedRef.current = true;
+                <label className="block">
+                  <span className="sr-only">Free-text story</span>
+                  <ConversationComposer
+                    settling={storySettle.settling}
+                    editing={storySettle.editing}
+                    remainingSec={storySettle.remainingSec}
+                    onSend={commitStoryAdvanceNow}
+                    onEdit={editStoryAnswer}
+                  >
+                    <textarea
+                      ref={storyTextareaRef}
+                      className="input conversation-text-box-field min-h-[200px] resize-y rounded-none text-base leading-relaxed"
+                      value={paragraph}
+                      onChange={(e) => {
+                        storyUserEditedRef.current = true;
                       setParagraph(e.target.value);
                     }}
                     onKeyDown={(e) => {
@@ -1577,104 +1591,65 @@ export default function AssessmentPage() {
                 </ConversationComposer>
               </label>
 
-              {/* Continuous conversation strip */}
-              <div className="rounded-xl border border-brand-200 bg-brand-50/60 px-3 py-2.5 dark:border-brand-700 dark:bg-brand-900/40">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                    Continuous conversation
-                    {storySettle.settling
-                      ? ` · edit window ${storySettle.remainingSec}s`
-                      : continuousFlow && guideStoryQa
-                        ? " · flow on"
-                        : ""}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700 dark:text-brand-200">
-                      <input
-                        type="checkbox"
-                        className="h-3.5 w-3.5 accent-brand-600"
-                        checked={guideStoryQa}
-                        onChange={(e) => setGuideStoryQa(e.target.checked)}
-                      />
-                      Guide in box
-                    </label>
-                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700 dark:text-brand-200">
-                      <input
-                        type="checkbox"
-                        className="h-3.5 w-3.5 accent-brand-600"
-                        checked={continuousFlow}
-                        onChange={(e) => setContinuousFlow(e.target.checked)}
-                      />
-                      Keep flow going
-                    </label>
-                  </div>
-                </div>
-                <div className="mt-2">
-                  <ConversationSpeedControl
-                    compact
-                    settling={storySettle.settling}
-                    settleRemainingSec={storySettle.remainingSec}
+              {/* Quiet conversation controls */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-brand-600 dark:text-brand-300">
+                <label className="inline-flex items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-brand-600"
+                    checked={guideStoryQa}
+                    onChange={(e) => setGuideStoryQa(e.target.checked)}
                   />
-                </div>
-                {openStoryQuestion ? (
-                  <p className="mt-1.5 text-sm leading-snug text-brand-900 dark:text-brand-50">
-                    <span className="font-semibold text-brand-600">Now answering: </span>
-                    {openStoryQuestion}
-                  </p>
-                ) : nextGuidedQuestion ? (
-                  <div className="mt-1.5 flex flex-wrap items-start justify-between gap-2">
-                    <p className="text-sm leading-snug text-brand-800 dark:text-brand-100">
-                      <span className="font-semibold text-brand-600">Up next: </span>
-                      {nextGuidedQuestion.question}
-                    </p>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded-full border border-brand-300 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-brand-800 shadow-sm hover:border-brand-500 dark:border-brand-600 dark:bg-brand-950 dark:text-brand-100"
-                      onClick={() => insertQuestionIntoStory(nextGuidedQuestion)}
-                    >
-                      Drop in now
-                    </button>
-                  </div>
-                ) : (
-                  <p className="mt-1.5 text-xs leading-relaxed text-brand-600 dark:text-brand-300">
-                    {flowStatus.type === "done"
-                      ? "Main interview themes look covered — keep writing anytime or refine Plan."
-                      : "Start typing or wait a moment — the opening question will appear in the box."}
-                  </p>
-                )}
-                <p className="mt-1 text-[10px] leading-relaxed text-brand-500">
-                  Each ▸ line is a question. Type your answer under it, or type{" "}
-                  <strong>Skip</strong> to pass and move on. After your edit window (or Send), the
-                  next question is added. Adjust conversation speed above (shared with Journal &amp;
-                  Jeffery).
-                </p>
+                  Guide questions
+                </label>
+                <label className="inline-flex items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-brand-600"
+                    checked={continuousFlow}
+                    onChange={(e) => setContinuousFlow(e.target.checked)}
+                  />
+                  Continuous flow
+                </label>
+                <ConversationSpeedControl
+                  compact
+                  settling={storySettle.settling}
+                  settleRemainingSec={storySettle.remainingSec}
+                />
               </div>
+              {openStoryQuestion ? (
+                <p className="text-sm text-brand-700 dark:text-brand-200">
+                  <span className="font-medium text-brand-500">Now: </span>
+                  {openStoryQuestion}
+                </p>
+              ) : nextGuidedQuestion ? (
+                <p className="text-sm text-brand-600 dark:text-brand-300">
+                  <span className="font-medium text-brand-500">Up next: </span>
+                  {nextGuidedQuestion.question}{" "}
+                  <button
+                    type="button"
+                    className="font-semibold text-brand-700 underline-offset-2 hover:underline dark:text-brand-200"
+                    onClick={() => insertQuestionIntoStory(nextGuidedQuestion)}
+                  >
+                    Drop in
+                  </button>
+                </p>
+              ) : null}
 
               {/* Live clinical intelligence from free text (drives Plan & adaptive Q&A) */}
               {storyIntel.richness !== "empty" ? (
-                <div className="rounded-xl border border-brand-200 bg-white px-3 py-2.5 text-xs leading-relaxed text-brand-800 dark:border-brand-700 dark:bg-brand-950/60 dark:text-brand-100">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                      Live clinical read · evidence-only · powers Plan &amp; Routine
-                    </p>
-                    <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-800 dark:bg-brand-900 dark:text-brand-100">
-                      {storyIntel.intelligenceGrade || "signal"}
-                      {typeof storyIntel.completeness === "number"
-                        ? ` · ${storyIntel.completeness}/100`
-                        : ""}
-                      {" · "}
-                      {storyIntel.irritability === "unknown"
-                        ? "irritability unknown"
-                        : `${storyIntel.irritability} irritability${
-                            storyIntel.irritabilitySource === "assumed" ? " (assumed)" : ""
-                          }`}
-                      {storyIntel.planHints.phaseBias
-                        ? ` · ${storyIntel.planHints.phaseBias}`
-                        : ""}
-                    </span>
-                  </div>
-                  <ul className="mt-1.5 list-inside list-disc space-y-0.5">
-                    {storyIntel.liveReadLines.slice(0, 7).map((line, i) => (
+                <div className="rounded-xl bg-brand-50/50 px-3.5 py-3 text-xs leading-relaxed text-brand-700 dark:bg-brand-900/30 dark:text-brand-200">
+                  <p className="section-label">
+                    Live read
+                    {typeof storyIntel.completeness === "number"
+                      ? ` · ${storyIntel.completeness}/100`
+                      : ""}
+                    {storyIntel.irritability !== "unknown"
+                      ? ` · ${storyIntel.irritability} irritability`
+                      : ""}
+                  </p>
+                  <ul className="mt-2 list-inside list-disc space-y-0.5">
+                    {storyIntel.liveReadLines.slice(0, 4).map((line, i) => (
                       <li key={i}>{line}</li>
                     ))}
                   </ul>
@@ -1928,22 +1903,21 @@ export default function AssessmentPage() {
                     ))}
                   </ul>
                 ) : null}
-                <p className="mt-2 text-[11px] leading-relaxed text-brand-500">
-                  Educational only—not a diagnosis. Free text + coach thread save with your story for
-                  Plan, Jeffery, Journal, Insights, and Modalities.
+                <p className="text-[11px] leading-relaxed text-brand-400">
+                  Educational only—not a diagnosis.
                 </p>
               </div>
-            </div>
-          </SubSection>
+              </div>
+            </SubSection>
+          </section>
 
-          {/* Sex & Occupation: backend-only — parsed from Story free text for Plan / Journal / Jeffery */}
-
-          <SubSection
+          {/* Optional add-ons — collapsed by default */}
+          <OptionalSection
             title="Activity, sport & surgery"
-            hint="PhysioPath-style return-to-sport and post-op timeline. Surgery date drives protective dosing education (surgeon protocol always wins)."
-            action={
+            hint="Optional return-to-sport or post-op context"
+            badge={
               sportSurgery.sportIds.length || sportSurgery.surgeryId ? (
-                <span className="text-xs font-semibold text-brand-600">
+                <span className="text-xs text-brand-500">
                   {[
                     sportSurgery.sportIds.length
                       ? `${sportSurgery.sportIds.length} sport`
@@ -1962,23 +1936,21 @@ export default function AssessmentPage() {
               concernParagraph={debouncedParagraph}
               compact
             />
-          </SubSection>
+          </OptionalSection>
 
-          <SubSection
-            title="Vitals & Labs"
-            hint="Optional readiness signals. Upload CSV/TSV/TXT/JSON/PDF or paste lab text. Critical values favor protection — clinician care first."
+          <OptionalSection
+            title="Vitals & labs"
+            hint="Optional readiness signals"
           >
             <VitalsLabsPanel sex={sex || null} compact />
-          </SubSection>
+          </OptionalSection>
 
-          <SubSection
-            title="Current medications & doses"
-            hint="Search the clinical library or add custom. Use “Add meds to my story” to place doses in your paragraph."
-            action={
+          <OptionalSection
+            title="Medications"
+            hint="Search library or add custom doses"
+            badge={
               medications.length > 0 ? (
-                <span className="text-xs font-semibold text-brand-600">
-                  {medications.length} listed
-                </span>
+                <span className="text-xs text-brand-500">{medications.length}</span>
               ) : null
             }
           >
@@ -1989,127 +1961,104 @@ export default function AssessmentPage() {
               compact
               onInsertParagraph={(snippet) => {
                 setParagraph((p) => {
-                  // Avoid duplicating an identical meds block
                   if (p.includes(snippet.trim())) return p;
                   return p.trim() ? `${p.trim()}\n\n${snippet}` : snippet;
                 });
               }}
             />
-          </SubSection>
+          </OptionalSection>
 
-          {paragraph.trim().length >= 12 && (
-            <SubSection
+          {paragraph.trim().length >= 12 ? (
+            <OptionalSection
               title="What we noticed"
-              hint="Expand only if you want to review or apply detections."
-              action={
+              hint="Review detections from your story"
+              badge={
                 insightCount > 0 ? (
-                  <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-semibold text-brand-800 dark:bg-brand-900">
-                    {descriptorIds.length + paragraphConditions.length} matches
+                  <span className="text-xs text-brand-500">
+                    {descriptorIds.length + paragraphConditions.length}
                   </span>
                 ) : null
               }
             >
-              <details className="group rounded-xl border border-brand-100 bg-brand-50/40 dark:border-brand-800 dark:bg-brand-950/30">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-medium text-brand-900 marker:content-none [&::-webkit-details-marker]:hidden">
-                  <span className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-brand-600" />
-                    View detected insights
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-brand-400 transition group-open:rotate-90" />
-                </summary>
-                <div className="space-y-4 border-t border-brand-100 px-4 py-3 dark:border-brand-800">
-                  {paragraphDescDetails.length > 0 && (
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                        Pain descriptors
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {paragraphDescDetails.slice(0, 8).map((d) => (
-                          <span key={d.id} className="chip text-xs">
-                            {d.label}
-                          </span>
-                        ))}
-                      </div>
+              <div className="space-y-4">
+                {paragraphDescDetails.length > 0 && (
+                  <div>
+                    <p className="section-label">Pain descriptors</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {paragraphDescDetails.slice(0, 8).map((d) => (
+                        <span key={d.id} className="chip text-xs">
+                          {d.label}
+                        </span>
+                      ))}
                     </div>
-                  )}
-                  {paragraphConditions.length > 0 && (
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                        Conditions
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {paragraphConditions.slice(0, 6).map((id) => (
-                          <span key={id} className="chip text-xs">
-                            {getConditionById(id)?.label || id}
-                          </span>
-                        ))}
-                      </div>
+                  </div>
+                )}
+                {paragraphConditions.length > 0 && (
+                  <div>
+                    <p className="section-label">Conditions</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {paragraphConditions.slice(0, 6).map((id) => (
+                        <span key={id} className="chip text-xs">
+                          {getConditionById(id)?.label || id}
+                        </span>
+                      ))}
                     </div>
-                  )}
-                  {adjectivePreview && adjectivePreview.summaryLines.length > 0 && (
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                        Language cues
-                      </p>
-                      <ul className="mt-1.5 space-y-1 text-xs text-brand-700">
-                        {adjectivePreview.summaryLines.slice(0, 3).map((line) => (
-                          <li key={line} className="leading-snug">
-                            {line}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {parsedPreview && (
-                    <button
-                      type="button"
-                      className="btn-secondary w-full text-xs sm:w-auto"
-                      onClick={applyParagraphParse}
-                    >
-                      Apply detected areas, symptoms & goals
-                    </button>
-                  )}
-                  {conditionHints.redFlags[0] && (
-                    <p className="rounded-lg bg-rose-50 p-2.5 text-xs leading-relaxed text-rose-900 dark:bg-rose-950/40 dark:text-rose-100">
-                      {conditionHints.redFlags[0]}
-                    </p>
-                  )}
-                </div>
-              </details>
-            </SubSection>
-          )}
-
-          <SubSection title="Optional" hint="Only if you want more control over pain descriptors.">
-            <details className="group rounded-xl border border-brand-100 dark:border-brand-800">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-medium text-brand-800 marker:content-none [&::-webkit-details-marker]:hidden">
-                Browse full descriptor library
-                <ChevronRight className="h-4 w-4 text-brand-400 transition group-open:rotate-90" />
-              </summary>
-              <div className="border-t border-brand-100 px-3 pb-3 pt-2 dark:border-brand-800">
-                <PainDescriptorPicker
-                  value={descriptorIds}
-                  onChange={(ids) => {
-                    setAutoApplyDesc(false);
-                    setDescriptorIds(ids);
-                  }}
-                />
+                  </div>
+                )}
+                {adjectivePreview && adjectivePreview.summaryLines.length > 0 && (
+                  <div>
+                    <p className="section-label">Language cues</p>
+                    <ul className="mt-1.5 space-y-1 text-xs text-brand-700">
+                      {adjectivePreview.summaryLines.slice(0, 3).map((line) => (
+                        <li key={line} className="leading-snug">
+                          {line}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {parsedPreview && (
+                  <button
+                    type="button"
+                    className="btn-secondary w-full text-xs sm:w-auto"
+                    onClick={applyParagraphParse}
+                  >
+                    Apply detected areas, symptoms & goals
+                  </button>
+                )}
+                {conditionHints.redFlags[0] && (
+                  <p className="rounded-lg bg-rose-50 p-2.5 text-xs leading-relaxed text-rose-900 dark:bg-rose-950/40 dark:text-rose-100">
+                    {conditionHints.redFlags[0]}
+                  </p>
+                )}
               </div>
-            </details>
-          </SubSection>
+            </OptionalSection>
+          ) : null}
+
+          <OptionalSection title="Pain descriptor library" hint="Browse the full list">
+            <PainDescriptorPicker
+              value={descriptorIds}
+              onChange={(ids) => {
+                setAutoApplyDesc(false);
+                setDescriptorIds(ids);
+              }}
+            />
+          </OptionalSection>
 
           <FooterNav onNext={() => setStep(2)} />
-        </section>
+        </div>
       )}
 
       {/* ─── Step 2: Body & pain ─── */}
       {step === 2 && (
-        <section className="card space-y-0 p-5 sm:p-6">
+        <div className="stack">
+          <section className="card space-y-5 p-5 sm:p-6">
           <SubSection
             title="Body regions"
-            hint="Open a category, then tap areas that apply. Selected count updates as you go."
+            hint="Tap a category, then select areas."
             action={
               areas.length > 0 ? (
-                <span className="text-xs font-semibold text-brand-600">{areas.length} selected</span>
+                <span className="text-xs text-brand-500">{areas.length} selected</span>
               ) : null
             }
           >
@@ -2183,13 +2132,58 @@ export default function AssessmentPage() {
           )}
 
           <SubSection
-            title="Clinical symptoms"
-            hint="Evidence-based symptoms that change dosing. Suggestions appear as you select."
+            title="Goals"
+            hint="Auto-fills from your story—edit anytime."
             action={
+              <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-600">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 accent-brand-600"
+                  checked={goalsAutoFill}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setGoalsAutoFill(on);
+                    if (on) {
+                      goalsUserEditedRef.current = false;
+                      const next = buildAutoGoalsFreeText({
+                        statedGoals: storyIntel.goals,
+                        assumedGoals: storyIntel.assumedGoals,
+                        areas,
+                        functionalLimits: storyIntel.functionalLimits,
+                      });
+                      setGoalsText(next);
+                      setGoals(parseGoalsFreeText(next));
+                    }
+                  }}
+                />
+                Auto
+              </label>
+            }
+          >
+            <input
+              type="text"
+              className="input w-full text-base"
+              value={goalsText}
+              onChange={(e) => {
+                goalsUserEditedRef.current = true;
+                const v = e.target.value;
+                setGoalsText(v);
+                setGoals(parseGoalsFreeText(v));
+              }}
+              placeholder="e.g. Walk 20 minutes without flare"
+              aria-label="Goals free text"
+              autoComplete="off"
+              spellCheck
+            />
+          </SubSection>
+          </section>
+
+          <OptionalSection
+            title="Clinical symptoms"
+            hint="Optional dosing cues"
+            badge={
               clinicalSymptomIds.length ? (
-                <span className="text-xs font-semibold text-brand-600">
-                  {clinicalSymptomIds.length} selected
-                </span>
+                <span className="text-xs text-brand-500">{clinicalSymptomIds.length}</span>
               ) : null
             }
           >
@@ -2228,14 +2222,14 @@ export default function AssessmentPage() {
                 Add
               </button>
             </div>
-          </SubSection>
+          </OptionalSection>
 
-          <SubSection
-            title="Activities of daily living (ADLs)"
-            hint="Rate function. Suggestions use your areas, pain, story, and devices. Limited ADLs reshape the routine."
-            action={
+          <OptionalSection
+            title="Daily activities (ADLs)"
+            hint="Optional function ratings"
+            badge={
               adlEntries.length ? (
-                <span className="text-xs font-semibold text-brand-600">{adlEntries.length} rated</span>
+                <span className="text-xs text-brand-500">{adlEntries.length}</span>
               ) : null
             }
           >
@@ -2250,66 +2244,16 @@ export default function AssessmentPage() {
                 setParagraph((p) => (p.trim() ? `${p.trim()}\n\n${snippet}` : snippet));
               }}
             />
-          </SubSection>
-
-          <SubSection
-            title="Goals"
-            hint="One-line goals auto-fill from your story—edit anytime."
-            action={
-              <label className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700 dark:text-brand-200">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 accent-brand-600"
-                  checked={goalsAutoFill}
-                  onChange={(e) => {
-                    const on = e.target.checked;
-                    setGoalsAutoFill(on);
-                    if (on) {
-                      goalsUserEditedRef.current = false;
-                      const next = buildAutoGoalsFreeText({
-                        statedGoals: storyIntel.goals,
-                        assumedGoals: storyIntel.assumedGoals,
-                        areas,
-                        functionalLimits: storyIntel.functionalLimits,
-                      });
-                      setGoalsText(next);
-                      setGoals(parseGoalsFreeText(next));
-                    }
-                  }}
-                />
-                Auto-fill from story
-              </label>
-            }
-          >
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-brand-800 dark:text-brand-100">
-                Your goals
-              </span>
-              <input
-                type="text"
-                className="input w-full text-base"
-                value={goalsText}
-                onChange={(e) => {
-                  goalsUserEditedRef.current = true;
-                  const v = e.target.value;
-                  setGoalsText(v);
-                  setGoals(parseGoalsFreeText(v));
-                }}
-                placeholder="e.g. Walk 20 minutes without flare; sleep more easily"
-                aria-label="Goals free text"
-                autoComplete="off"
-                spellCheck
-              />
-            </label>
-          </SubSection>
+          </OptionalSection>
 
           <FooterNav onBack={() => setStep(1)} onNext={() => setStep(3)} />
-        </section>
+        </div>
       )}
 
       {/* ─── Step 3: Safety ─── */}
       {step === 3 && (
-        <section className="card space-y-0 p-5 sm:p-6">
+        <div className="stack">
+          <section className="card space-y-5 p-5 sm:p-6">
           <SubSection
             title="Effort & heart rate"
             hint="Age estimates max HR. Borg sets how hard the plan should feel."
@@ -2569,17 +2513,24 @@ export default function AssessmentPage() {
               </div>
             )}
           </SubSection>
+          </section>
 
-          {/* Occupation: backend-only from Story free text */}
+          <OptionalSection title="Protocol notes" hint="Optional free text from your care team">
+            <textarea
+              className="input min-h-[72px]"
+              value={protocolNotes}
+              onChange={(e) => setProtocolNotes(e.target.value)}
+              placeholder="e.g. NWB right leg 4 weeks; 10 lb lift limit…"
+              autoComplete="off"
+            />
+          </OptionalSection>
 
-          <SubSection
-            title="Current medications & doses"
-            hint="Same list as Step 1. Edit strength, route (pill, IM, IV…), dose, and frequency; add to your story anytime."
-            action={
+          <OptionalSection
+            title="Medications"
+            hint="Same list as Story step"
+            badge={
               medications.length > 0 ? (
-                <span className="text-xs font-semibold text-brand-600">
-                  {medications.length} listed
-                </span>
+                <span className="text-xs text-brand-500">{medications.length}</span>
               ) : null
             }
           >
@@ -2594,25 +2545,16 @@ export default function AssessmentPage() {
                 });
               }}
             />
-          </SubSection>
-
-          <SubSection title="Protocol notes" hint="Optional free text from your surgeon or PT.">
-            <textarea
-              className="input min-h-[72px]"
-              value={protocolNotes}
-              onChange={(e) => setProtocolNotes(e.target.value)}
-              placeholder="e.g. NWB right leg 4 weeks; 10 lb lift limit…"
-              autoComplete="off"
-            />
-          </SubSection>
+          </OptionalSection>
 
           <FooterNav onBack={() => setStep(2)} onNext={() => setStep(4)} />
-        </section>
+        </div>
       )}
 
       {/* ─── Step 4: Preferences ─── */}
       {step === 4 && (
-        <section className="card space-y-0 p-5 sm:p-6">
+        <div className="stack">
+          <section className="card space-y-5 p-5 sm:p-6">
           <SubSection
             title="Session length & difficulty"
             hint="We may still cap intensity based on safety and pain."
@@ -2745,17 +2687,20 @@ export default function AssessmentPage() {
             saving={saving}
             canGenerate={canGenerate}
           />
-        </section>
+          </section>
+        </div>
       )}
 
       {/* ─── Step 5: Plan ─── */}
       {step === 5 && (
-        <div className="space-y-4">
+        <div className="stack">
           {!generated ? (
-            <section className="card space-y-4 p-5 sm:p-6 text-center">
-              <h2 className="text-lg font-semibold text-brand-950">Ready to generate</h2>
-              <p className="text-sm text-brand-600">
-                Review earlier steps if needed, then build your clinical plan.
+            <section className="card space-y-5 p-6 text-center sm:p-8">
+              <h2 className="text-lg font-semibold text-brand-950 dark:text-brand-50">
+                Ready to generate
+              </h2>
+              <p className="text-sm text-brand-600 dark:text-brand-300">
+                Review earlier steps if needed, then build your plan.
               </p>
               <button
                 type="button"
