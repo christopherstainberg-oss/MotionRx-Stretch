@@ -24,6 +24,11 @@ import {
   isVettedInstitutionalVideo,
   type InstitutionalVideo,
 } from "@/data/video-catalog";
+import {
+  foldKeyboardPunctuation,
+  normalizeForMatch,
+  stripDangerousInvisible,
+} from "@/lib/input-normalize";
 
 export { VIDEO_VERIFIED, CURATED_MOVEMENT_VIDEOS, CURATED_PUBLISHERS };
 export type { CuratedMovementVideo };
@@ -56,7 +61,8 @@ const VID_FILLER =
  * Returns null when nothing but dosing language remains (PhysioPath: show no link).
  */
 export function videoMovement(name: string, _pattern?: string): string | null {
-  let q = String(name || "")
+  // Fold smart quotes/dashes from mobile keyboards before parsing
+  let q = foldKeyboardPunctuation(stripDangerousInvisible(String(name || "")))
     .replace(VID_STRIP_TAIL, "")
     .replace(VID_STRIP_PARENS, "")
     .replace(/\s*\((left|right|bilateral)\)\s*$/i, "")
@@ -70,7 +76,7 @@ export function videoMovement(name: string, _pattern?: string): string | null {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (!q) q = String(name || "").trim();
+  if (!q) q = foldKeyboardPunctuation(String(name || "")).trim();
   q = q.toLowerCase();
   while (VID_LEAD.test(q)) q = q.replace(VID_LEAD, "");
   for (const [re, to] of VID_JARGON) q = q.replace(re, to);
@@ -84,12 +90,11 @@ export function videoMovement(name: string, _pattern?: string): string | null {
 }
 
 /**
- * Normalise keys/movements: hyphens → spaces, strip trailing plurals (4+ letter words).
- * "straight-leg raises" and "straight leg raise" share a key.
+ * Normalise keys/movements: keyboard fold, hyphens → spaces, trailing plurals.
+ * "straight-leg raises" / "straight—leg raises" / "straight leg raise" share a key.
  */
 export function vidNorm(t: string): string {
-  return String(t || "")
-    .toLowerCase()
+  return normalizeForMatch(t)
     .replace(/[-–—]/g, " ")
     .replace(/\b(\w{3,})s\b/g, "$1")
     .replace(/\s+/g, " ")

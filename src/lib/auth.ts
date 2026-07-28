@@ -9,6 +9,10 @@ import type { UserPreferences, UserProfile } from "@/lib/types";
 import { v4 as uuid } from "uuid";
 import { isValidEmail } from "@/lib/rate-limit";
 import { sanitizeDisplayName } from "@/lib/security";
+import {
+  normalizeEmailInput,
+  normalizePasswordInput,
+} from "@/lib/input-normalize";
 import { ensureAdminRole, isAdminUser } from "@/lib/admin";
 import { gravatarUrl } from "@/lib/gravatar";
 
@@ -363,8 +367,8 @@ export async function registerUser(input: {
   /** Optional nickname used in coaching/plan copy */
   preferredName?: string;
 }): Promise<{ user: UserProfile } | { error: string }> {
-  const email = input.email.trim().toLowerCase();
-  const password = input.password;
+  const email = normalizeEmailInput(input.email);
+  const password = normalizePasswordInput(input.password);
   if (!isValidEmail(email)) {
     return { error: "Enter a valid email address." };
   }
@@ -414,8 +418,8 @@ export async function loginUser(input: {
   email: string;
   password: string;
 }): Promise<{ user: UserProfile } | { error: string }> {
-  const email = input.email.trim().toLowerCase();
-  const password = input.password;
+  const email = normalizeEmailInput(input.email);
+  const password = normalizePasswordInput(input.password);
   if (!isValidEmail(email) || !password || password.length > 128) {
     return { error: "Invalid email or password." };
   }

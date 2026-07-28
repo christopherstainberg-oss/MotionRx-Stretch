@@ -11,7 +11,6 @@ import {
 } from "@/lib/recovery-today";
 import {
   AlertTriangle,
-  CheckCircle2,
   Droplets,
   HeartPulse,
   ListChecks,
@@ -96,19 +95,17 @@ export function TodayRecoveryDashboard({
   }
 
   return (
-    <section className="card space-y-4 p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
+    <section className="card space-y-4 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">
-            Today · Recovery Balance
-          </p>
-          <h2 className="text-base font-bold text-brand-950">
-            {snap.preferName}&apos;s Readiness
+          <p className="section-label">Today</p>
+          <h2 className="mt-1 text-base font-semibold text-brand-950 dark:text-brand-50">
+            Readiness
           </h2>
         </div>
         <span
           className={cn(
-            "rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide ring-1",
+            "rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ring-1",
             readinessStyles(snap.readiness)
           )}
         >
@@ -117,29 +114,24 @@ export function TodayRecoveryDashboard({
       </div>
 
       {snap.clearanceCaution && snap.clearanceBody && (
-        <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+        <div className="flex gap-2 rounded-xl bg-amber-50/90 p-3 text-sm text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>
-            <p className="font-semibold">Clearance / Protection Active</p>
-            <p className="mt-0.5 text-xs leading-relaxed opacity-90">
-              {snap.clearanceBody}
-            </p>
-          </div>
+          <p className="text-xs leading-relaxed">{snap.clearanceBody}</p>
         </div>
       )}
 
-      <ul className="space-y-1.5 text-sm text-brand-700">
-        {snap.readinessWhy.map((w) => (
-          <li key={w} className="flex gap-2">
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />
-            <span>{w}</span>
-          </li>
-        ))}
-      </ul>
+      {snap.readinessWhy[0] ? (
+        <p className="text-sm leading-relaxed text-brand-600 dark:text-brand-300">
+          {snap.readinessWhy[0]}
+          {snap.readinessWhy.length > 1 ? (
+            <span className="text-brand-400"> · +{snap.readinessWhy.length - 1} more</span>
+          ) : null}
+        </p>
+      ) : null}
 
-      {/* Multi-metric grid — NutriFit-style dashboard cards */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <div className="rounded-xl border border-brand-100 bg-brand-50/50 p-3 dark:border-brand-800 dark:bg-brand-950/40">
+      {/* Metrics — softer cells, less nested chrome */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-xl bg-brand-50/60 p-3 dark:bg-brand-900/30">
           <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">
             <Droplets className="h-3.5 w-3.5" />
             Hydration

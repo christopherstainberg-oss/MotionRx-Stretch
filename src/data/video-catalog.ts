@@ -28,6 +28,7 @@ import {
   CURATED_PUBLISHERS,
   VIDEO_VERIFIED,
 } from "@/data/curated-movement-videos";
+import { normalizeForMatch } from "@/lib/input-normalize";
 
 /**
  * Substrings that must appear in `institution` for a video to be serveable.
@@ -1124,11 +1125,8 @@ export const VIDEO_BY_TECHNIQUE: Record<TechniqueKey, VideoCatalogKey> = {
 };
 
 function normalizeMatchText(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9\s/+-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  // Keyboard smart quotes/dashes/diacritics → catalog-safe match tokens
+  return normalizeForMatch(s);
 }
 
 /** True if catalog video explicitly owns this technique key */

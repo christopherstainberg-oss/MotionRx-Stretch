@@ -15,6 +15,7 @@ import {
 import { readDb, updateDb } from "@/lib/storage";
 import type { ModalityPlan } from "@/lib/types";
 import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
+import { assertSameOrigin, contentLengthOk } from "@/lib/security";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -149,6 +150,12 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  if (!assertSameOrigin(req)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!contentLengthOk(req, 64_000)) {
+    return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+  }
   const limited = rateLimit(`modalities:${clientIp(req)}`, {
     limit: 30,
     windowMs: 60 * 1000,

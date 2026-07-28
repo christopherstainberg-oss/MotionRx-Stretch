@@ -3,6 +3,11 @@
  * Suitable for single-node Docker; use Redis for multi-replica production.
  */
 
+import {
+  normalizeEmailInput,
+  normalizeUserText,
+} from "@/lib/input-normalize";
+
 type Bucket = { count: number; resetAt: number };
 
 const buckets = new Map<string, Bucket>();
@@ -35,17 +40,18 @@ export function clientIp(req: Request): string {
   return "unknown";
 }
 
-/** Strip control characters and trim; optional max length */
+/**
+ * Sanitize free-text from keyboard: NFC, fold smart quotes/dashes,
+ * strip invisible/bidi controls, cap length. Preserves diacritics (José).
+ */
 export function sanitizeText(input: string, maxLen = 2000): string {
-  return input
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
-    .trim()
-    .slice(0, maxLen);
+  return normalizeUserText(input, maxLen);
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function isValidEmail(email: string): boolean {
-  if (email.length > 254) return false;
-  return EMAIL_RE.test(email);
+  const e = normalizeEmailInput(email);
+  if (e.length > 254 || e.length < 3) return false;
+  return EMAIL_RE.test(e);
 }

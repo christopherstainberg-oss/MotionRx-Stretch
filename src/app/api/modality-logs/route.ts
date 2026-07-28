@@ -4,6 +4,7 @@ import { getModalityById } from "@/data/modalities";
 import { readDb, updateDb } from "@/lib/storage";
 import type { ModalityLog } from "@/lib/types";
 import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
+import { assertSameOrigin, contentLengthOk } from "@/lib/security";
 import { v4 as uuid } from "uuid";
 
 export async function GET() {
@@ -19,6 +20,12 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  if (!assertSameOrigin(req)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!contentLengthOk(req, 16_384)) {
+    return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+  }
   const limited = rateLimit(`modality-logs:${clientIp(req)}`, {
     limit: 40,
     windowMs: 60 * 1000,

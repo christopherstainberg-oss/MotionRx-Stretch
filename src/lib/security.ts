@@ -2,6 +2,11 @@
  * Shared request security helpers — origin checks, clamps, safe errors.
  */
 
+import {
+  normalizeUserText,
+  sanitizePersonName,
+} from "@/lib/input-normalize";
+
 export function assertSameOrigin(req: Request): boolean {
   const host = req.headers.get("host");
   if (!host) return false;
@@ -62,10 +67,27 @@ export function safeClientError(message: string, status: number) {
   return { error: message, status };
 }
 
-/** Strip characters that commonly break out of HTML attributes if ever echoed */
+/**
+ * Display name: keep apostrophes/hyphens (O'Brien, Mary-Jane), fold smart
+ * keyboard punctuation, strip HTML breakout and invisible chars.
+ */
 export function sanitizeDisplayName(input: string, maxLen = 80): string {
-  return input
-    .replace(/[\u0000-\u001F\u007F<>"'`\\]/g, "")
-    .trim()
-    .slice(0, maxLen);
+  return sanitizePersonName(input, maxLen);
+}
+
+/** Free-text body fields (journal, community, jeffery) */
+export function sanitizeFreeText(input: string, maxLen = 2000): string {
+  return normalizeUserText(input, maxLen);
+}
+
+/**
+ * Reject requests that fail origin check with a standard 403 Response helper.
+ * Returns null when OK.
+ */
+export function forbiddenIfCrossOrigin(req: Request): Response | null {
+  if (assertSameOrigin(req)) return null;
+  return new Response(JSON.stringify({ error: "Forbidden" }), {
+    status: 403,
+    headers: { "Content-Type": "application/json" },
+  });
 }

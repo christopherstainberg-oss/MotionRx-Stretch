@@ -6,6 +6,9 @@ import {
   resetHealthCache,
 } from "@/lib/youtube-health";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { assertSameOrigin } from "@/lib/security";
+import { getSessionUser } from "@/lib/auth";
+import { isAdminUser } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -13,9 +16,8 @@ export const runtime = "nodejs";
 /**
  * GET /api/videos/refresh
  * - Default: TTL-gated full catalog refresh (auto-refresh path used by the app shell)
- * - ?force=1: re-probe every catalog ID immediately
+ * - ?force=1 / ?reset=1: admin session + same-origin only
  * - ?status=1: summary only, no probe
- * - ?reset=1: clear health cache then force refresh
  */
 export async function GET(req: Request) {
   const ip = clientIp(req);
@@ -37,11 +39,18 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, summary: await healthSummary() });
     }
 
-    if (reset) {
-      await resetHealthCache();
-    }
-
+    // Destructive / expensive ops: require same-origin + admin
     if (force || reset) {
+      if (!assertSameOrigin(req)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      const user = await getSessionUser();
+      if (!user || !isAdminUser(user)) {
+        return NextResponse.json({ error: "Admin required" }, { status: 403 });
+      }
+      if (reset) {
+        await resetHealthCache();
+      }
       const result = await refreshCatalogHealth({ force: true });
       return NextResponse.json({
         ok: true,
@@ -49,6 +58,11 @@ export async function GET(req: Request) {
         result,
         summary: await healthSummary(),
       });
+    }
+
+    // Background TTL refresh: same-origin preferred; still rate-limited
+    if (!assertSameOrigin(req) && req.headers.get("x-motionrx-client") !== "web") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const ran = await maybeBackgroundRefresh();
@@ -63,8 +77,16 @@ export async function GET(req: Request) {
   }
 }
 
-/** POST allows scheduled/ops refresh with same semantics as GET ?force=1 when body.force */
+/** POST: admin force refresh only */
 export async function POST(req: Request) {
+  if (!assertSameOrigin(req)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const user = await getSessionUser();
+  if (!user || !isAdminUser(user)) {
+    return NextResponse.json({ error: "Admin required" }, { status: 403 });
+  }
+
   const ip = clientIp(req);
   const rl = rateLimit(`videos-refresh-post:${ip}`, { limit: 10, windowMs: 60_000 });
   if (!rl.ok) {

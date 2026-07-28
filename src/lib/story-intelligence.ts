@@ -40,6 +40,7 @@ import {
   type OccupationProfile,
 } from "@/lib/occupation";
 import { resolveOccupationProfile } from "@/data/occupations";
+import { foldKeyboardPunctuation, stripDangerousInvisible } from "@/lib/input-normalize";
 
 function displayPreferredName(preferredName?: string | null): string {
   const p = (preferredName || "").trim();
@@ -598,7 +599,10 @@ export function analyzeStoryIntelligence(
     selectedOccupations?: import("@/data/occupations-types").UserOccupationEntry[];
   }
 ): StoryIntelligence {
-  const raw = (paragraph || "").trim();
+  // Fold smart quotes/dashes/NBSP from OS keyboards so clinical regex match ASCII patterns
+  const raw = foldKeyboardPunctuation(
+    stripDangerousInvisible((paragraph || "").trim())
+  );
   const t = raw.toLowerCase();
   const name = displayPreferredName(opts?.preferredName);
   const words = raw ? raw.split(/\s+/).filter(Boolean) : [];

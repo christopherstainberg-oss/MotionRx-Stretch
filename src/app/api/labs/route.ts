@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { LAB_STATS, LAB_TESTS, LAB_TEST_BY_KEY, interpretLabValue } from "@/data/labs";
 import { parseLabContent } from "@/lib/lab-parse";
+import { assertSameOrigin, contentLengthOk } from "@/lib/security";
+import { sanitizeText, clientIp, rateLimit } from "@/lib/rate-limit";
 
 /**
  * GET: catalog of lab tests
@@ -26,13 +28,26 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    if (!assertSameOrigin(req)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (!contentLengthOk(req, 512_000)) {
+      return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+    }
+    const limited = rateLimit(`labs-parse:${clientIp(req)}`, {
+      limit: 30,
+      windowMs: 60_000,
+    });
+    if (!limited.ok) {
+      return NextResponse.json({ error: "Rate limited" }, { status: 429 });
+    }
     const body = (await req.json()) as {
       text?: string;
       fileName?: string;
       mimeType?: string;
       sex?: string;
     };
-    const text = body.text || "";
+    const text = sanitizeText(String(body.text || ""), 200_000);
     if (!text.trim()) {
       return NextResponse.json(
         { error: "text required", values: [], warnings: ["Empty input"] },
@@ -40,8 +55,8 @@ export async function POST(req: Request) {
       );
     }
     const parsed = parseLabContent(text, {
-      fileName: body.fileName,
-      mimeType: body.mimeType,
+      fileName: sanitizeText(String(body.fileName || ""), 200),
+      mimeType: sanitizeText(String(body.mimeType || ""), 80),
       sex: body.sex,
     });
     // re-interpret with sex

@@ -3,7 +3,7 @@ import { getActorId, signInRequiredResponse } from "@/lib/auth";
 import { readDb, updateDb } from "@/lib/storage";
 import type { BodyPart, PainProfile } from "@/lib/types";
 import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
-import { clampInt } from "@/lib/security";
+import { assertSameOrigin, clampInt, contentLengthOk } from "@/lib/security";
 import { normalizeSex } from "@/lib/clinical-history";
 import { v4 as uuid } from "uuid";
 
@@ -22,6 +22,12 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  if (!assertSameOrigin(req)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!contentLengthOk(req, 64_000)) {
+    return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+  }
   const limited = rateLimit(`pain-profile:${clientIp(req)}`, {
     limit: 40,
     windowMs: 60 * 1000,

@@ -8,8 +8,15 @@ import {
 import { readDb, updateDb } from "@/lib/storage";
 import type { Routine } from "@/lib/types";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { assertSameOrigin, contentLengthOk } from "@/lib/security";
 
 export async function POST(req: Request) {
+  if (!assertSameOrigin(req)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!contentLengthOk(req, 128_000)) {
+    return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+  }
   const limited = rateLimit(`rotate:${clientIp(req)}`, {
     limit: 40,
     windowMs: 60 * 1000,

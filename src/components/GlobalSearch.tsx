@@ -33,6 +33,7 @@ export function GlobalSearch({
   const [active, setActive] = useState(0);
 
   const results = useMemo(() => {
+    // Preserve raw display in the box; matching folds smart quotes/dashes internally
     const q = query.trim();
     if (!q) return defaultSearchSuggestions(variant === "hero" ? 8 : 6);
     return searchAppIndex(q, 12);

@@ -9,17 +9,16 @@ import { GlobalSearch } from "./GlobalSearch";
 import { AccountMenu } from "./AccountMenu";
 import { cn } from "@/lib/utils";
 import {
-  BarChart3,
   BookOpen,
   Bot,
   Dumbbell,
+  HeartPulse,
   Home,
   Library,
   ListChecks,
   ListPlus,
   LogOut,
   Menu,
-  HeartPulse,
   Moon,
   Network,
   Sparkles,
@@ -27,18 +26,19 @@ import {
   TrendingUp,
   User,
   X,
+  BarChart3,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 
-/** Plan path — primary journey */
+/** Primary journey */
 const planLinks = [
-  { href: "/assessment", label: "Assess", icon: Stethoscope, step: "1" },
-  { href: "/routines", label: "Plan", icon: ListChecks, step: "2" },
-  { href: "/journal", label: "Journal", icon: BookOpen, step: "3" },
-  { href: "/jeffery", label: "Jeffery", icon: Bot, step: "4" },
+  { href: "/assessment", label: "Assess", icon: Stethoscope },
+  { href: "/routines", label: "Plan", icon: ListChecks },
+  { href: "/journal", label: "Journal", icon: BookOpen },
+  { href: "/jeffery", label: "Jeffery", icon: Bot },
 ];
 
-/** Secondary tools — menu only / desktop secondary */
+/** Secondary — menu only */
 const toolLinks = [
   { href: "/library", label: "Stretches", icon: Library },
   { href: "/exercises", label: "Exercises", icon: Dumbbell },
@@ -47,8 +47,8 @@ const toolLinks = [
   { href: "/health", label: "Health", icon: HeartPulse },
   { href: "/builder", label: "Builder", icon: ListPlus },
   { href: "/insights", label: "Insights", icon: Network },
-  { href: "/analytics", label: "User Analytics", icon: BarChart3 },
   { href: "/progress", label: "Progress", icon: TrendingUp },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/account", label: "Account", icon: User },
 ];
 
@@ -75,7 +75,7 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/auth/me")
+    apiFetch("/api/auth/me")
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;
@@ -127,55 +127,33 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
         Skip to main content
       </a>
 
+      {/* Slim header: logo · search · account · menu */}
       <header
-        className="sticky top-0 z-40 border-b border-brand-100/90 bg-white/95 shadow-sm backdrop-blur-xl dark:border-brand-800/90 dark:bg-brand-950/95"
+        className="sticky top-0 z-40 border-b border-brand-100/70 bg-white/90 backdrop-blur-lg dark:border-brand-800/70 dark:bg-brand-950/90"
         style={{ paddingTop: "var(--safe-top)" }}
       >
         <div className="page page-pad mx-auto flex h-[var(--header-h)] items-center gap-2 sm:gap-3">
           <Link
             href="/home"
-            className="flex shrink-0 items-center gap-2 font-semibold text-brand-900"
+            className="flex shrink-0 items-center gap-2 text-brand-900 dark:text-brand-50"
+            aria-label={brandName}
           >
-            <AppLogo className="h-8 w-8 sm:h-9 sm:w-9" />
-            <span className="hidden max-w-[9rem] truncate text-sm tracking-tight md:inline lg:max-w-none lg:text-base">
-              {brandName}
+            <AppLogo className="h-7 w-7 sm:h-8 sm:w-8" />
+            <span className="hidden text-sm font-semibold tracking-tight sm:inline">
+              MotionRx
             </span>
           </Link>
 
-          {/* Global free-text search with autocomplete */}
-          <div className="min-w-0 flex-1 px-1">
+          <div className="min-w-0 flex-1">
             <GlobalSearch variant="header" />
           </div>
 
-          {/* Desktop plan path */}
-          <nav className="hidden items-center gap-0.5 xl:flex" aria-label="Plan path">
-            {planLinks.map(({ href, label, icon: Icon }) => {
-              const active = isActive(pathname, href);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-semibold transition",
-                    active
-                      ? "bg-brand-600 text-white"
-                      : "text-brand-700 hover:bg-brand-50 hover:text-brand-900 dark:hover:bg-brand-900"
-                  )}
-                >
-                  <Icon className="h-3.5 w-3.5" aria-hidden />
-                  {label}
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
-            {/* Account section — Logout, Reset, Import, Export, Analytics, profile */}
+          <div className="flex shrink-0 items-center gap-0.5">
             <AccountMenu />
-            <ThemeCycleButton className="hidden sm:inline-flex" />
+            <ThemeCycleButton className="hidden md:inline-flex" />
             <button
               type="button"
-              className="btn-ghost min-h-[44px] min-w-[44px] p-2"
+              className="btn-ghost min-h-[40px] min-w-[40px] p-2"
               aria-expanded={menuOpen}
               aria-controls="mobile-drawer"
               aria-label={menuOpen ? "Close menu" : "Open menu"}
@@ -187,28 +165,24 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
         </div>
       </header>
 
-      {/* Drawer: plan + tools, grouped */}
       {menuOpen && (
         <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
           <button
             type="button"
-            className="absolute inset-0 bg-brand-950/40 backdrop-blur-sm"
+            className="absolute inset-0 bg-brand-950/30 backdrop-blur-[2px]"
             aria-label="Close menu backdrop"
             onClick={() => setMenuOpen(false)}
           />
           <div
             id="mobile-drawer"
-            className="absolute bottom-0 left-0 right-0 max-h-[90dvh] overflow-y-auto rounded-t-3xl border-t border-brand-100 bg-white shadow-2xl dark:border-brand-800 dark:bg-brand-950 sm:left-auto sm:top-0 sm:h-full sm:max-h-none sm:w-full sm:max-w-md sm:rounded-none sm:border-l sm:border-t-0"
-            style={{ paddingBottom: "max(1.25rem, var(--safe-bottom))" }}
+            className="absolute bottom-0 left-0 right-0 max-h-[88dvh] overflow-y-auto rounded-t-2xl border-t border-brand-100 bg-white dark:border-brand-800 dark:bg-brand-950 sm:left-auto sm:top-0 sm:h-full sm:max-h-none sm:w-full sm:max-w-sm sm:rounded-none sm:border-l sm:border-t-0"
+            style={{ paddingBottom: "max(1rem, var(--safe-bottom))" }}
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-brand-50 bg-white px-5 py-4 dark:border-brand-800 dark:bg-brand-950">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-brand-500">Menu</p>
-                <p className="font-bold text-brand-950">Navigate by plan</p>
-              </div>
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-brand-50 bg-white/95 px-5 py-3.5 dark:border-brand-800 dark:bg-brand-950/95">
+              <p className="text-sm font-semibold text-brand-950 dark:text-brand-50">Menu</p>
               <button
                 type="button"
-                className="btn-ghost min-h-[44px] min-w-[44px] p-2"
+                className="btn-ghost min-h-[40px] min-w-[40px] p-2"
                 onClick={() => setMenuOpen(false)}
                 aria-label="Close"
               >
@@ -216,160 +190,106 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
               </button>
             </div>
 
-            <div className="space-y-1 border-b border-brand-50 p-4 dark:border-brand-800">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                Search
-              </p>
-              <GlobalSearch variant="drawer" autoFocus onNavigate={() => setMenuOpen(false)} />
-            </div>
-
-            <div className="p-4">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                Your plan path
-              </p>
-              <ol className="space-y-1.5">
-                <li>
-                  <Link
-                    href="/home"
-                    onClick={() => setMenuOpen(false)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-xl border px-3 py-3 text-sm font-semibold",
-                      isActive(pathname, "/home")
-                        ? "border-brand-300 bg-brand-50 text-brand-900"
-                        : "border-brand-100 text-brand-800 dark:border-brand-800"
-                    )}
-                  >
-                    <Home className="h-5 w-5 text-brand-600" />
-                    Home
-                  </Link>
-                </li>
-                {planLinks.map(({ href, label, icon: Icon, step }) => {
-                  const active = isActive(pathname, href);
-                  return (
+            <div className="space-y-6 p-5">
+              <div>
+                <p className="section-label mb-2">Plan</p>
+                <ul className="space-y-0.5">
+                  <li>
+                    <Link
+                      href="/home"
+                      onClick={() => setMenuOpen(false)}
+                      className={cn(
+                        "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium",
+                        isActive(pathname, "/home")
+                          ? "bg-brand-50 text-brand-900 dark:bg-brand-900 dark:text-brand-50"
+                          : "text-brand-700 hover:bg-brand-50/80 dark:text-brand-200 dark:hover:bg-brand-900/50"
+                      )}
+                    >
+                      <Home className="h-4 w-4 opacity-70" />
+                      Home
+                    </Link>
+                  </li>
+                  {planLinks.map(({ href, label, icon: Icon }) => (
                     <li key={href}>
                       <Link
                         href={href}
                         onClick={() => setMenuOpen(false)}
                         className={cn(
-                          "flex items-center gap-3 rounded-xl border px-3 py-3 text-sm font-semibold",
-                          active
-                            ? "border-brand-300 bg-brand-50 text-brand-900 dark:border-brand-600 dark:bg-brand-900"
-                            : "border-brand-100 text-brand-800 dark:border-brand-800"
+                          "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium",
+                          isActive(pathname, href)
+                            ? "bg-brand-50 text-brand-900 dark:bg-brand-900 dark:text-brand-50"
+                            : "text-brand-700 hover:bg-brand-50/80 dark:text-brand-200 dark:hover:bg-brand-900/50"
                         )}
                       >
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
-                          {step}
-                        </span>
-                        <Icon className="h-4 w-4 text-brand-600" />
+                        <Icon className="h-4 w-4 opacity-70" />
                         {label}
                       </Link>
                     </li>
-                  );
-                })}
-              </ol>
-            </div>
+                  ))}
+                </ul>
+              </div>
 
-            <div className="border-t border-brand-50 p-4 dark:border-brand-800">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                Libraries & tools
-              </p>
-              <ul className="grid grid-cols-2 gap-2">
-                {toolLinks.map(({ href, label, icon: Icon }) => {
-                  const active = isActive(pathname, href);
-                  return (
+              <div>
+                <p className="section-label mb-2">Tools</p>
+                <ul className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                  {toolLinks.map(({ href, label, icon: Icon }) => (
                     <li key={href}>
                       <Link
                         href={href}
                         onClick={() => setMenuOpen(false)}
                         className={cn(
-                          "flex min-h-[64px] flex-col justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold",
-                          active
-                            ? "border-brand-300 bg-brand-50 text-brand-900"
-                            : "border-brand-100 text-brand-800 dark:border-brand-800"
+                          "flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm",
+                          isActive(pathname, href)
+                            ? "bg-brand-50 font-medium text-brand-900 dark:bg-brand-900 dark:text-brand-50"
+                            : "text-brand-700 hover:bg-brand-50/80 dark:text-brand-200"
                         )}
                       >
-                        <Icon className="h-4 w-4 text-brand-600" />
+                        <Icon className="h-3.5 w-3.5 shrink-0 opacity-60" />
                         {label}
                       </Link>
                     </li>
-                  );
-                })}
-              </ul>
-            </div>
+                  ))}
+                </ul>
+              </div>
 
-            <div className="border-t border-brand-50 px-4 py-3 dark:border-brand-800">
-              <ThemeCycleButton />
-              <p className="mt-1 text-[11px] text-brand-500">Theme: Auto · Light · Dark</p>
-            </div>
-
-            <div className="space-y-2 border-t border-brand-50 px-4 py-4 dark:border-brand-800">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                Account
-              </p>
-              {!signedIn ? (
-                <>
-                  <p className="text-sm text-brand-600">
-                    Sign in required to use MotionRx Stretch.
-                  </p>
+              <div className="border-t border-brand-100 pt-4 dark:border-brand-800">
+                <ThemeCycleButton />
+                {!signedIn ? (
                   <Link
                     href="/login"
-                    className="btn-primary w-full py-3"
+                    className="btn-primary mt-4 w-full"
                     onClick={() => setMenuOpen(false)}
                   >
-                    Sign in or register
+                    Sign in
                   </Link>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm text-brand-600">
-                    Signed in as{" "}
-                    <span className="font-semibold text-brand-900">{displayName || "user"}</span>
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Link
-                      href="/account"
-                      className="btn-secondary justify-center py-2.5 text-sm"
-                      onClick={() => setMenuOpen(false)}
+                ) : (
+                  <div className="mt-4 space-y-2">
+                    <p className="truncate text-xs text-brand-500">
+                      {displayName || "Signed in"}
+                    </p>
+                    <button
+                      type="button"
+                      className="btn-ghost w-full justify-start gap-2 px-0 text-sm text-brand-700"
+                      onClick={logout}
                     >
-                      Account
-                    </Link>
-                    <Link
-                      href="/analytics"
-                      className="btn-secondary justify-center py-2.5 text-sm"
-                      onClick={() => setMenuOpen(false)}
-                    >
-                      Analytics
-                    </Link>
+                      <LogOut className="h-4 w-4" />
+                      Log out
+                    </button>
                   </div>
-                  <Link
-                    href="/account#session-data"
-                    className="btn-ghost w-full justify-center py-2 text-sm"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    Export · Import · Reset
-                  </Link>
-                  <button
-                    type="button"
-                    className="btn-secondary inline-flex w-full items-center justify-center gap-1.5 py-2.5 text-sm"
-                    onClick={logout}
-                  >
-                    <LogOut className="h-4 w-4" />
-                    Log out
-                  </button>
-                </>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Bottom tabs — plan path only */}
+      {/* Bottom tabs — quieter, icon-first */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 border-t border-brand-100/90 bg-white/95 shadow-[0_-8px_30px_-12px_rgba(15,61,58,0.18)] backdrop-blur-xl dark:border-brand-800/90 dark:bg-brand-950/95 lg:hidden"
-        aria-label="Plan path"
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-brand-100/70 bg-white/90 backdrop-blur-lg dark:border-brand-800/70 dark:bg-brand-950/90 lg:hidden"
+        aria-label="Primary"
         style={{ paddingBottom: "var(--safe-bottom)" }}
       >
-        <div className="mx-auto flex max-w-lg items-stretch px-1 pt-1">
+        <div className="mx-auto flex max-w-md items-stretch px-2 pt-0.5">
           {mobileTabs.map(({ href, label, icon: Icon }) => {
             const active = isActive(pathname, href);
             return (
@@ -378,15 +298,11 @@ export function Nav({ brandName = "MotionRx Stretch" }: { brandName?: string }) 
                 href={href}
                 className={cn("tab-item", active ? "tab-item-active" : "tab-item-idle")}
               >
-                <span
-                  className={cn(
-                    "flex h-8 w-12 items-center justify-center rounded-full transition",
-                    active && "bg-brand-100 text-brand-700 dark:bg-brand-900"
-                  )}
-                >
-                  <Icon className="h-5 w-5" aria-hidden />
-                </span>
-                <span className="leading-none">{label}</span>
+                <Icon
+                  className={cn("h-5 w-5", active ? "text-brand-700 dark:text-brand-200" : "")}
+                  aria-hidden
+                />
+                <span className="text-[10px] font-medium leading-none">{label}</span>
               </Link>
             );
           })}

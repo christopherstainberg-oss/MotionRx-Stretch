@@ -9,7 +9,7 @@ import {
   migrateGuestData,
 } from "@/lib/auth";
 import { assertDataDirWritable, updateDb } from "@/lib/storage";
-import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { assertSameOrigin, contentLengthOk } from "@/lib/security";
 
 export async function POST(req: Request) {
@@ -36,7 +36,8 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({}));
     const result = await loginUser({
-      email: sanitizeText(String(body.email || ""), 254),
+      // Email/password normalized inside loginUser (keyboard fold; password keeps symbols)
+      email: String(body.email || ""),
       password: String(body.password || ""),
     });
     if ("error" in result) {

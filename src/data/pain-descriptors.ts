@@ -5,6 +5,8 @@
  * Expanded into a large searchable catalog via region + intensity editions.
  */
 
+import { foldKeyboardPunctuation, stripDangerousInvisible } from "@/lib/input-normalize";
+
 export type DescriptorCategory =
   | "quality-sensory"
   | "quality-affective"
@@ -1158,7 +1160,10 @@ const PARAGRAPH_PHRASES: Array<{ phrases: string[]; id: string; weight: number }
  * Combines phrase rules + catalog term scoring for paragraph-style intake.
  */
 export function matchDescriptorsFromText(text: string, limit = 12): string[] {
-  const t = text.toLowerCase().replace(/\s+/g, " ").trim();
+  const t = foldKeyboardPunctuation(stripDangerousInvisible(text))
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
   if (t.length < 4) return [];
 
   const scores = new Map<string, number>();

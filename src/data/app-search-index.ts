@@ -3,6 +3,8 @@
  * Used by the header search autocomplete (client-side, instant).
  */
 
+import { normalizeForMatch } from "@/lib/input-normalize";
+
 export type SearchCategory =
   | "Your plan"
   | "Libraries"
@@ -538,13 +540,8 @@ export const APP_SEARCH_INDEX: AppSearchItem[] = [
 ];
 
 function normalize(s: string) {
-  return s
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9\s/·\-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  // Shared keyboard→program fold (smart quotes, dashes, diacritics)
+  return normalizeForMatch(s);
 }
 
 /** Ranked free-text search with simple autocomplete scoring */

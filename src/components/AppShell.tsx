@@ -61,11 +61,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!authReady) {
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center bg-brand-50/50 dark:bg-brand-950">
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-brand-50/40 dark:bg-brand-950">
         <OfflineBanner />
-        <p className="text-sm font-medium text-brand-700 dark:text-brand-200">
-          Checking your account…
-        </p>
+        <p className="text-sm text-brand-600 dark:text-brand-300">Loading…</p>
         <PwaRegister />
       </div>
     );
@@ -81,28 +79,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         tabIndex={-1}
         className="page page-pad mx-auto w-full flex-1 outline-none"
         style={{
-          paddingTop: "1.25rem",
-          /* room for bottom tab bar + home indicator on phones */
-          paddingBottom: "calc(var(--tabbar-h) + var(--safe-bottom) + 1.25rem)",
+          paddingTop: "1.5rem",
+          paddingBottom: "calc(var(--tabbar-h) + var(--safe-bottom) + 1.5rem)",
         }}
       >
-        <div className="pb-6 lg:pb-10 xl:pb-8">{children}</div>
+        {children}
       </main>
       <footer
-        className="mt-auto hidden border-t border-brand-100/80 bg-white/70 py-8 text-center text-sm text-brand-700/80 xl:block"
+        className="mt-auto hidden border-t border-brand-100/60 py-6 text-center text-xs text-brand-500 xl:block dark:border-brand-800/60"
         style={{
           paddingLeft: "max(1rem, var(--safe-left))",
           paddingRight: "max(1rem, var(--safe-right))",
-          paddingBottom: "max(2rem, var(--safe-bottom))",
+          paddingBottom: "max(1.5rem, var(--safe-bottom))",
         }}
       >
-        <p className="font-semibold text-brand-900">{DEFAULT_APP_NAME.name}</p>
-        <p className="mx-auto mt-1 max-w-xl px-4 leading-relaxed">
-          Educational mobility support inspired by outpatient physical therapy principles. Not a
-          substitute for personalized medical or PT care.
-        </p>
-        <p className="mt-3 text-xs text-brand-500">
-          Installable PWA · Offline-ready · Pain-aware self-adjust · Jeffery AI coach
+        <p>
+          {DEFAULT_APP_NAME.name} · Educational mobility support · Not a substitute for clinical care
         </p>
       </footer>
       <PwaRegister />

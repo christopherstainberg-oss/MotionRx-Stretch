@@ -7,6 +7,7 @@
 
 import type { BodyPart, Difficulty } from "@/lib/types";
 import type { ProgramBias } from "@/data/pain-descriptors";
+import { foldKeyboardPunctuation, stripDangerousInvisible } from "@/lib/input-normalize";
 
 export type ClinicalCategory =
   | "musculoskeletal-injury"
@@ -807,7 +808,7 @@ export function getConditionsByIds(ids: string[]): ClinicalCondition[] {
  * Uses base search terms (fast) and returns base IDs for routine linking.
  */
 export function matchConditionsFromText(text: string, limit = 12): string[] {
-  const t = text.toLowerCase();
+  const t = foldKeyboardPunctuation(stripDangerousInvisible(text)).toLowerCase();
   if (t.trim().length < 3) return [];
   const scored: Array<{ id: string; score: number }> = [];
   for (const c of BASE_CLINICAL_CONDITIONS) {

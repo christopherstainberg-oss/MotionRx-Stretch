@@ -3,22 +3,26 @@
 @tailwind utilities;
 
 :root {
-  --bg: #f4faf9;
+  --bg: #f7fbfa;
   --fg: #0d2625;
   --card: #ffffff;
   --muted: #5b7472;
   --ring: #3a928a;
-  --header-h: 3.75rem;
-  --tabbar-h: 4.25rem;
+  /* Slimmer chrome = more room for content */
+  --header-h: 3.25rem;
+  --tabbar-h: 3.75rem;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --surface: #ffffff;
   --surface-2: #f0f9f8;
-  --border: rgba(31, 65, 63, 0.12);
-  --gradient-a: #d9f0ed;
-  --gradient-b: #ffe8d6;
+  --border: rgba(31, 65, 63, 0.08);
+  --gradient-a: #e8f5f3;
+  --gradient-b: #f5f0ea;
+  /* Vertical rhythm */
+  --stack-gap: 1.75rem;
+  --content-max: 40rem;
 }
 
 html.dark {
@@ -53,9 +57,9 @@ body {
 
 body {
   color: var(--fg);
+  /* Quiet wash — less visual noise than dual strong gradients */
   background:
-    radial-gradient(1200px 600px at 10% -10%, var(--gradient-a) 0%, transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, var(--gradient-b) 0%, transparent 45%),
+    radial-gradient(900px 480px at 50% -20%, var(--gradient-a) 0%, transparent 60%),
     var(--bg);
   overscroll-behavior-y: none;
   -webkit-tap-highlight-color: transparent;
@@ -80,29 +84,42 @@ body {
 
 @layer components {
   .page {
-    @apply mx-auto w-full max-w-6xl;
+    @apply mx-auto w-full max-w-5xl;
+  }
+
+  /* Reading column — primary content stays calm and narrow */
+  .page-narrow {
+    @apply mx-auto w-full;
+    max-width: var(--content-max);
   }
 
   .page-pad {
-    padding-left: max(1rem, var(--safe-left));
-    padding-right: max(1rem, var(--safe-right));
+    padding-left: max(1.25rem, var(--safe-left));
+    padding-right: max(1.25rem, var(--safe-right));
+  }
+
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--stack-gap);
   }
 
   .card {
-    @apply rounded-2xl border border-brand-100/80 bg-white shadow-card
-      dark:border-brand-800/80 dark:bg-brand-950 dark:shadow-none;
+    @apply rounded-2xl border border-brand-100/60 bg-white/90 shadow-none
+      dark:border-brand-800/60 dark:bg-brand-950/90 dark:shadow-none;
   }
 
   .card-interactive {
-    @apply card transition duration-200 hover:-translate-y-0.5 hover:shadow-soft active:translate-y-0 active:shadow-card
-      dark:hover:border-brand-600 dark:hover:bg-brand-900;
+    @apply card transition duration-150 hover:border-brand-200 hover:bg-brand-50/40
+      active:bg-brand-50/70
+      dark:hover:border-brand-700 dark:hover:bg-brand-900/50;
   }
 
   .btn {
-    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition
       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
       dark:focus-visible:ring-offset-brand-950
-      disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98];
+      disabled:pointer-events-none disabled:opacity-50 active:scale-[0.99];
   }
 
   .btn-primary {
@@ -214,11 +231,16 @@ body {
   }
 
   .section-title {
-    @apply text-xl font-bold tracking-tight text-brand-950 sm:text-2xl dark:text-brand-50;
+    @apply text-xl font-semibold tracking-tight text-brand-950 sm:text-2xl dark:text-brand-50;
   }
 
   .section-sub {
-    @apply mt-1 text-sm leading-relaxed text-brand-700/85 dark:text-brand-300/90;
+    @apply mt-1.5 text-sm leading-relaxed text-brand-600 dark:text-brand-300/90;
+  }
+
+  /* Quiet section label */
+  .section-label {
+    @apply text-xs font-medium uppercase tracking-wider text-brand-500;
   }
 
   /* Lined journal paper */

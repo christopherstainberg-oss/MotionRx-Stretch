@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { healthSummary, maybeBackgroundRefresh } from "@/lib/youtube-health";
 import { authSecretReady } from "@/lib/auth";
 import { assertDataDirWritable, getDataDir } from "@/lib/storage";
+import { isLoginBypassEnabled } from "@/lib/preview-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,7 +44,11 @@ export async function GET() {
     storageError = e instanceof Error ? e.message : String(e);
   }
 
-  const ready = authOk && storageOk;
+  const loginBypass = isLoginBypassEnabled();
+  const bypassInProd =
+    loginBypass && process.env.NODE_ENV === "production";
+  // Login bypass is a preview-only footgun — never ready in production with it on
+  const ready = authOk && storageOk && !bypassInProd;
 
   // Always 200 once the server is listening — Docker/Portainer liveness.
   return NextResponse.json({
@@ -51,7 +56,16 @@ export async function GET() {
     ready,
     service: "motionrx-stretch",
     time: new Date().toISOString(),
-    auth: { secretConfigured: authOk },
+    auth: {
+      secretConfigured: authOk,
+      loginBypass,
+      ...(bypassInProd
+        ? {
+            warning:
+              "LOGIN BYPASS is enabled in production — set BYPASS_LOGIN/NEXT_PUBLIC_BYPASS_LOGIN=false",
+          }
+        : {}),
+    },
     storage: {
       writable: storageOk,
       dataDir: getDataDir(),

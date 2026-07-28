@@ -3,6 +3,7 @@ import { getActorId, ownsRecord, signInRequiredResponse } from "@/lib/auth";
 import { readDb, updateDb } from "@/lib/storage";
 import type { SessionLog } from "@/lib/types";
 import { clientIp, rateLimit, sanitizeText } from "@/lib/rate-limit";
+import { assertSameOrigin, contentLengthOk } from "@/lib/security";
 
 export async function GET() {
   const actor = await getActorId();
@@ -16,6 +17,12 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  if (!assertSameOrigin(req)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!contentLengthOk(req, 32_768)) {
+    return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+  }
   const limited = rateLimit(`sessions:${clientIp(req)}`, {
     limit: 40,
     windowMs: 60 * 1000,

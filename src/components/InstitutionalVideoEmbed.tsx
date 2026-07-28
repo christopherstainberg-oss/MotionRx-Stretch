@@ -128,7 +128,8 @@ export function InstitutionalVideoEmbed({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/videos/resolve?${query}`, {
+      const { apiFetch } = await import("@/lib/api-client");
+      const res = await apiFetch(`/api/videos/resolve?${query}`, {
         cache: "no-store",
         headers: { Accept: "application/json" },
       });

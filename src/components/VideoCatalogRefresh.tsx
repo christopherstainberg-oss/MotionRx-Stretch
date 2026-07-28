@@ -21,13 +21,16 @@ export function VideoCatalogRefresh() {
     }
 
     const controller = new AbortController();
-    void fetch("/api/videos/refresh", {
-      signal: controller.signal,
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-    }).catch(() => {
-      /* offline / ignore */
-    });
+    // apiFetch adds X-MotionRx-Client for same-origin CSRF checks
+    void import("@/lib/api-client").then(({ apiFetch }) =>
+      apiFetch("/api/videos/refresh", {
+        signal: controller.signal,
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      }).catch(() => {
+        /* offline / ignore */
+      })
+    );
 
     return () => controller.abort();
   }, []);
