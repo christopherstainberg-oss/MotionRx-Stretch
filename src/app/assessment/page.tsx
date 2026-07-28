@@ -440,6 +440,8 @@ export default function AssessmentPage() {
   const [guideStoryQa, setGuideStoryQa] = useState(false);
   /** Keep seeding / advancing the free-text interview without waiting for first keystroke */
   const [continuousFlow, setContinuousFlow] = useState(true);
+  /** Selected adaptive question id for dropdown selector */
+  const [selectedStoryQuestionId, setSelectedStoryQuestionId] = useState("");
   const storyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   /** Only auto-append after the user has typed (not on first load of saved story) */
   const storyUserEditedRef = useRef(false);
@@ -944,8 +946,24 @@ export default function AssessmentPage() {
   );
 
   const autoAppearingQuestions = useMemo(
-    () => selectAutoAppearingQuestions(storyPromptCtx, 7),
+    () => selectAutoAppearingQuestions(storyPromptCtx, 12),
     [storyPromptCtx]
+  );
+
+  // Keep dropdown selection valid as the adaptive queue changes
+  useEffect(() => {
+    if (!autoAppearingQuestions.length) {
+      if (selectedStoryQuestionId) setSelectedStoryQuestionId("");
+      return;
+    }
+    if (!autoAppearingQuestions.some((q) => q.id === selectedStoryQuestionId)) {
+      setSelectedStoryQuestionId(autoAppearingQuestions[0]!.id);
+    }
+  }, [autoAppearingQuestions, selectedStoryQuestionId]);
+
+  const selectedStoryQuestion = useMemo(
+    () => autoAppearingQuestions.find((q) => q.id === selectedStoryQuestionId) || null,
+    [autoAppearingQuestions, selectedStoryQuestionId]
   );
 
   const conversationPrompts = useMemo(
@@ -1647,14 +1665,14 @@ export default function AssessmentPage() {
                 </div>
               ) : null}
 
-              {/* Auto-appearing open-ended questions (answer-adaptive) */}
+              {/* Adaptive questions — scrollable dropdown selector */}
               <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 p-3 dark:border-brand-700 dark:bg-brand-900/30">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-500">
-                    Adaptive queue (also auto-flows into the box)
+                    Question Selector
                     {autoAppearingQuestions.length > 0
-                      ? ` · ${autoAppearingQuestions.length} ready`
-                      : " · story looks complete"}
+                      ? ` · ${autoAppearingQuestions.length} Ready`
+                      : " · Story Looks Complete"}
                   </p>
                   {nextGuidedQuestion ? (
                     <button
@@ -1662,44 +1680,66 @@ export default function AssessmentPage() {
                       className="rounded-full border border-brand-300 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-brand-800 shadow-sm hover:border-brand-500 hover:bg-brand-50 dark:border-brand-600 dark:bg-brand-950 dark:text-brand-100"
                       onClick={() => insertQuestionIntoStory(nextGuidedQuestion)}
                     >
-                      Add next question
+                      Add Next Question
                     </button>
                   ) : null}
                 </div>
                 {autoAppearingQuestions.length > 0 ? (
-                  <ul className="space-y-2">
-                    {autoAppearingQuestions.map((p) => (
-                      <li key={p.id}>
+                  <div className="space-y-2.5">
+                    <label className="block">
+                      <span className="mb-1 flex items-center gap-1.5 text-xs font-medium text-brand-700 dark:text-brand-200">
+                        <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0 text-brand-500" />
+                        Choose A Question
+                      </span>
+                      <select
+                        className="input w-full cursor-pointer text-sm leading-snug"
+                        value={selectedStoryQuestionId}
+                        onChange={(e) => setSelectedStoryQuestionId(e.target.value)}
+                        aria-label="Select adaptive interview question"
+                      >
+                        {autoAppearingQuestions.map((p) => (
+                          <option key={p.id} value={p.id} title={p.question}>
+                            {p.label}
+                            {p.category ? ` · ${p.category}` : ""}
+                            {" — "}
+                            {p.question.length > 90
+                              ? `${p.question.slice(0, 90)}…`
+                              : p.question}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="mt-1 block text-[10px] text-brand-500">
+                        Open the dropdown and scroll to browse all questions, then add your pick.
+                      </span>
+                    </label>
+                    {selectedStoryQuestion ? (
+                      <div className="rounded-lg border border-brand-100 bg-white px-3 py-2.5 text-sm dark:border-brand-800 dark:bg-brand-950">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-brand-500">
+                          {selectedStoryQuestion.label}
+                          {selectedStoryQuestion.category ? (
+                            <span className="ml-1.5 font-medium normal-case tracking-normal text-brand-400">
+                              {selectedStoryQuestion.category}
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="mt-1 leading-snug text-brand-900 dark:text-brand-50">
+                          {selectedStoryQuestion.question}
+                        </p>
+                        {selectedStoryQuestion.reason ? (
+                          <p className="mt-1 text-[10px] italic text-brand-500">
+                            Why this: {selectedStoryQuestion.reason}
+                          </p>
+                        ) : null}
                         <button
                           type="button"
-                          title="Insert into free-text box and answer there"
-                          className="group flex w-full items-start gap-2 rounded-lg border border-brand-100 bg-white px-2.5 py-2 text-left text-sm shadow-sm transition hover:border-brand-400 hover:bg-brand-50 dark:border-brand-800 dark:bg-brand-950 dark:hover:bg-brand-900"
-                          onClick={() => insertQuestionIntoStory(p)}
+                          className="btn-secondary mt-2.5 min-h-[40px] w-full text-xs sm:w-auto"
+                          onClick={() => insertQuestionIntoStory(selectedStoryQuestion)}
                         >
-                          <MessageCircleQuestion className="mt-0.5 h-4 w-4 shrink-0 text-brand-500 group-hover:text-brand-700" />
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-[11px] font-bold uppercase tracking-wide text-brand-500">
-                              {p.label}
-                              <span className="ml-1.5 font-medium normal-case tracking-normal text-brand-400">
-                                {p.category}
-                              </span>
-                            </span>
-                            <span className="mt-0.5 block leading-snug text-brand-900 dark:text-brand-50">
-                              {p.question}
-                            </span>
-                            {p.reason ? (
-                              <span className="mt-1 block text-[10px] italic text-brand-500">
-                                Why this: {p.reason}
-                              </span>
-                            ) : null}
-                            <span className="mt-1 block text-[10px] font-semibold text-brand-600 opacity-80 group-hover:opacity-100">
-                              Tap to drop into free text → answer below the ▸ line
-                            </span>
-                          </span>
+                          Add Selected Question To Story
                         </button>
-                      </li>
-                    ))}
-                  </ul>
+                      </div>
+                    ) : null}
+                  </div>
                 ) : (
                   <p className="text-xs leading-relaxed text-brand-600 dark:text-brand-300">
                     Nice work—your free text already covers the main interview themes. Keep editing
