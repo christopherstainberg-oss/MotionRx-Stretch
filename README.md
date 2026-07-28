@@ -31,12 +31,14 @@ Built from `Build.MD` requirements.
 - **Exercise catalog capacity: 1,000,000** virtual entries from clinical bases × modifiers
 - **Paragraph-based intake** — write concerns; auto-detect areas, symptoms, stretch vs exercise bias
 - **Hybrid plans** — suggests stretches and/or exercises; pain-scale self-adjust
+- **PhysioPath Program Creation Model** — multi-phase recovery scaffolding (acute ≤6 wk / chronic >6 wk tracks), 45+ condition-specific rehab timelines with variants (grade, approach, pace, return-to-sport, older adult, irritable…), comorbidity healing scale (diabetes/smoking/steroids/etc. compound up to 1.6×), phase criteria & restrictions, signature / RTS balance–agility / sport / falls exercise layers, load guidance, session frequency, and `builtFrom` drift detection. Educational only — clinician/surgeon protocol always overrides.
 - **Routine Builder** — add from either library; **rotate one item or entire routine**
 - **Clinical education on every movement** — what it does, why important, outcome rationale
 - **Jeffery AI coach** — clinical Q&A, open-ended questions, program adjusts from chat (optional `XAI_API_KEY` / SpaceXAI; offline coach always works)
 - **Correlated Insights** — sessions + journal + pain + goals + Jeffery + rotations
 - **Self-adjusting programs** after session feedback (progress / hold / modify / regress)
 - **Step-by-step** kid-friendly guidance, institutional video fields
+- **YouTube management (PhysioPath)** — movement-name cleaning, 90+ curated institutional demos (publisher-bar only), oEmbed health cache with dead-ID swap, precaution caveats (WB / sternal / spinal / pregnancy), **no YouTube search fallback**, verified stamp, offline note
 - **Journal**, **progress/goals**, **education**, **community**, **secure auth**, **PWA**
 - **Docker / Portainer / Watchtower / [ghcr.io](https://ghcr.io)**
 

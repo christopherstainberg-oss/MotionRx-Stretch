@@ -2,13 +2,16 @@ import { NextResponse } from "next/server";
 import { resolveLiveVideo } from "@/lib/youtube-resolver";
 import type { VideoRegion } from "@/data/video-catalog";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import type { VideoCaveatContext } from "@/lib/youtube-management";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
  * GET /api/videos/resolve?youtubeId=&region=&title=&bodyParts=neck,shoulders
- * Returns a guaranteed-live institutional video (auto-swaps dead IDs).
+ *   &wb=pwb&flags=sternal,pregnancy&strict=1
+ * Returns a live institutional video (PhysioPath curated map → technique → catalog).
+ * Auto-swaps dead IDs; hides embed when no specific match (strict default for named titles).
  */
 export async function GET(req: Request) {
   const ip = clientIp(req);
@@ -41,6 +44,28 @@ export async function GET(req: Request) {
         .map((s) => s.trim())
         .filter(Boolean)
     : undefined;
+  const wb = url.searchParams.get("wb") || undefined;
+  const flagsRaw = url.searchParams.get("flags");
+  const flags = flagsRaw
+    ? flagsRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : undefined;
+  const strictParam = url.searchParams.get("strict");
+  // Default: PhysioPath requireSpecificMatch when a title is present
+  const requireSpecificMatch =
+    strictParam === "0" || strictParam === "false"
+      ? false
+      : strictParam === "1" || strictParam === "true"
+        ? true
+        : Boolean(title);
+
+  const caveatCtx: VideoCaveatContext = {
+    weightBearingStatus: wb,
+    flags,
+    precautionIds: flags,
+  };
 
   try {
     const video = await resolveLiveVideo({
@@ -50,17 +75,27 @@ export async function GET(req: Request) {
       bodyParts,
       tags,
       kind,
+      caveatCtx,
+      policy: { requireSpecificMatch },
     });
 
+    const canEmbed = Boolean(video.youtubeId && !video.hide);
     return NextResponse.json(
       {
         video,
-        embedUrl: `https://www.youtube-nocookie.com/embed/${video.youtubeId}`,
-        watchUrl: `https://www.youtube.com/watch?v=${video.youtubeId}`,
+        embedUrl: canEmbed
+          ? `https://www.youtube-nocookie.com/embed/${video.youtubeId}`
+          : null,
+        watchUrl: canEmbed
+          ? video.watchUrl || `https://www.youtube.com/watch?v=${video.youtubeId}`
+          : null,
+        hide: Boolean(video.hide || !video.youtubeId),
+        caveat: video.caveat,
+        attribution: video.attribution,
+        verified: video.verified,
       },
       {
         headers: {
-          // Short browser cache; server health cache is the source of truth
           "Cache-Control": "private, max-age=60, stale-while-revalidate=300",
         },
       }

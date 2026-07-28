@@ -2802,6 +2802,86 @@ export default function AssessmentPage() {
                   </p>
                 )}
 
+                {/* PhysioPath multi-phase Program Creation Model */}
+                {generated.generatedFrom?.program && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-800 dark:bg-emerald-950/30">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
+                      Multi-phase recovery program
+                      {generated.generatedFrom.program.plan?.label
+                        ? ` · ${generated.generatedFrom.program.plan.label}`
+                        : ""}
+                      {generated.generatedFrom.program.plan?.variant
+                        ? ` (${generated.generatedFrom.program.plan.variant.label})`
+                        : ""}
+                    </p>
+                    <p className="text-sm text-brand-800 dark:text-brand-100">
+                      <span className="font-semibold capitalize">
+                        {generated.generatedFrom.program.track}
+                      </span>{" "}
+                      track · {generated.generatedFrom.program.totalWeeks} weeks ·{" "}
+                      {generated.generatedFrom.program.sessions}
+                    </p>
+                    <p className="mt-1 text-xs text-brand-600 dark:text-brand-300">
+                      {generated.generatedFrom.program.load}
+                    </p>
+                    <ul className="mt-3 space-y-2">
+                      {generated.generatedFrom.program.phases.map((ph) => (
+                        <li
+                          key={ph.index}
+                          className={`rounded-lg border px-3 py-2 text-xs ${
+                            ph.current
+                              ? "border-emerald-400 bg-white shadow-sm dark:border-emerald-600 dark:bg-brand-950"
+                              : "border-brand-100 bg-white/50 dark:border-brand-800 dark:bg-brand-950/40"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-brand-950 dark:text-brand-50">
+                              Phase {ph.index + 1}: {ph.title}
+                            </span>
+                            <span className="text-brand-500">
+                              weeks {ph.weekStart}–{ph.weekEnd}
+                            </span>
+                            {ph.current && (
+                              <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                                Current
+                              </span>
+                            )}
+                          </div>
+                          {ph.goal && (
+                            <p className="mt-1 text-brand-700 dark:text-brand-200">{ph.goal}</p>
+                          )}
+                          {ph.current && ph.criteria && (
+                            <p className="mt-1 text-brand-600 dark:text-brand-300">
+                              <span className="font-medium">Advance when:</span> {ph.criteria}
+                            </p>
+                          )}
+                          {ph.current && ph.restrict && (
+                            <p className="mt-1 text-amber-800 dark:text-amber-200">
+                              <span className="font-medium">Restrictions:</span> {ph.restrict}
+                            </p>
+                          )}
+                          {ph.current && ph.seeds.length > 0 && (
+                            <ul className="mt-2 list-inside list-disc text-brand-700 dark:text-brand-200">
+                              {ph.seeds.slice(0, 5).map((s) => (
+                                <li key={s.n}>
+                                  {s.n}
+                                  {s.d ? ` — ${s.d}` : ""}{" "}
+                                  <span className="text-brand-400">[{s.source}]</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-[11px] text-brand-500">
+                      Educational PhysioPath model: condition timelines, variants, comorbidity
+                      healing scale, signature/RTS/sport/falls layers. Your clinician or surgeon
+                      protocol always overrides.
+                    </p>
+                  </div>
+                )}
+
                 {/* Prescribed written plan of care (PT-style) */}
                 <div className="rounded-xl border border-brand-300 bg-brand-50/60 p-4 dark:border-brand-600 dark:bg-brand-950/50">
                   <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-700">

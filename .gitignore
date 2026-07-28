@@ -16,3 +16,7 @@ coverage
 .vercel
 *.tsbuildinfo
 next-env.d.ts
+
+scripts/_physiopath-program-raw.json
+
+scripts/_physiopath-curated-videos.json

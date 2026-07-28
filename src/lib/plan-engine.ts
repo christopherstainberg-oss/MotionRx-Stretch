@@ -47,6 +47,13 @@ import {
   reorderItemsLikePtSession,
   type MovementCatalogRef,
 } from "@/lib/routine-session-composer";
+import {
+  createProgramCreationInputFromSymptom,
+  generateProgram,
+  programHintsForScoring,
+  programSeedNotes,
+  formatProgramPhasesText,
+} from "@/lib/program-creation";
 import type {
   BodyPart,
   Difficulty,
@@ -64,6 +71,12 @@ export { matchConditionsFromText, summarizeConditions } from "@/data/clinical-co
 export { buildClinicalSafetyPlan } from "@/data/clinical-safety";
 export { analyzeAssessmentAdjectives } from "@/data/assessment-adjectives";
 export { buildClinicalRehabPlan } from "@/lib/clinical-rehab-intel";
+export {
+  generateProgram,
+  createProgramCreationInputFromSymptom,
+  planDrift,
+  formatProgramPhasesText,
+} from "@/lib/program-creation";
 
 const DIFFICULTY_RANK: Record<Difficulty, number> = {
   beginner: 1,
@@ -633,6 +646,12 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ...(storyIntel?.planHints.avoidTags || []),
     ])
   );
+  // PhysioPath Program Creation Model — multi-phase timeline, variants, healing scale,
+  // signature / RTS / sport / falls layers, load guidance, builtFrom fingerprint
+  const programInput = createProgramCreationInputFromSymptom(input);
+  const motionProgram = generateProgram(programInput);
+  const programHints = programHintsForScoring(motionProgram);
+
   // PhysioPath-inspired: sports, surgery timeline, activity level
   const sports = (input.sportIds || [])
     .map((id) => getSportById(id))
@@ -699,16 +718,18 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ...sportPrefer,
       ...surgeryPrefer,
       ...activityPrefer,
+      ...programHints.preferTags,
       ...(earlyPostOp ? ["gentle", "protected", "walking"] : []),
       ...(homeBased ? ["home", "minimal-equipment", "chair", "wall"] : []),
     ])
   );
-  // Merge surgery / sport / vitals / labs avoid tags
+  // Merge surgery / sport / vitals / labs / program-phase avoid tags
   for (const t of [
     ...surgeryAvoid,
     ...(latePhase?.avoidTags || []),
     ...(vitalsHints?.avoidTags || []),
     ...(labHints?.avoidTags || []),
+    ...programHints.avoidTags,
   ]) {
     if (!mergedAvoid.includes(t)) mergedAvoid.push(t);
   }
@@ -852,6 +873,13 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
   if (adlSummary?.maxDifficulty === "beginner") difficulty = "beginner";
   if (earlyPostOp || surgery?.maxDifficulty === "beginner") difficulty = "beginner";
   if (vitalsHints?.caution || labHints?.critical) difficulty = "beginner";
+  // Program model early protect phase caps difficulty
+  if (
+    motionProgram.currentPhaseIndex === 0 &&
+    rank[programHints.maxDifficulty] < rank[difficulty]
+  ) {
+    difficulty = programHints.maxDifficulty;
+  }
 
   // Fold clinical symptom labels into free-text symptom chips for scoring
   const symptomLabels = Array.from(
@@ -1010,6 +1038,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       safety.minutesScale *
       adj.minutesScale *
       rehabWithStory.minutesScale *
+      programHints.minutesScale *
       (storyIntel?.planHints.minutesScale ?? 1) *
       (adlSummary?.minutesScale ?? 1) *
       (sxSummary?.minutesScale ?? 1) *
@@ -1277,9 +1306,16 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     ? ` Story→movement: ${storyPrefs.reasonLines.slice(0, 2).join(" ")}`
     : "";
 
+  const programDetail = motionProgram.summaryLines.length
+    ? ` Program model: ${motionProgram.summaryLines.join(" · ")}.`
+    : "";
+  const programPhaseDetail = motionProgram.phases[motionProgram.currentPhaseIndex]
+    ? ` Phase criteria: ${motionProgram.phases[motionProgram.currentPhaseIndex]!.criteria}. Load: ${motionProgram.load}`
+    : "";
+
   const adjustment: RoutineAdjustment = {
     at: new Date().toISOString(),
-    reason: `PT-style ${rehabWithStory.phase} HEP from free-text story, injury patterns (${rehabWithStory.patterns.join(", ")}), conditions, and irritability-based dosing${storyPrefs.stretchIds.length || storyPrefs.exerciseIds.length ? "; story-seeded functional movements" : ""}`,
+    reason: `PT-style ${rehabWithStory.phase} HEP + PhysioPath ${motionProgram.track} ${motionProgram.totalWeeks}-wk program (${motionProgram.plan?.label || "template"}, phase ${motionProgram.currentPhaseIndex + 1}) from story, injury patterns (${rehabWithStory.patterns.join(", ")}), conditions, and irritability-based dosing${storyPrefs.stretchIds.length || storyPrefs.exerciseIds.length ? "; story-seeded functional movements" : ""}`,
     painFactor: avgPain,
     action:
       combinedHints.biases.includes("defer-to-provider") ||
@@ -1287,6 +1323,7 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       avgPain >= 6 ||
       safety.programBiases.includes("nwb") ||
       rehabWithStory.phase === "protect-calm" ||
+      motionProgram.currentPhaseIndex === 0 ||
       storyIntel?.activityResponse === "delayed-worse"
         ? "regress"
         : avgPain >= 4
@@ -1301,6 +1338,8 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
           ? "Moderate irritability: targeted mobility + activation with mid volume; progress only if 24h response stays green."
           : "Lower irritability: maintain mobility, progress motor control and functional capacity with warm-up/cool-down structure.") +
       rehabDetail +
+      programDetail +
+      programPhaseDetail +
       hrDetail +
       descDetail +
       condDetail +
@@ -1337,11 +1376,21 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
     id: uuid(),
     userId,
     name:
-      primaryRegion === "full-body"
-        ? `PT-style ${kindsLabel} plan (${rehabWithStory.phase.replace(/-/g, " ")})`
-        : `${primaryRegion.replace(/-/g, " ")}: ${patternLabel || kindsLabel}`,
+      motionProgram.plan?.label
+        ? `${motionProgram.plan.label}: phase ${motionProgram.currentPhaseIndex + 1} ${kindsLabel}`
+        : primaryRegion === "full-body"
+          ? `PT-style ${kindsLabel} plan (${rehabWithStory.phase.replace(/-/g, " ")})`
+          : `${primaryRegion.replace(/-/g, " ")}: ${patternLabel || kindsLabel}`,
     description: [
-      `Realistic outpatient HEP in the “${rehabWithStory.phase.replace(/-/g, " ")}” phase — structured like a licensed PT home program (not a random stretch list).`,
+      `PhysioPath-style ${motionProgram.track} program (${motionProgram.totalWeeks} weeks) — current phase “${
+        motionProgram.phases[motionProgram.currentPhaseIndex]?.title || rehabWithStory.phase
+      }” with a realistic outpatient HEP session (not a random stretch list).`,
+      motionProgram.plan
+        ? `Matched timeline: ${motionProgram.plan.label}${
+            motionProgram.plan.variant ? ` · ${motionProgram.plan.variant.label}` : ""
+          }. ${motionProgram.sessions}.`
+        : null,
+      motionProgram.load,
       storyIntel
         ? `From your story: ${
             storyIntel.irritability !== "unknown"
@@ -1416,6 +1465,17 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       ].slice(0, 18),
       safetyEducation: [
         {
+          title: "Multi-phase recovery program (PhysioPath model)",
+          body: formatProgramPhasesText(motionProgram).slice(0, 1200),
+          bullets: [
+            ...motionProgram.summaryLines.slice(0, 4),
+            motionProgram.phases[motionProgram.currentPhaseIndex]
+              ? `Advance when: ${motionProgram.phases[motionProgram.currentPhaseIndex]!.criteria}`
+              : "",
+            ...programSeedNotes(motionProgram).slice(0, 4),
+          ].filter(Boolean).slice(0, 10),
+        },
+        {
           title: "Evidence-informed PT session blueprint",
           body: composed.blueprintNarrative.join(" → "),
           bullets: [
@@ -1486,6 +1546,10 @@ export function generateHybridPlan(input: SymptomInput, userId?: string): Routin
       sex: input.sex,
       pastMedicalHistory: input.pastMedicalHistory,
       currentMedicalHistory: input.currentMedicalHistory,
+      // PhysioPath Program Creation Model (full multi-phase structure)
+      program: motionProgram,
+      programSummary: motionProgram.summaryLines,
+      programPhaseSeeds: programSeedNotes(motionProgram),
     },
     selfAdjustHistory: [adjustment],
     createdAt: new Date().toISOString(),

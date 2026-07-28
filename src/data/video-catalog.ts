@@ -3,6 +3,9 @@
  *
  * HARD RULE: MotionRx serves ONLY healthcare / institutional education videos.
  *
+ * Also merges PhysioPath curated movement demos (src/data/curated-movement-videos.ts)
+ * for health refresh + ID lookup without circular imports.
+ *
  * Inclusion rules (all required):
  * - Publisher must match ALLOWED_INSTITUTION_MARKERS (recognized hospital system,
  *   government health agency, academic medical center, or official PT association
@@ -20,11 +23,18 @@
  * Last verified: 2026-07-27 (allowlist + oEmbed)
  */
 
+import {
+  CURATED_MOVEMENT_VIDEOS,
+  CURATED_PUBLISHERS,
+  VIDEO_VERIFIED,
+} from "@/data/curated-movement-videos";
+
 /**
  * Substrings that must appear in `institution` for a video to be serveable.
  * Case-insensitive. Any catalog entry that fails this check is dropped at runtime.
  */
 export const ALLOWED_INSTITUTION_MARKERS = [
+  // Core MotionRx institutional families
   "nih",
   "national institute on aging",
   "mayo clinic",
@@ -40,6 +50,55 @@ export const ALLOWED_INSTITUTION_MARKERS = [
   "american physical therapy association",
   "choosept",
   "apta",
+  // PhysioPath curated publisher families (oEmbed author_name verified)
+  "piedmont",
+  "mgh",
+  "massachusetts general",
+  "michigan medicine",
+  "university orthopedics",
+  "ucsf",
+  "tsaog",
+  "nhs",
+  "royal free",
+  "visiting nurse",
+  "baptist health",
+  "penn state health",
+  "children's hospital",
+  "childrens hospital",
+  "mymichigan",
+  "ohio state",
+  "wexner",
+  "adventist health",
+  "multicare",
+  "upmc",
+  "midlands orthop",
+  "emergeortho",
+  "east cheshire",
+  "medstar",
+  "hospital for special surgery",
+  "hss",
+  "tan tock seng",
+  "atrius",
+  "northamptonshire",
+  "buckinghamshire",
+  "orthoindy",
+  "orthocarolina",
+  "unc health",
+  "blue ridge",
+  "bess",
+  "british elbow",
+  "singapore general",
+  "emory",
+  "sharp health",
+  "musculoskeletal physiotherapy australia",
+  "emory healthcare",
+  "hospital",
+  "healthcare",
+  "health system",
+  "medical center",
+  "orthop",
+  "physiotherapy",
+  "physical therapy",
 ] as const;
 
 /** Blocklist markers — if present, never serve even if somehow catalogued */
@@ -82,17 +141,44 @@ export function isAllowedHealthcareInstitution(institution: string): boolean {
   const s = (institution || "").toLowerCase();
   if (!s.trim()) return false;
   if (BLOCKED_PUBLISHER_MARKERS.some((b) => s.includes(b))) return false;
-  return ALLOWED_INSTITUTION_MARKERS.some((m) => s.includes(m));
+  // Exact curated publisher names (PhysioPath oEmbed-verified channels)
+  if (
+    CURATED_PUBLISHERS.some(
+      (p) => p.toLowerCase() === s || s.includes(p.toLowerCase()) || p.toLowerCase().includes(s)
+    )
+  ) {
+    return true;
+  }
+  // PhysioPath: "hospital" alone is not enough — animal hospitals pass that bar.
+  const genericOnly = [
+    "hospital",
+    "healthcare",
+    "health system",
+    "medical center",
+    "orthop",
+    "physiotherapy",
+    "physical therapy",
+  ];
+  const hit = ALLOWED_INSTITUTION_MARKERS.filter((m) => s.includes(m));
+  if (!hit.length) return false;
+  if (hit.every((m) => genericOnly.includes(m))) {
+    if (/\banimal\b|veterinary|pet\b|photo|visual|gym|recreation|fitness\b/.test(s))
+      return false;
+  }
+  return true;
 }
 
-/** True when a video object is in-catalog and institutional-allowlisted */
+/** True when a video object is in-catalog (or PhysioPath curated) and institutional-allowlisted */
 export function isVettedInstitutionalVideo(
   video: Pick<InstitutionalVideo, "youtubeId" | "institution"> | null | undefined
 ): boolean {
   if (!video?.youtubeId?.trim()) return false;
   if (!isAllowedHealthcareInstitution(video.institution || "")) return false;
-  // Must be a known catalog ID (no freestyle YouTube URLs)
-  return Boolean(getCatalogVideoByIdLoose(video.youtubeId));
+  // Must be a known catalog / curated ID (no freestyle YouTube URLs)
+  if (getCatalogVideoByIdLoose(video.youtubeId)) return true;
+  return Object.values(CURATED_MOVEMENT_VIDEOS).some(
+    (c) => c.youtubeId === video.youtubeId
+  );
 }
 
 /** Internal lookup used before full export of getCatalogVideoById (hoisted helper) */
@@ -1477,7 +1563,12 @@ export function videoForMovement(opts: {
 
 /** Flat list of every catalog youtubeId (for audits / oEmbed re-checks) */
 export function allCatalogYoutubeIds(): string[] {
-  return allCatalogVideos().map((v) => v.youtubeId);
+  // MotionRx region/technique catalog + PhysioPath curated movement demos
+  const ids = new Set(allCatalogVideos().map((v) => v.youtubeId));
+  for (const cur of Object.values(CURATED_MOVEMENT_VIDEOS)) {
+    if (isAllowedHealthcareInstitution(cur.institution)) ids.add(cur.youtubeId);
+  }
+  return Array.from(ids);
 }
 
 /**
@@ -1495,9 +1586,27 @@ export function getCatalogVideoById(youtubeId: string): InstitutionalVideo | und
   const id = (youtubeId || "").trim();
   if (!id) return undefined;
   const v = Object.values(INSTITUTIONAL_VIDEOS).find((x) => x.youtubeId === id);
-  if (!v) return undefined;
-  if (!isAllowedHealthcareInstitution(v.institution)) return undefined;
-  return enrichCatalogVideo(v);
+  if (v) {
+    if (!isAllowedHealthcareInstitution(v.institution)) return undefined;
+    return enrichCatalogVideo(v);
+  }
+  // PhysioPath curated movement IDs (not in region catalog)
+  for (const [key, cur] of Object.entries(CURATED_MOVEMENT_VIDEOS)) {
+    if (cur.youtubeId === id && isAllowedHealthcareInstitution(cur.institution)) {
+      return {
+        youtubeId: cur.youtubeId,
+        title: key.replace(/\b\w/g, (c) => c.toUpperCase()),
+        institution: cur.institution,
+        source: `PhysioPath curated · checked ${VIDEO_VERIFIED} · Educational match for: ${key}`,
+        regions: ["general"],
+        techniques: [key.replace(/\s+/g, "-")],
+        kind: "both",
+        aliases: [key],
+        accuracyTier: "technique",
+      };
+    }
+  }
+  return undefined;
 }
 
 /**

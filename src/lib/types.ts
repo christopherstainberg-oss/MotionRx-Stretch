@@ -475,6 +475,15 @@ export interface Routine {
     adlEntries?: import("@/data/adls").UserAdlEntry[];
     adlSummary?: string[];
     adlCoachingTips?: string[];
+    /**
+     * PhysioPath-style multi-phase Program Creation Model
+     * (track, condition timeline, variants, healing scale, phase criteria, seeds).
+     */
+    program?: import("@/lib/program-creation").MotionRxProgram;
+    /** Program model summary lines for UI */
+    programSummary?: string[];
+    /** Current-phase signature / RTS / sport seed notes */
+    programPhaseSeeds?: string[];
   };
   selfAdjustHistory: RoutineAdjustment[];
   createdAt: string;

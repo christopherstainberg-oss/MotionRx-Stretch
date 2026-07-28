@@ -14,6 +14,7 @@ import {
 } from "@/lib/clinical-rehab-intel";
 import { displayPreferredName, type AssessmentCoachContext } from "@/lib/assessment-coach";
 import { generateHybridPlan, adjustRoutineFromFeedback } from "@/lib/plan-engine";
+import { formatProgramPhasesText } from "@/lib/program-creation";
 
 export type PrescribedPlanDocument = {
   title: string;
@@ -140,6 +141,20 @@ export function buildPrescribedPlanDocument(opts: {
       ].join(" "),
     },
     {
+      heading: "3b. Multi-phase recovery program (PhysioPath Program Creation Model)",
+      body: (() => {
+        const prog = routine.generatedFrom?.program;
+        if (!prog) {
+          return "A multi-phase recovery scaffold is generated with your HEP: acute (≤6 weeks) vs chronic (>6 weeks) track, condition-specific timelines, variants (grade/approach/pace), comorbidity healing scale, phase criteria, and signature/RTS/sport/falls exercise layers. Surgeon/PT protocol always overrides.";
+        }
+        return [
+          formatProgramPhasesText(prog),
+          "",
+          "Educational timeline only — criteria and clinician orders decide progression, not the calendar alone.",
+        ].join("\n");
+      })(),
+    },
+    {
       heading: "4. Prescribed home exercise program (interventions)",
       body: [
         `Prescribed routine: “${routine.name}” — ~${routine.estimatedMinutes} minutes · ${routine.difficulty} · ${routine.items.length} items${
@@ -197,10 +212,16 @@ export function buildPrescribedPlanDocument(opts: {
       targetOverall: targetPain,
       rule: "Reduce pain interference while improving a daily task; do not chase zero pain at the cost of all movement.",
     },
-    frequency: "5–6 days/week (most days), quality over intensity",
-    durationWeeks: "2-week check-in; 2–6 week functional window for many goals",
+    frequency:
+      routine.generatedFrom?.program?.sessions ||
+      "5–6 days/week (most days), quality over intensity",
+    durationWeeks: routine.generatedFrom?.program
+      ? `${routine.generatedFrom.program.totalWeeks}-week ${routine.generatedFrom.program.track} program (educational); 2-week check-in`
+      : "2-week check-in; 2–6 week functional window for many goals",
     sessionMinutes: routine.estimatedMinutes,
-    phase: rehab.phase,
+    phase: routine.generatedFrom?.program
+      ? `${routine.generatedFrom.program.phases[routine.generatedFrom.program.currentPhaseIndex]?.title || rehab.phase} (phase ${routine.generatedFrom.program.currentPhaseIndex + 1}/${routine.generatedFrom.program.phases.length})`
+      : rehab.phase,
     patterns: rehab.patterns,
     version: 1,
   };

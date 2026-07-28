@@ -1,6 +1,14 @@
 /**
  * Auto-refresh video resolver: never returns a known-dead institutional YouTube ID.
- * Walks region candidates → full catalog until oEmbed confirms a live video.
+ *
+ * PhysioPath YouTube management intricacies (merged):
+ * - Movement-name cleaning before match (videoMovement)
+ * - Curated movement → video map first (no search fallback)
+ * - Longest-key normalised matching
+ * - Publisher bar (institutional only)
+ * - Precaution caveats attached to every resolve
+ * - requireSpecificMatch: silence instead of wrong-region demos
+ * - VIDEO_VERIFIED stamp + oEmbed health swap for dead IDs
  */
 
 import {
@@ -25,6 +33,19 @@ import {
   isYoutubeIdDead,
   maybeBackgroundRefresh,
 } from "@/lib/youtube-health";
+import {
+  VIDEO_VERIFIED,
+  curatedAsInstitutional,
+  curatedVideoFor,
+  isCuratedServeable,
+  isSpecificEnoughMatch,
+  videoAttributionLine,
+  videoCaveat,
+  videoMovement,
+  type VideoCaveatContext,
+  type YoutubeMatchPolicy,
+  DEFAULT_MATCH_POLICY,
+} from "@/lib/youtube-management";
 
 export type ResolvedVideo = {
   youtubeId: string;
@@ -39,6 +60,19 @@ export type ResolvedVideo = {
   /** oEmbed author when available */
   author?: string;
   checkedAt: string;
+  /** PhysioPath precaution caveat shown next to the video */
+  caveat?: string;
+  /** from {institution} · link checked {VIDEO_VERIFIED} */
+  attribution?: string;
+  /** Curated / technique / region */
+  matchSource?: "curated" | "technique" | "catalog" | "region" | "none";
+  /** Cleaned movement phrase used for matching */
+  movementClean?: string | null;
+  /** When true, UI should not embed (PhysioPath silence) */
+  hide?: boolean;
+  /** Verified stamp for UI */
+  verified?: string;
+  watchUrl?: string;
 };
 
 export type VideoLike = {
@@ -55,6 +89,10 @@ function toResolved(
     region: VideoRegion;
     titleOverride?: string;
     author?: string;
+    matchSource?: ResolvedVideo["matchSource"];
+    movementClean?: string | null;
+    caveatCtx?: VideoCaveatContext;
+    hide?: boolean;
   }
 ): ResolvedVideo {
   // Never emit a non-institutional publisher
@@ -69,6 +107,13 @@ function toResolved(
       preferredId: opts.preferredId,
       region: opts.region,
       checkedAt: new Date().toISOString(),
+      matchSource: "region",
+      movementClean: opts.movementClean,
+      caveat: videoCaveat(opts.caveatCtx),
+      attribution: videoAttributionLine({ institution: safe.institution }),
+      verified: VIDEO_VERIFIED,
+      watchUrl: `https://www.youtube.com/watch?v=${safe.youtubeId}`,
+      hide: opts.hide,
     };
   }
   return {
@@ -81,6 +126,13 @@ function toResolved(
     region: opts.region,
     author: opts.author,
     checkedAt: new Date().toISOString(),
+    matchSource: opts.matchSource || "catalog",
+    movementClean: opts.movementClean,
+    caveat: videoCaveat(opts.caveatCtx),
+    attribution: videoAttributionLine({ institution: video.institution }),
+    verified: VIDEO_VERIFIED,
+    watchUrl: `https://www.youtube.com/watch?v=${video.youtubeId}`,
+    hide: opts.hide,
   };
 }
 
@@ -91,9 +143,36 @@ function pushInstitutionalOnly(
   v: InstitutionalVideo | undefined
 ) {
   if (!v || seen.has(v.youtubeId)) return;
-  if (!isVettedInstitutionalVideo(v)) return;
+  if (!isVettedInstitutionalVideo(v) && !isAllowedHealthcareInstitution(v.institution))
+    return;
+  // Allow curated IDs that are in getCatalogVideoById
+  if (!isAllowedHealthcareInstitution(v.institution || "")) return;
   seen.add(v.youtubeId);
   ordered.push(enrichCatalogVideo(v));
+}
+
+function emptyHiddenResolve(opts: {
+  preferredId: string;
+  region: VideoRegion;
+  movementClean: string | null;
+  caveatCtx?: VideoCaveatContext;
+}): ResolvedVideo {
+  return {
+    youtubeId: "",
+    title: "",
+    source: "",
+    institution: "",
+    swapped: false,
+    preferredId: opts.preferredId,
+    region: opts.region,
+    checkedAt: new Date().toISOString(),
+    matchSource: "none",
+    movementClean: opts.movementClean,
+    caveat: videoCaveat(opts.caveatCtx),
+    attribution: "",
+    verified: VIDEO_VERIFIED,
+    hide: true,
+  };
 }
 
 /**
@@ -104,24 +183,50 @@ export async function resolveLiveVideo(opts: {
   preferredId?: string;
   region?: VideoRegion | string;
   bodyParts?: string[];
-  /** Movement name / library title — used only for match scoring of fallbacks */
+  /** Movement name / library title — used for match scoring of fallbacks */
   titleOverride?: string;
   tags?: string[];
   kind?: "stretch" | "exercise";
   /** Skip background catalog refresh (e.g. during bulk resolve) */
   skipBackgroundRefresh?: boolean;
+  /** PhysioPath-style match policy */
+  policy?: YoutubeMatchPolicy;
+  /** Precaution / WB context for caveats */
+  caveatCtx?: VideoCaveatContext;
 }): Promise<ResolvedVideo> {
   if (!opts.skipBackgroundRefresh) {
-    // Non-blocking intent: we still await lightly so cache warms; refresh is TTL-gated
     void maybeBackgroundRefresh().catch(() => {});
   }
 
+  const policy = { ...DEFAULT_MATCH_POLICY, ...opts.policy };
   const region: VideoRegion =
     (opts.region as VideoRegion) ||
     inferRegionFromBodyParts(opts.bodyParts) ||
     "general";
 
-  const movementHint = opts.titleOverride;
+  const rawName = opts.titleOverride || "";
+  const movementClean = rawName ? videoMovement(rawName) : null;
+  const movementHint = movementClean || rawName || undefined;
+
+  // —— 1. PhysioPath curated movement map (highest priority, technique-true) ——
+  const curated = movementHint ? curatedVideoFor(movementHint) : null;
+  if (curated && isCuratedServeable(curated)) {
+    const inst = curatedAsInstitutional(curated);
+    const entry = await checkYoutubeId(inst.youtubeId);
+    if (entry.ok !== false) {
+      return toResolved(inst, {
+        preferredId: opts.preferredId?.trim() || inst.youtubeId,
+        region,
+        titleOverride: inst.title,
+        author: entry.author,
+        matchSource: "curated",
+        movementClean,
+        caveatCtx: opts.caveatCtx,
+      });
+    }
+    // Curated ID dead — fall through to catalog chain (do not invent search)
+  }
+
   const technique = inferTechniqueFromMovement({
     name: movementHint,
     tags: opts.tags,
@@ -148,8 +253,50 @@ export async function resolveLiveVideo(opts: {
         })
       : undefined;
 
-  // Preferred ID is used ONLY if it is already in the institutional catalog.
-  // Fitness-creator / random YouTube IDs are discarded — never embedded.
+  const contentScore = contentBest
+    ? movementVideoMatchScore({
+        video: contentBest,
+        name: movementHint,
+        technique,
+        region,
+        bodyParts: opts.bodyParts,
+        tags: opts.tags,
+        kind: opts.kind,
+      })
+    : 0;
+  const ownsTechnique = Boolean(
+    technique &&
+      contentBest &&
+      (contentBest.techniques || []).some(
+        (t) => t.toLowerCase() === technique.toLowerCase()
+      )
+  );
+
+  // PhysioPath silence: named movement with no curated + no specific catalog match
+  if (
+    movementHint &&
+    policy.requireSpecificMatch &&
+    !isSpecificEnoughMatch(
+      { curated, catalogScore: contentScore, ownsTechnique },
+      policy
+    )
+  ) {
+    // Still allow preferred catalog ID if it is technique-specific and live
+    const requestedPreferred = opts.preferredId?.trim() || "";
+    const preferredInCatalog = requestedPreferred
+      ? getCatalogVideoById(requestedPreferred)
+      : undefined;
+    if (!preferredInCatalog) {
+      return emptyHiddenResolve({
+        preferredId: requestedPreferred,
+        region,
+        movementClean,
+        caveatCtx: opts.caveatCtx,
+      });
+    }
+  }
+
+  // Preferred ID is used ONLY if it is already in the institutional catalog / curated map.
   const requestedPreferred = opts.preferredId?.trim() || "";
   const preferredInCatalog = requestedPreferred
     ? getCatalogVideoById(requestedPreferred)
@@ -177,27 +324,14 @@ export async function resolveLiveVideo(opts: {
       tags: opts.tags,
       kind: opts.kind,
     });
-    const bestScore = movementVideoMatchScore({
-      video: contentBest,
-      name: movementHint,
-      technique,
-      region,
-      bodyParts: opts.bodyParts,
-      tags: opts.tags,
-      kind: opts.kind,
-    });
+    const bestScore = contentScore;
     const preferredOwnsTech = technique
       ? (preferredMeta.techniques || []).some(
           (t) => t.toLowerCase() === technique.toLowerCase()
         )
       : true;
-    const bestOwnsTech = technique
-      ? (contentBest.techniques || []).some(
-          (t) => t.toLowerCase() === technique.toLowerCase()
-        )
-      : true;
+    const bestOwnsTech = ownsTechnique;
 
-    // Override preferred when content-best is clearly more specific
     if (
       contentBest.youtubeId !== preferredMeta.youtubeId &&
       bestOwnsTech &&
@@ -213,7 +347,7 @@ export async function resolveLiveVideo(opts: {
   const push = (v: InstitutionalVideo | undefined) =>
     pushInstitutionalOnly(ordered, seen, v);
 
-  // Content-best first when it won the specificity contest; else preferred then content
+  // Dead curated still tried earlier; push content-best / preferred next
   if (contentBest && preferredId === contentBest.youtubeId) {
     push(contentBest);
     if (preferredMeta && preferredMeta.youtubeId !== contentBest.youtubeId) {
@@ -224,8 +358,6 @@ export async function resolveLiveVideo(opts: {
     if (contentBest) push(contentBest);
   }
 
-  // Fallback chain: same technique family only, then same region, then ranked catalog
-  // (allCatalogVideos already filters to allowlisted institutions)
   const techKey = technique || preferredMeta?.techniques?.[0];
   if (techKey) {
     for (const raw of allCatalogVideos()) {
@@ -252,11 +384,14 @@ export async function resolveLiveVideo(opts: {
     .sort((a, b) => b.score - a.score);
 
   for (const { v, score } of ranked) {
-    // Skip garbage fallbacks that failed technique gate
     if (techKey && score < -20) continue;
     push(v);
   }
-  for (const v of candidatesForRegion(region)) push(v);
+
+  // Only add region fallbacks when policy allows non-specific matches
+  if (!policy.requireSpecificMatch || !movementHint) {
+    for (const v of candidatesForRegion(region)) push(v);
+  }
 
   // Pass 1: prefer confirmed-live, in relevance order
   let firstUnknown: { video: InstitutionalVideo; author?: string } | null = null;
@@ -266,9 +401,11 @@ export async function resolveLiveVideo(opts: {
       return toResolved(candidate, {
         preferredId,
         region,
-        // Always serve the real institutional title
         titleOverride: candidate.title,
         author: entry.author,
+        matchSource: ownsTechnique || technique ? "technique" : "catalog",
+        movementClean,
+        caveatCtx: opts.caveatCtx,
       });
     }
     if (entry.ok === null && !firstUnknown) {
@@ -276,28 +413,41 @@ export async function resolveLiveVideo(opts: {
     }
   }
 
-  // Pass 2: if YouTube was flaky, keep first non-dead institutional candidate
   if (firstUnknown) {
     return toResolved(firstUnknown.video, {
       preferredId,
       region,
       titleOverride: firstUnknown.video.title,
       author: firstUnknown.author,
+      matchSource: "catalog",
+      movementClean,
+      caveatCtx: opts.caveatCtx,
     });
   }
 
-  // Skip confirmed-dead only; still prefer preferred if somehow not dead-checked
   for (const candidate of ordered) {
     if (!(await isYoutubeIdDead(candidate.youtubeId))) {
       return toResolved(candidate, {
         preferredId,
         region,
         titleOverride: candidate.title,
+        matchSource: "catalog",
+        movementClean,
+        caveatCtx: opts.caveatCtx,
       });
     }
   }
 
-  // Absolute last resort: static primary for region (never invent non-catalog IDs)
+  // Absolute last resort — or PhysioPath silence for named movements
+  if (policy.requireSpecificMatch && movementHint) {
+    return emptyHiddenResolve({
+      preferredId,
+      region,
+      movementClean,
+      caveatCtx: opts.caveatCtx,
+    });
+  }
+
   const fallback = videoForRegion(region);
   return {
     ...fallback,
@@ -305,6 +455,12 @@ export async function resolveLiveVideo(opts: {
     preferredId,
     region,
     checkedAt: new Date().toISOString(),
+    matchSource: "region",
+    movementClean,
+    caveat: videoCaveat(opts.caveatCtx),
+    attribution: videoAttributionLine({ institution: fallback.institution }),
+    verified: VIDEO_VERIFIED,
+    watchUrl: `https://www.youtube.com/watch?v=${fallback.youtubeId}`,
   };
 }
 
@@ -316,8 +472,18 @@ export async function ensureLiveVideoField(
     bodyParts?: string[];
     tags?: string[];
     kind?: "stretch" | "exercise";
+    caveatCtx?: VideoCaveatContext;
+    policy?: YoutubeMatchPolicy;
   }
-): Promise<VideoLike & { swapped?: boolean; preferredId?: string }> {
+): Promise<
+  VideoLike & {
+    swapped?: boolean;
+    preferredId?: string;
+    caveat?: string;
+    hide?: boolean;
+    attribution?: string;
+  }
+> {
   const movementName = video.source?.includes("Educational match for:")
     ? video.source.split("Educational match for:")[1]?.trim()
     : video.title;
@@ -327,9 +493,23 @@ export async function ensureLiveVideoField(
     bodyParts: opts?.bodyParts,
     tags: opts?.tags,
     kind: opts?.kind,
-    // Pass written stretch/exercise name for intelligent institutional matching
     titleOverride: movementName,
+    caveatCtx: opts?.caveatCtx,
+    policy: opts?.policy,
   });
+  if (live.hide || !live.youtubeId) {
+    return {
+      youtubeId: "",
+      title: video.title,
+      source: video.source,
+      institution: "",
+      swapped: true,
+      preferredId: video.youtubeId,
+      caveat: live.caveat,
+      hide: true,
+      attribution: live.attribution,
+    };
+  }
   return {
     youtubeId: live.youtubeId,
     title: live.title,
@@ -337,6 +517,8 @@ export async function ensureLiveVideoField(
     institution: live.institution,
     swapped: live.swapped,
     preferredId: live.preferredId,
+    caveat: live.caveat,
+    attribution: live.attribution,
   };
 }
 
@@ -347,6 +529,7 @@ export async function resolveManyLive(
     region?: VideoRegion | string;
     bodyParts?: string[];
     titleOverride?: string;
+    caveatCtx?: VideoCaveatContext;
   }>
 ): Promise<ResolvedVideo[]> {
   void maybeBackgroundRefresh().catch(() => {});
@@ -361,3 +544,10 @@ export async function resolveManyLive(
   }
   return results;
 }
+
+export {
+  videoMovement,
+  curatedVideoFor,
+  videoCaveat,
+  VIDEO_VERIFIED,
+} from "@/lib/youtube-management";
