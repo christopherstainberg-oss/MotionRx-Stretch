@@ -122,11 +122,11 @@ import {
 } from "lucide-react";
 
 const STEPS = [
-  { id: 1, title: "Your story", short: "1 · Story" },
-  { id: 2, title: "Body & pain", short: "2 · Body" },
+  { id: 1, title: "Your Story", short: "1 · Story" },
+  { id: 2, title: "Body & Pain", short: "2 · Body" },
   { id: 3, title: "Safety", short: "3 · Safety" },
   { id: 4, title: "Preferences", short: "4 · Prefs" },
-  { id: 5, title: "Your plan", short: "5 · Plan" },
+  { id: 5, title: "Your Plan", short: "5 · Plan" },
 ] as const;
 
 /** Grouped body regions for scannable sub-categories */
@@ -1499,7 +1499,7 @@ export default function AssessmentPage() {
       <header className="pt-1">
         <p className="section-label">Assessment</p>
         <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-brand-950 dark:text-brand-50">
-          Clinical intake
+          Clinical Intake
         </h1>
         <p className="mt-2 max-w-md text-sm leading-relaxed text-brand-600 dark:text-brand-300">
           One calm step at a time. Most fields are optional.
@@ -1513,7 +1513,7 @@ export default function AssessmentPage() {
         <div className="stack">
           <section className="card space-y-5 p-5 sm:p-6">
             <SubSection
-              title="Your story"
+              title="Your Story"
               hint={storyPriorPrompt.question}
               action={
                 coachLog.length > 0 ? (
@@ -1576,7 +1576,7 @@ export default function AssessmentPage() {
                     checked={guideStoryQa}
                     onChange={(e) => setGuideStoryQa(e.target.checked)}
                   />
-                  Guide questions
+                  Guide Questions
                 </label>
                 <label className="inline-flex items-center gap-1.5">
                   <input
@@ -1585,7 +1585,7 @@ export default function AssessmentPage() {
                     checked={continuousFlow}
                     onChange={(e) => setContinuousFlow(e.target.checked)}
                   />
-                  Continuous flow
+                  Continuous Flow
                 </label>
                 <ConversationSpeedControl
                   compact
@@ -1616,7 +1616,7 @@ export default function AssessmentPage() {
               {storyIntel.richness !== "empty" ? (
                 <div className="rounded-xl bg-brand-50/50 px-3.5 py-3 text-xs leading-relaxed text-brand-700 dark:bg-brand-900/30 dark:text-brand-200">
                   <p className="section-label">
-                    Live read
+                    Live Read
                     {typeof storyIntel.completeness === "number"
                       ? ` · ${storyIntel.completeness}/100`
                       : ""}
@@ -1889,7 +1889,7 @@ export default function AssessmentPage() {
 
           {/* Optional add-ons — collapsed by default */}
           <OptionalSection
-            title="Activity, sport & surgery"
+            title="Activity, Sport & Surgery"
             hint="Optional return-to-sport or post-op context"
             badge={
               sportSurgery.sportIds.length || sportSurgery.surgeryId ? (
@@ -1915,7 +1915,7 @@ export default function AssessmentPage() {
           </OptionalSection>
 
           <OptionalSection
-            title="Vitals & labs"
+            title="Vitals & Labs"
             hint="Optional readiness signals"
           >
             <VitalsLabsPanel sex={sex || null} compact />
@@ -1946,7 +1946,7 @@ export default function AssessmentPage() {
 
           {paragraph.trim().length >= 12 ? (
             <OptionalSection
-              title="What we noticed"
+              title="What We Noticed"
               hint="Review detections from your story"
               badge={
                 insightCount > 0 ? (
@@ -1959,7 +1959,7 @@ export default function AssessmentPage() {
               <div className="space-y-4">
                 {paragraphDescDetails.length > 0 && (
                   <div>
-                    <p className="section-label">Pain descriptors</p>
+                    <p className="section-label">Pain Descriptors</p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {paragraphDescDetails.slice(0, 8).map((d) => (
                         <span key={d.id} className="chip text-xs">
@@ -1983,7 +1983,7 @@ export default function AssessmentPage() {
                 )}
                 {adjectivePreview && adjectivePreview.summaryLines.length > 0 && (
                   <div>
-                    <p className="section-label">Language cues</p>
+                    <p className="section-label">Language Cues</p>
                     <ul className="mt-1.5 space-y-1 text-xs text-brand-700">
                       {adjectivePreview.summaryLines.slice(0, 3).map((line) => (
                         <li key={line} className="leading-snug">
@@ -2011,7 +2011,7 @@ export default function AssessmentPage() {
             </OptionalSection>
           ) : null}
 
-          <OptionalSection title="Pain descriptor library" hint="Browse the full list">
+          <OptionalSection title="Pain Descriptor Library" hint="Browse the full list">
             <PainDescriptorPicker
               value={descriptorIds}
               onChange={(ids) => {
@@ -2030,7 +2030,7 @@ export default function AssessmentPage() {
         <div className="stack">
           <section className="card space-y-5 p-5 sm:p-6">
           <SubSection
-            title="Body regions"
+            title="Body Regions"
             hint="Tap a category, then select areas."
             action={
               areas.length > 0 ? (
@@ -2092,7 +2092,7 @@ export default function AssessmentPage() {
           </SubSection>
 
           {areas.length > 0 && (
-            <SubSection title="Pain levels" hint="Rate each selected area from 0 (none) to 10 (worst).">
+            <SubSection title="Pain Levels" hint="Rate each selected area from 0 (none) to 10 (worst).">
               <div className="space-y-4 rounded-xl bg-brand-50/50 p-3.5 dark:bg-brand-950/40">
                 {areas.map((area) => (
                   <PainScale
@@ -2155,7 +2155,7 @@ export default function AssessmentPage() {
           </section>
 
           <OptionalSection
-            title="Clinical symptoms"
+            title="Clinical Symptoms"
             hint="Optional dosing cues"
             badge={
               clinicalSymptomIds.length ? (
@@ -2201,7 +2201,7 @@ export default function AssessmentPage() {
           </OptionalSection>
 
           <OptionalSection
-            title="Daily activities (ADLs)"
+            title="Daily Activities (ADLs)"
             hint="Optional function ratings"
             badge={
               adlEntries.length ? (
@@ -2231,7 +2231,7 @@ export default function AssessmentPage() {
         <div className="stack">
           <section className="card space-y-5 p-5 sm:p-6">
           <SubSection
-            title="Effort & heart rate"
+            title="Effort & Heart Rate"
             hint="Age estimates max HR. Borg sets how hard the plan should feel."
           >
             <div className="grid gap-3 sm:grid-cols-3">
@@ -2300,7 +2300,7 @@ export default function AssessmentPage() {
           </SubSection>
 
           <SubSection
-            title="Precautions & devices"
+            title="Precautions & Devices"
             hint="Pick a category tab. Only select what your care team has told you."
             action={
               precautionIds.length + implantIds.length + orthoticIds.length > 0 ? (
@@ -2491,7 +2491,7 @@ export default function AssessmentPage() {
           </SubSection>
           </section>
 
-          <OptionalSection title="Protocol notes" hint="Optional free text from your care team">
+          <OptionalSection title="Protocol Notes" hint="Optional free text from your care team">
             <textarea
               className="input min-h-[72px]"
               value={protocolNotes}
@@ -2532,7 +2532,7 @@ export default function AssessmentPage() {
         <div className="stack">
           <section className="card space-y-5 p-5 sm:p-6">
           <SubSection
-            title="Session length & difficulty"
+            title="Session Length & Difficulty"
             hint="We may still cap intensity based on safety and pain."
           >
             <div className="grid gap-4 sm:grid-cols-2">
@@ -2568,7 +2568,7 @@ export default function AssessmentPage() {
             </div>
           </SubSection>
 
-          <SubSection title="Movement mix" hint="Auto is fine for most people.">
+          <SubSection title="Movement Mix" hint="Auto is fine for most people.">
             <div className="flex flex-wrap gap-2">
               {(
                 [
@@ -2605,7 +2605,7 @@ export default function AssessmentPage() {
             </div>
           </SubSection>
 
-          <SubSection title="Home setup">
+          <SubSection title="Home Setup">
             <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-brand-200 bg-brand-50/40 p-4 dark:border-brand-700 dark:bg-brand-950/40">
               <input
                 type="checkbox"
@@ -2625,7 +2625,7 @@ export default function AssessmentPage() {
             </label>
           </SubSection>
 
-          <SubSection title="Before you generate">
+          <SubSection title="Before You Generate">
             <ul className="space-y-1.5 text-sm text-brand-700">
               <li className="flex gap-2">
                 <span className="font-medium text-brand-500">Areas</span>
@@ -2673,7 +2673,7 @@ export default function AssessmentPage() {
           {!generated ? (
             <section className="card space-y-5 p-6 text-center sm:p-8">
               <h2 className="text-lg font-semibold text-brand-950 dark:text-brand-50">
-                Ready to generate
+                Ready To Generate
               </h2>
               <p className="text-sm text-brand-600 dark:text-brand-300">
                 Review earlier steps if needed, then build your plan.
@@ -2694,7 +2694,7 @@ export default function AssessmentPage() {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                      Plan ready
+                      Plan Ready
                       {preferredName
                         ? ` · for ${displayPreferredName(preferredName)}`
                         : ""}
@@ -2727,7 +2727,7 @@ export default function AssessmentPage() {
                 {generated.generatedFrom?.rehabDynamics && (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-800 dark:bg-emerald-950/30">
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
-                      Intelligent recovery path
+                      Intelligent Recovery Path
                     </p>
                     <div className="flex flex-wrap gap-2 text-xs">
                       {generated.generatedFrom.rehabDynamics.primaryMechanism && (
@@ -2822,7 +2822,7 @@ export default function AssessmentPage() {
                 <div className="rounded-xl border border-brand-300 bg-brand-50/60 p-4 dark:border-brand-600 dark:bg-brand-950/50">
                   <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-700">
                     <Stethoscope className="h-3.5 w-3.5" />
-                    Prescribed plan of care
+                    Prescribed Plan Of Care
                     {prescribed?.phase ? ` · ${prescribed.phase.replace(/-/g, " ")}` : ""}
                   </p>
                   <div className="max-h-80 space-y-3 overflow-y-auto text-sm leading-relaxed text-brand-900 dark:text-brand-100">
@@ -2896,7 +2896,7 @@ export default function AssessmentPage() {
                 {/* User adaptation free-text → reconfigure plan */}
                 <div className="rounded-xl border border-brand-200 p-4 dark:border-brand-700">
                   <p className="text-sm font-semibold text-brand-950">
-                    Request changes (free text)
+                    Request Changes (Free Text)
                   </p>
                   <p className="mt-1 text-xs text-brand-600">
                     Examples: “make it easier, my low back flared,” “shorter sessions,” “more hip
